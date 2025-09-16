@@ -9,7 +9,7 @@ kotlin {
     linuxX64("linux") {
         binaries {
             executable {
-                entryPoint = "io.github.hospes.plexify"
+                entryPoint = "io.github.hospes.plexify.main"
                 baseName = "plexify"
             }
         }
@@ -17,9 +17,15 @@ kotlin {
     mingwX64("windows") {
         binaries {
             executable {
-                entryPoint = "io.github.hospes.plexify"
+                entryPoint = "io.github.hospes.plexify.main"
                 baseName = "plexify"
             }
+        }
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation(libs.clikt)
         }
     }
 }
