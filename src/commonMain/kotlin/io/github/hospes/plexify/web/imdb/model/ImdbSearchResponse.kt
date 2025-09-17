@@ -5,5 +5,5 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ImdbSearchResponse(
-    @SerialName("titles") val titles: List<ImdbTitle>,
+    @SerialName("titles") val items: List<ImdbMediaItem>,
 )

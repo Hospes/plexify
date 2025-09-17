@@ -79,6 +79,10 @@ kotlin {
             }
         }
     }
+
+    compilerOptions {
+        optIn.add("kotlinx.serialization.ExperimentalSerializationApi")
+    }
 }
 
 fun loadLocalProperties(): Properties {

@@ -7,5 +7,5 @@ val nonstrict = Json {
     isLenient = true
     ignoreUnknownKeys = true
     allowSpecialFloatingPointValues = true
-    useArrayPolymorphism = true
+    coerceInputValues = true
 }
