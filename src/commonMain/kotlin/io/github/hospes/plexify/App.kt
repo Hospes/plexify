@@ -9,6 +9,8 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.help
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
+import io.github.hospes.plexify.web.imdb.ImdbApi
+import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
 object App : CliktCommand(name = "Plexify") {
@@ -23,6 +25,14 @@ object App : CliktCommand(name = "Plexify") {
     override fun run() {
         for (source in sources) {
             echo("Source: $source | isAbsolute: ${source.isAbsolute}")
+            runBlocking {
+                ImdbApi.search(source.toString()).also { response ->
+                    response.titles.forEach { title ->
+                        echo("Found title: ${title.id} | ${title.primaryTitle} | ${title.originalTitle}")
+                    }
+                    //echo("Response: $response")
+                }
+            }
         }
         echo("Count: $count")
     }

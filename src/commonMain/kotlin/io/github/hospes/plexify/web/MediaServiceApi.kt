@@ -1,4 +1,4 @@
-package io.github.hospes.plexify.web.api
+package io.github.hospes.plexify.web
 
 interface MediaServiceApi {
     /**

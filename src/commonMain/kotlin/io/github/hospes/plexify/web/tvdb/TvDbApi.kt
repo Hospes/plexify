@@ -1,6 +1,7 @@
-package io.github.hospes.plexify.web.api
+package io.github.hospes.plexify.web.tvdb
 
 import io.github.hospes.plexify.BuildConfig
+import io.github.hospes.plexify.web.MediaServiceApi
 import io.github.hospes.plexify.web.createHttpClientEngine
 import io.github.hospes.plexify.web.nonstrict
 import io.ktor.client.*
