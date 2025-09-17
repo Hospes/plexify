@@ -5,5 +5,5 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ImdbSearchResponse(
-    @SerialName("titles") val items: List<ImdbMediaItem>,
+    @SerialName("titles") val items: List<ImdbMediaItem> = emptyList(),
 )

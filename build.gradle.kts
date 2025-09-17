@@ -34,6 +34,13 @@ buildConfig {
             ?: localProperties["TVDB_API_KEY"]?.toString() ?: ""
         },
     )
+    buildConfigField<String>(
+        name = "OMDB_API_KEY",
+        value = provider<String> {
+            System.getenv("OMDB_API_KEY") ?: properties["OMDB_API_KEY"]?.toString()
+            ?: localProperties["OMDB_API_KEY"]?.toString() ?: ""
+        },
+    )
 }
 
 kotlin {
