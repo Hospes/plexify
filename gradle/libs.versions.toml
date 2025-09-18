@@ -23,3 +23,7 @@ ktor-serialization-json = { module = "io.ktor:ktor-serialization-kotlinx-json", 
 ktor-curl = { module = "io.ktor:ktor-client-curl", version.ref = "ktor" }
 
 clikt = { module = "com.github.ajalt.clikt:clikt", version = "5.0.3" }
+
+# Unit Test dependencies
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }

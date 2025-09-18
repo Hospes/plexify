@@ -59,17 +59,6 @@ kotlin {
                 baseName = "plexify"
             }
         }
-
-//        compilations.getByName("main") {
-//            cinterops {
-//                val winfileapi by creating {
-//                    // The name 'winfileapi' can be anything, but it's good practice
-//                    // to match it with the .def file name.
-//                    defFile("src/nativeInterop/cinterop/winfileapi.def")
-//                    packageName = "winfileapi" // This will be the package for the generated Kotlin bindings
-//                }
-//            }
-//        }
     }
 
     sourceSets {
@@ -86,6 +75,12 @@ kotlin {
             implementation(libs.ktor.auth)
             implementation(libs.ktor.content.negotiation)
             implementation(libs.ktor.serialization.json)
+        }
+
+        commonTest.dependencies {
+            //implementation(kotlin("test"))
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
 
         linuxMain.dependencies {

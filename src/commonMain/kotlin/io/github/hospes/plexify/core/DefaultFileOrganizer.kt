@@ -2,6 +2,7 @@ package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.OperationMode
+import io.github.hospes.plexify.domain.service.ParsedMovieInfo
 import io.github.hospes.plexify.domain.service.PathFormatter
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -15,9 +16,10 @@ class DefaultFileOrganizer(
         sourceFile: Path,
         destinationRoot: Path,
         media: CanonicalMedia,
+        parsedInfo: ParsedMovieInfo,
         mode: OperationMode,
     ): Result<Path> = Result.runCatching {
-        val relativePath = pathFormatter.format(namingTemplate, media, sourceFile)
+        val relativePath = pathFormatter.format(namingTemplate, media, parsedInfo, sourceFile)
         val finalPath = Path(destinationRoot, relativePath.toString())
 
         // Ensure the parent directory for the destination file exists

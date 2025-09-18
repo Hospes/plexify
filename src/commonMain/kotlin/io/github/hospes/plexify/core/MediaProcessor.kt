@@ -19,7 +19,14 @@ class MediaProcessor(
 
         // 1. Parse
         val parsedInfo = MovieFilenameParser.parse(source.name)
-        println("  -> Parsed as: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
+        val parsedDetails = listOfNotNull(
+            "Title='${parsedInfo.title}'",
+            parsedInfo.year?.let { "Year='$it'" },
+            parsedInfo.resolution?.let { "Resolution='$it'" },
+            parsedInfo.quality?.let { "Quality='$it'" },
+            parsedInfo.releaseGroup?.let { "ReleaseGroup='$it'" }
+        ).joinToString(", ")
+        println("  -> Parsed as: $parsedDetails")
 
         // 2. Search
         val searchResults = coroutineScope {
@@ -53,7 +60,7 @@ class MediaProcessor(
 
 
         // 4. Organize
-        fileOrganizer.organize(source, destination, canonicalMedia, mode)
+        fileOrganizer.organize(source, destination, canonicalMedia, parsedInfo, mode)
             .onSuccess { newPath -> println("  -> Successfully organized at: $newPath") }
             .onFailure { error -> println("  -> Error: ${error.message}") }
     }

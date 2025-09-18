@@ -17,6 +17,7 @@ class PathFormatter {
     fun format(
         template: String,
         media: CanonicalMedia,
+        parsedInfo: ParsedMovieInfo,
         sourceFile: Path
     ): Path {
         // 1. Create a map of available placeholders and their values.
@@ -26,6 +27,9 @@ class PathFormatter {
             "year" to media.year.toString(),
             "imdbid" to media.imdbId,
             "tmdbid" to media.tmdbId,
+            "resolution" to parsedInfo.resolution,
+            "quality" to parsedInfo.quality,
+            "releasegroup" to parsedInfo.releaseGroup,
             "ext" to sourceFile.name.substringAfterLast('.', "")
         ).filterValues { it != null } // Filter out null IDs
 
