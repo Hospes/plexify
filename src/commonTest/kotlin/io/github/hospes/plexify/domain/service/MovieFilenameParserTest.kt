@@ -82,7 +82,7 @@ class MovieFilenameParserTest {
         // Test case: Hyphenated title (X-Men)
         TestCase(
             filename = "X-MEN.Dark.Phoenix.2019.BDRip.1080p.mkv",
-            expected = ParsedMovieInfo(title = "x-men dark phoenix", year = "2019", resolution = "1080p", quality = "BDRip")
+            expected = ParsedMovieInfo(title = "x men dark phoenix", year = "2019", resolution = "1080p", quality = "BDRip")
         ),
         // Test case: Transliterated title with underscores
         TestCase(

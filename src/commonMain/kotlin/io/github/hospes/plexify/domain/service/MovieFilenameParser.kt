@@ -49,14 +49,18 @@ object MovieFilenameParser {
 
 
     fun parse(filename: String): ParsedMovieInfo {
-        // 1. Extract optional metadata from the full filename first.
-        val resolution = resolutionRegex.find(filename)?.value
-        val quality = qualityRegex.find(filename)?.value
-        val releaseGroup = releaseGroupRegex.find(filename)?.value
-
-        // 2. Remove the file extension. This is always noise.
+        // 1. Remove the file extension. This is always noise.
         var workingTitle = filename.substringBeforeLast('.')
         var year: String? = null
+
+        // *** FIX: Normalize common delimiters to spaces BEFORE parsing. ***
+        // This makes word boundary matching (\b) reliable for all subsequent regexes.
+        workingTitle = workingTitle.replace('_', '.')
+
+        // 2. Extract optional metadata from the full filename first.
+        val resolution = resolutionRegex.find(workingTitle)?.value
+        val quality = qualityRegex.find(workingTitle)?.value
+        val releaseGroup = releaseGroupRegex.find(workingTitle)?.value
 
         // 3. Find the year using a prioritized approach.
         val yearInBracketsMatch = yearInBracketsRegex.find(workingTitle)
