@@ -13,6 +13,7 @@ object MovieFilenameParser {
     // --- Regex for Year Extraction ---
     // High-priority: A year in brackets or parentheses, e.g., (2017) or [2017]. Captures just the number.
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
+
     // Lower-priority: A standalone year.
     private val yearRegex = """\b(19\d{2}|20\d{2})\b""".toRegex()
 
@@ -20,7 +21,10 @@ object MovieFilenameParser {
     private val resolutionTags = listOf("480p", "720p", "1080p", "2160p", "4k")
     private val resolutionRegex = "\\b(${resolutionTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    private val qualityTags = listOf("bluray", "blu-ray", "bdrip", "brrip", "dvd", "dvdrip", "web-dl", "web-rip", "webrip", "hdtv", "hdrip")
+    private val qualityTags = listOf(
+        "bluray", "blu-ray", "bdrip", "brrip", "dvd", "dvdrip",
+        "web-dl", "web-rip", "webrip", "hdtv", "hdrip", "web-dlrip",
+    )
     private val qualityRegex = "\\b(${qualityTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
     private val releaseGroupTags = listOf("LostFilm", "AniLibria")
@@ -32,7 +36,7 @@ object MovieFilenameParser {
         // Codecs & Audio
         "x264", "h264", "x265", "hevc", "xvid", "aac", "ac3", "dts", "dts-hd", "atmos",
         // Other tags that reliably appear after the title
-        "repack", "proper", "unrated", "extended", "directors.cut", "limited", "internal", "remux", "uhd"
+        "repack", "proper", "unrated", "extended", "directors.cut", "limited", "internal", "remux", "uhd", "bdremux"
     )
 
     // Combine all tags that signal the end of the title into a single regex.
