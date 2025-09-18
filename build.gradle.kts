@@ -59,6 +59,17 @@ kotlin {
                 baseName = "plexify"
             }
         }
+
+//        compilations.getByName("main") {
+//            cinterops {
+//                val winfileapi by creating {
+//                    // The name 'winfileapi' can be anything, but it's good practice
+//                    // to match it with the .def file name.
+//                    defFile("src/nativeInterop/cinterop/winfileapi.def")
+//                    packageName = "winfileapi" // This will be the package for the generated Kotlin bindings
+//                }
+//            }
+//        }
     }
 
     sourceSets {

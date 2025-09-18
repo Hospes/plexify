@@ -8,13 +8,15 @@ import com.github.ajalt.clikt.parameters.arguments.help
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
-import io.github.hospes.plexify.core.FileOrganizer
+import com.github.ajalt.clikt.parameters.options.switch
+import com.github.ajalt.clikt.parameters.types.enum
+import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
-import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.OperationMode
+import io.github.hospes.plexify.domain.service.PathFormatter
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
@@ -29,33 +31,58 @@ object App : CliktCommand(name = "Plexify") {
 
     private val imdbProvider: MetadataProvider by lazy { ImdbProvider }
 
+
     val sources: List<Path> by argument(name = "source")
         .help("The source path for the media to be managed. This can be a path to a single file, a directory, or multiple paths to various files and directories.")
         .convert { Path(it) }.multiple()
 
+    val destination: Path by argument(name = "destination")
+        .help("The root directory where the organized library will be created.")
+        .convert { Path(it) }
+
+    // --- Operation Mode Option ---
+    val mode: OperationMode by option("-m", "--mode", help = "Operation mode: MOVE or HARDLINK")
+        .enum<OperationMode>(ignoreCase = true)
+        .default(OperationMode.HARDLINK)
+
+    // --- Naming Template Options ---
+    private val PLEX_TEMPLATE = "{CleanTitle} ({year}) [imdbid-{imdbid}]/{CleanTitle} ({year}).{ext}"
+    private val JELLYFIN_TEMPLATE = "{CleanTitle} ({year}) [imdbid-{imdbid}] [tmdbid-{tmdbid}]/{CleanTitle} ({year}).{ext}"
+
+    val customTemplate: String? by option("--custom-template", help = "Provide a custom naming template string.")
+
+    val template: String by option("-t", "--template", help = "Use a predefined naming template.")
+        .switch(
+            "--plex" to PLEX_TEMPLATE,
+            "--jellyfin" to JELLYFIN_TEMPLATE
+        ).default(JELLYFIN_TEMPLATE)
+
+
     override fun run() {
+        // Validation for templates
+//        if (customTemplate != null && currentContext.options?.any { it.names.contains("--template") } == true) {
+//            echo("Error: --custom-template cannot be used with predefined templates like --plex or --jellyfin.", err = true)
+//            return
+//        }
+
         val providers = listOfNotNull(tmdbProvider, imdbProvider)
+        val pathFormatter = PathFormatter()
+        val fileOrganizer = DefaultFileOrganizer(pathFormatter, customTemplate ?: template)
+        val processor = MediaProcessor(providers, fileOrganizer)
 
-        val processor = MediaProcessor(providers, dummyFileOrganizer)
-
+        echo("Starting Plexify...")
+        echo("Destination: $destination")
+        echo("Mode: $mode")
+        echo("Template: ${customTemplate ?: template}")
+        echo("---")
         for (source in sources) {
-            echo("Source: $source | isAbsolute: ${source.isAbsolute}")
-            runBlocking {
-                processor.process(source, Path(""), OperationMode.HARDLINK)
-            }
+            runBlocking { processor.process(source, destination, mode) }
         }
+        echo("---")
+        echo("Done.")
     }
 }
 
-
-private val dummyFileOrganizer = object : FileOrganizer {
-    override fun organize(
-        sourceFile: Path,
-        destinationRoot: Path,
-        media: CanonicalMedia,
-        mode: OperationMode
-    ): Result<Path> = Result.failure(NotImplementedError("Dummy implementation"))
-}
 
 fun commonMain(args: Array<String>) = App
     //.subcommands(ExtraCommands, AnotherExtraCommands)
