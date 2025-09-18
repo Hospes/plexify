@@ -55,7 +55,7 @@ private fun TmdbMediaItemDto.toDomainModel(): MediaSearchResult? {
     return when (this) {
         is TmdbMediaItemDto.Movie -> MediaSearchResult(
             title = title,
-            year = null,//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
+            year = releaseDate.year.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
             imdbId = null, // TMDB search results do NOT include IMDb ID
             tmdbId = id, // The 'id' from this API IS the TMDB ID
             provider = "TMDb"

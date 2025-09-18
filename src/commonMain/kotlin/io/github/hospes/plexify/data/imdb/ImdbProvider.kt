@@ -40,7 +40,7 @@ object ImdbProvider : MetadataProvider {
 
 private fun ImdbMediaItemDto.toDomainModel(): MediaSearchResult = MediaSearchResult(
     title = title,
-    year = null,
+    year = startYear.toString(),
     imdbId = id,
     tmdbId = null,
     provider = "IMDb"

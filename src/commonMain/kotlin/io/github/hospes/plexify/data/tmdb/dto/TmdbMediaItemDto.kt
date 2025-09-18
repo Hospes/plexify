@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.tmdb.dto
 
 import io.github.hospes.plexify.data.MediaItemDto
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
@@ -14,6 +15,7 @@ sealed interface TmdbMediaItemDto : MediaItemDto {
         @SerialName("id") override val id: String,
         @SerialName("title") override val title: String,
         @SerialName("original_title") val originalTitle: String,
+        @SerialName("release_date") val releaseDate: LocalDate,
     ) : TmdbMediaItemDto
 
     @Serializable

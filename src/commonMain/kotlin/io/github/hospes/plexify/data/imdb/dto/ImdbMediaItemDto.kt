@@ -10,4 +10,5 @@ data class ImdbMediaItemDto(
     @SerialName("primaryTitle") override val title: String,
     @SerialName("originalTitle") val originalTitle: String,
     @SerialName("type") val type: String,
+    @SerialName("startYear") val startYear: Int,    // Imdb represent year as single int (2019)
 ) : MediaItemDto
