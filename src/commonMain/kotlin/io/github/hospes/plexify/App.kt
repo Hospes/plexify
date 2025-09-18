@@ -6,9 +6,12 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.convert
 import com.github.ajalt.clikt.parameters.arguments.help
 import com.github.ajalt.clikt.parameters.arguments.multiple
+import com.github.ajalt.clikt.parameters.groups.default
+import com.github.ajalt.clikt.parameters.groups.mutuallyExclusiveOptions
+import com.github.ajalt.clikt.parameters.options.convert
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
-import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.enum
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
@@ -17,6 +20,7 @@ import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.service.PathFormatter
+import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
@@ -45,35 +49,32 @@ object App : CliktCommand(name = "Plexify") {
         .enum<OperationMode>(ignoreCase = true)
         .default(OperationMode.HARDLINK)
 
-    // --- Naming Template Options ---
-    private val PLEX_TEMPLATE = "{CleanTitle} ({year}) [imdbid-{imdbid}]/{CleanTitle} ({year}).{ext}"
-    private val JELLYFIN_TEMPLATE = "{CleanTitle} ({year}) [imdbid-{imdbid}] [tmdbid-{tmdbid}]/{CleanTitle} ({year}).{ext}"
-
-    val customTemplate: String? by option("--custom-template", help = "Provide a custom naming template string.")
-
-    val template: String by option("-t", "--template", help = "Use a predefined naming template.")
-        .switch(
-            "--plex" to PLEX_TEMPLATE,
-            "--jellyfin" to JELLYFIN_TEMPLATE
-        ).default(JELLYFIN_TEMPLATE)
+    val template: NamingStrategy by mutuallyExclusiveOptions(
+        option(
+            "-tp", "--template-plex",
+            help = "Use a predefined naming template - Plex."
+        ).flag().convert { NamingStrategy.Plex },
+        option(
+            "-tj", "--template-jellyfin",
+            help = "Use a predefined naming template - Jellyfin."
+        ).flag(default = true).convert { NamingStrategy.Jellyfin },
+        option(
+            "-tc", "--template-custom",
+            help = "Use a custom naming template."
+        ).convert { NamingStrategy.Custom(it) },
+    ).default(NamingStrategy.Jellyfin)
 
 
     override fun run() {
-        // Validation for templates
-//        if (customTemplate != null && currentContext.options?.any { it.names.contains("--template") } == true) {
-//            echo("Error: --custom-template cannot be used with predefined templates like --plex or --jellyfin.", err = true)
-//            return
-//        }
-
         val providers = listOfNotNull(tmdbProvider, imdbProvider)
         val pathFormatter = PathFormatter()
-        val fileOrganizer = DefaultFileOrganizer(pathFormatter, customTemplate ?: template)
+        val fileOrganizer = DefaultFileOrganizer(pathFormatter, template)
         val processor = MediaProcessor(providers, fileOrganizer)
 
         echo("Starting Plexify...")
         echo("Destination: $destination")
         echo("Mode: $mode")
-        echo("Template: ${customTemplate ?: template}")
+        echo("Template: $template")
         echo("---")
         for (source in sources) {
             runBlocking { processor.process(source, destination, mode) }
