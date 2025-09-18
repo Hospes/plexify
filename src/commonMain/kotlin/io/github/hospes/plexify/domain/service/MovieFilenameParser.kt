@@ -6,6 +6,7 @@ data class ParsedMovieInfo(
     val resolution: String? = null,
     val quality: String? = null,
     val releaseGroup: String? = null,
+    val edition: String? = null,
 )
 
 object MovieFilenameParser {
@@ -27,6 +28,9 @@ object MovieFilenameParser {
     )
     private val qualityRegex = "\\b(${qualityTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
+    private val editionTags = listOf("unrated", "extended", "directors.cut", "limited", "theatrical")
+    private val editionRegex = "\\b(${editionTags.joinToString("|").replace(".", "\\.")})\\b".toRegex(RegexOption.IGNORE_CASE)
+
     private val releaseGroupTags = listOf("LostFilm", "AniLibria")
     private val releaseGroupRegex = "\\b(${releaseGroupTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
@@ -36,7 +40,7 @@ object MovieFilenameParser {
         // Codecs & Audio
         "x264", "h264", "x265", "hevc", "xvid", "aac", "ac3", "dts", "dts-hd", "atmos",
         // Other tags that reliably appear after the title
-        "repack", "proper", "unrated", "extended", "directors.cut", "limited", "internal", "remux", "uhd", "bdremux"
+        "repack", "proper", "internal", "remux", "uhd", "bdremux"
     )
 
     // Combine all tags that signal the end of the title into a single regex.
@@ -61,6 +65,10 @@ object MovieFilenameParser {
         val resolution = resolutionRegex.find(workingTitle)?.value
         val quality = qualityRegex.find(workingTitle)?.value
         val releaseGroup = releaseGroupRegex.find(workingTitle)?.value
+        val edition = editionRegex.find(workingTitle)?.value?.replace(".", " ")?.let {
+            // Capitalize words for better presentation, e.g., "directors cut" -> "Directors Cut"
+            it.split(" ").joinToString(" ") { word -> word.replaceFirstChar { char -> char.uppercase() } }
+        }
 
         // 3. Find the year using a prioritized approach.
         val yearInBracketsMatch = yearInBracketsRegex.find(workingTitle)
@@ -99,7 +107,8 @@ object MovieFilenameParser {
             year = year,
             resolution = resolution,
             quality = quality,
-            releaseGroup = releaseGroup
+            releaseGroup = releaseGroup,
+            edition = edition,
         )
     }
 }

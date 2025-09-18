@@ -9,8 +9,11 @@ sealed interface NamingStrategy {
     /** A unique, user-friendly name for the strategy. */
     val name: String
 
-    /** The template string used for organizing movies. */
-    val movieTemplate: String
+    /** The template for the movie's parent folder. */
+    val movieFolderTemplate: String
+
+    /** The template for the movie file itself. Should not contain path separators. */
+    val movieFileTemplate: String
 
     // Future extension point for TV shows.
     // val tvShowTemplate: String
@@ -22,7 +25,12 @@ sealed interface NamingStrategy {
      */
     object Plex : NamingStrategy {
         override val name: String = "Plex"
-        override val movieTemplate: String = "{CleanTitle} ({year}) [imdbid-{imdbid}]/{CleanTitle} ({year}).{ext}"
+        override val movieFolderTemplate: String = "{CleanTitle} ({year}) [imdbid-{imdbid}]"
+        override val movieFileTemplate: String = "{CleanTitle} ({year}).{ext}"
+
+        override fun toString(): String {
+            return "$name [movieFolderTemplate='${movieFolderTemplate}', movieFileTemplate='${movieFileTemplate}']"
+        }
     }
 
     /**
@@ -31,15 +39,27 @@ sealed interface NamingStrategy {
      */
     object Jellyfin : NamingStrategy {
         override val name: String = "Jellyfin"
-        override val movieTemplate: String = "{CleanTitle} ({year}) [imdbid-{imdbid}] [tmdbid-{tmdbid}]/{CleanTitle} ({year}).{ext}"
+        private const val BASE_NAME = "{CleanTitle} ({year})"
+        override val movieFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}] [tmdbid-{tmdbid}]"
+        override val movieFileTemplate: String = "$BASE_NAME{version}.{ext}"
+
+        override fun toString(): String {
+            return "$name [movieFolderTemplate='${movieFolderTemplate}', movieFileTemplate='${movieFileTemplate}']"
+        }
     }
 
     /**
      * A naming strategy that uses a user-provided custom template string.
      */
     data class Custom(
-        override val movieTemplate: String
+        private val fullTemplate: String,
     ) : NamingStrategy {
         override val name: String = "Custom"
+        override val movieFolderTemplate: String = fullTemplate.substringBeforeLast('/', missingDelimiterValue = "")
+        override val movieFileTemplate: String = fullTemplate.substringAfterLast('/')
+
+        override fun toString(): String {
+            return "$name [movieFolderTemplate='${movieFolderTemplate}', movieFileTemplate='${movieFileTemplate}']"
+        }
     }
 }

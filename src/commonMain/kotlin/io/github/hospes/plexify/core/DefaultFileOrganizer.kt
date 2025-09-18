@@ -20,7 +20,13 @@ class DefaultFileOrganizer(
         parsedInfo: ParsedMovieInfo,
         mode: OperationMode,
     ): Result<Path> = Result.runCatching {
-        val relativePath = pathFormatter.format(namingStrategy.movieTemplate, media, parsedInfo, sourceFile)
+        val relativePath = pathFormatter.formatPath(
+            folderTemplate = namingStrategy.movieFolderTemplate,
+            fileTemplate = namingStrategy.movieFileTemplate,
+            media = media,
+            parsedInfo = parsedInfo,
+            sourceFile = sourceFile
+        )
         val finalPath = Path(destinationRoot, relativePath.toString())
 
         // Ensure the parent directory for the destination file exists

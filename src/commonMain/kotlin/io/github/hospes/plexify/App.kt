@@ -60,7 +60,7 @@ object App : CliktCommand(name = "Plexify") {
         ).flag(default = true).convert { NamingStrategy.Jellyfin },
         option(
             "-tc", "--template-custom",
-            help = "Use a custom naming template."
+            help = "Use a custom naming template. Use a forward slash '/' to separate the folder from the filename."
         ).convert { NamingStrategy.Custom(it) },
     ).default(NamingStrategy.Jellyfin)
 
