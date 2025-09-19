@@ -4,7 +4,8 @@ import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
-import io.github.hospes.plexify.domain.service.MovieFilenameParser
+import io.github.hospes.plexify.domain.model.ParsedMediaInfo
+import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -18,92 +19,117 @@ class MediaProcessor(
         println("Processing: $source")
 
         // 1. Parse
-        val parsedInfo = MovieFilenameParser.parse(source.name)
-        val parsedDetails = listOfNotNull(
-            "Title='${parsedInfo.title}'",
-            parsedInfo.year?.let { "Year='$it'" },
-            parsedInfo.resolution?.let { "Resolution='$it'" },
-            parsedInfo.quality?.let { "Quality='$it'" },
-            parsedInfo.releaseGroup?.let { "ReleaseGroup='$it'" }
-        ).joinToString(", ")
-        println("  -> Parsed as: $parsedDetails")
+        val parsedInfo = MediaFilenameParser.parse(source.name)
+        //println("  -> Parsed as: $parsedInfo")
 
-        // 2. Search
-        val searchResults = coroutineScope {
-            metadataProviders.map { provider ->
-                async { provider.search(parsedInfo.title, parsedInfo.year) }
-            }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
+        when (parsedInfo) {
+            is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo)
+            is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo)
         }
+    }
 
+
+    private suspend fun processMovie(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Movie) {
+        println("  -> Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
+
+        val searchResults = searchProviders(parsedInfo.title, parsedInfo.year).filterIsInstance<MediaSearchResult.Movie>()
         if (searchResults.isEmpty()) {
             println("  -> No metadata found.")
             return
         }
 
-        // 3. Consolidate/Choose Best Match (simple logic for now)
-        val canonicalMedia = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
-
-        if (canonicalMedia == null) {
-            println("  -> Could not find a confident match from search results.")
+        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
+        if (bestMatch == null) {
+            println("  -> Could not find a confident match.")
             return
         }
 
-        val printList = canonicalMedia.let { media ->
-            listOfNotNull(
-                media.title,
-                media.year.let { "(${it})" },
-                media.imdbId?.let { "[imdbid-$it]" },
-                media.tmdbId?.let { "[tmdbid-$it]" },
-            )
+        val canonicalMovie = CanonicalMedia.Movie(
+            title = bestMatch.title,
+            year = bestMatch.year?.toIntOrNull() ?: 0,
+            imdbId = bestMatch.imdbId,
+            tmdbId = bestMatch.tmdbId
+        )
+
+        println("  -> Found match: ${canonicalMovie.title} (${canonicalMovie.year}) [imdbid-${canonicalMovie.imdbId}] [tmdbid-${canonicalMovie.tmdbId}]")
+        organizeFile(source, destination, canonicalMovie, parsedInfo, mode)
+    }
+
+    private suspend fun processEpisode(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Episode) {
+        println("  -> Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
+
+        val searchResults = searchProviders(parsedInfo.showTitle, parsedInfo.year).filterIsInstance<MediaSearchResult.TvShow>()
+        if (searchResults.isEmpty()) {
+            println("  -> No metadata found for TV show.")
+            return
         }
-        println("  -> Found match: ${printList.joinToString(" ")}")
+
+        val bestShowMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
+        if (bestShowMatch == null) {
+            println("  -> Could not find a confident match for the TV show.")
+            return
+        }
+
+        val canonicalShow = CanonicalMedia.TvShow(
+            title = bestShowMatch.title,
+            year = bestShowMatch.year?.toIntOrNull() ?: 0,
+            imdbId = bestShowMatch.imdbId,
+            tmdbId = bestShowMatch.tmdbId
+        )
+
+        println("  -> Found show: ${canonicalShow.title} (${canonicalShow.year})")
+
+        // Fetch episode-specific details
+        val episodeDetailsResults = episodeProviders(canonicalShow, parsedInfo.season, parsedInfo.episode)
+        if (episodeDetailsResults.isEmpty()) {
+            println("  -> Episode(S${parsedInfo.season}E${parsedInfo.episode}) not found.")
+            return
+        }
+        val bestEpisodeMatch = episodeDetailsResults.first()
+
+        println("  -> Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
+        organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode)
+    }
 
 
-        // 4. Organize
-        fileOrganizer.organize(source, destination, canonicalMedia, parsedInfo, mode)
+    private suspend fun searchProviders(title: String, year: String?): List<MediaSearchResult> = coroutineScope {
+        metadataProviders.map { provider ->
+            async { provider.search(title, year) }
+        }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
+    }
+
+    private suspend fun episodeProviders(show: CanonicalMedia.TvShow, season: Int, episode: Int): List<CanonicalMedia.Episode> = coroutineScope {
+        metadataProviders.map { provider ->
+            async { provider.episode(show, season, episode) }
+        }.awaitAll().mapNotNull { it.getOrNull() }
+    }
+
+    private fun organizeFile(source: Path, destination: Path, media: CanonicalMedia, parsedInfo: ParsedMediaInfo, mode: OperationMode) {
+        fileOrganizer.organize(source, destination, media, parsedInfo, mode)
             .onSuccess { newPath -> println("  -> Successfully organized at: $newPath") }
-            .onFailure { error -> println("  -> Error: ${error.message}") }
+            .onFailure { error -> println("  -> Error: ${error.message}"); error.printStackTrace() }
     }
 
     private fun consolidateAndSelectBestMatch(
         results: List<MediaSearchResult>,
         parsedYear: String?
-    ): CanonicalMedia? {
+    ): MediaSearchResult? {
         if (results.isEmpty()) return null
 
-        // --- MERGER LOGIC ---
-        // Group results by title and year. This treats results from different providers
-        // for the same movie as a single entity.
-        val groupedByMovie = results.groupBy {
-            // Normalize title for better grouping
+        val groupedByMedia = results.groupBy {
             val normalizedTitle = it.title.lowercase().replace(Regex("[^a-z0-9]"), "")
             "$normalizedTitle:${it.year}"
         }
 
-        // Score each group to find the best candidate.
-        val bestGroup = groupedByMovie.values.maxByOrNull { group ->
+        return groupedByMedia.values.maxByOrNull { group ->
             var score = 0
             // Higher score for more providers agreeing on this movie
             score += group.distinctBy { it.provider }.size * 2
             // Higher score if the year matches the one from the filename
-            if (parsedYear != null && group.any { it.year == parsedYear }) {
-                score += 5
-            }
+            if (parsedYear != null && group.any { it.year == parsedYear }) score += 5
             // Higher score for having an IMDb ID, as it's a great identifier
-            if (group.any { it.imdbId != null }) {
-                score += 3
-            }
+            if (group.any { it.imdbId != null }) score += 3
             score
-        } ?: return null
-
-        // Now, consolidate the information from the best group into one CanonicalMedia object.
-        return CanonicalMedia(
-            // Prefer a title from a result that matches the parsed year, otherwise take the first.
-            title = bestGroup.firstOrNull { it.year == parsedYear }?.title ?: bestGroup.first().title,
-            year = (bestGroup.firstOrNull { it.year == parsedYear }?.year ?: bestGroup.first().year)?.toIntOrNull() ?: 0,
-            // Collect all unique IDs from the group.
-            imdbId = bestGroup.firstNotNullOfOrNull { it.imdbId },
-            tmdbId = bestGroup.firstNotNullOfOrNull { it.tmdbId }
-        )
+        }?.firstOrNull()
     }
 }

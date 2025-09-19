@@ -104,7 +104,7 @@ class MovieFilenameParserTest {
     @Test
     fun `parses list of movies correctly`() {
         movies.forEach { (filename, expected) ->
-            val actual = MovieFilenameParser.parse(filename)
+            val actual = MediaFilenameParser.parse(filename)
 
             // Use assertTrue for a more detailed custom message on failure
             assertTrue(

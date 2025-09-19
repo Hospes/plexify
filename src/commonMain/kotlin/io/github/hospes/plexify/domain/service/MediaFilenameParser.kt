@@ -1,21 +1,15 @@
 package io.github.hospes.plexify.domain.service
 
-data class ParsedMovieInfo(
-    val title: String,
-    val year: String?,
-    val resolution: String? = null,
-    val quality: String? = null,
-    val releaseGroup: String? = null,
-    val edition: String? = null,
-)
+import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 
-object MovieFilenameParser {
+object MediaFilenameParser {
+
+    // --- Regex for TV Show Episode Extraction ---
+    // Captures S01E01, s01e01, S1E1, etc.
+    private val episodeRegex = """[._\-\s]([Ss](\d{1,2})[Ee](\d{1,2}))[._\-\s]""".toRegex()
 
     // --- Regex for Year Extraction ---
-    // High-priority: A year in brackets or parentheses, e.g., (2017) or [2017]. Captures just the number.
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
-
-    // Lower-priority: A standalone year.
     private val yearRegex = """\b(19\d{2}|20\d{2})\b""".toRegex()
 
     // --- Specific information to extract ---
@@ -52,7 +46,35 @@ object MovieFilenameParser {
     private val cleanupRegex = "\\s+".toRegex()
 
 
-    fun parse(filename: String): ParsedMovieInfo {
+    fun parse(filename: String): ParsedMediaInfo {
+        val workingFilename = filename.substringBeforeLast('.')
+
+        // --- TV SHOW PARSING LOGIC ---
+        val episodeMatch = episodeRegex.find(workingFilename)
+        if (episodeMatch != null) {
+            val showTitle = workingFilename.substringBefore(episodeMatch.value)
+                .replace(delimiterRegex, " ")
+                .replace(cleanupRegex, " ").trim()
+            val season = episodeMatch.groupValues[2].toInt()
+            val episode = episodeMatch.groupValues[3].toInt()
+            val year = yearRegex.find(workingFilename)?.value
+
+            return ParsedMediaInfo.Episode(
+                showTitle = showTitle.lowercase(),
+                season = season,
+                episode = episode,
+                year = year,
+                resolution = resolutionRegex.find(workingFilename)?.value,
+                quality = qualityRegex.find(workingFilename)?.value,
+                releaseGroup = releaseGroupRegex.find(workingFilename)?.value
+            )
+        }
+
+        // --- MOVIE PARSING LOGIC (Fallback) ---
+        return parseAsMovie(workingFilename)
+    }
+
+    private fun parseAsMovie(filename: String): ParsedMediaInfo {
         // 1. Remove the file extension. This is always noise.
         var workingTitle = filename.substringBeforeLast('.')
         var year: String? = null
@@ -102,7 +124,7 @@ object MovieFilenameParser {
         //    - Trim whitespace from the start and end.
         val cleanTitle = workingTitle.replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
 
-        return ParsedMovieInfo(
+        return ParsedMediaInfo.Movie(
             title = cleanTitle.lowercase(),
             year = year,
             resolution = resolution,

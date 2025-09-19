@@ -1,13 +1,31 @@
 package io.github.hospes.plexify.domain.model
 
-data class MediaSearchResult(
-    val title: String,
-    val year: String?,
-    // Use specific fields for IDs. This is crucial.
-    val imdbId: String? = null,
-    val tmdbId: String? = null,
-    // Keep track of where this result came from.
-    val provider: String,
-    // Add a confidence score for later use.
-    val matchConfidence: Int = 0
-)
+sealed interface MediaSearchResult {
+    val title: String
+    val year: String?
+    val imdbId: String?
+    val tmdbId: String?
+    val tvdbId: String?
+    val provider: String
+    val matchConfidence: Int
+
+    data class Movie(
+        override val title: String,
+        override val year: String?,
+        override val imdbId: String? = null,
+        override val tmdbId: String? = null,
+        override val tvdbId: String? = null,
+        override val provider: String,
+        override val matchConfidence: Int = 0
+    ) : MediaSearchResult
+
+    data class TvShow(
+        override val title: String,
+        override val year: String?,
+        override val imdbId: String? = null,
+        override val tmdbId: String? = null,
+        override val tvdbId: String? = null,
+        override val provider: String,
+        override val matchConfidence: Int = 0
+    ) : MediaSearchResult
+}

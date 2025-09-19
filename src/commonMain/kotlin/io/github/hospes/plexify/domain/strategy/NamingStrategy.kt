@@ -15,9 +15,10 @@ sealed interface NamingStrategy {
     /** The template for the movie file itself. Should not contain path separators. */
     val movieFileTemplate: String
 
-    // Future extension point for TV shows.
-    // val tvShowTemplate: String
-    // val episodeTemplate: String
+    // TV Show Templates
+    val tvShowFolderTemplate: String
+    val seasonFolderTemplate: String
+    val episodeFileTemplate: String
 
 
     /**
@@ -25,11 +26,24 @@ sealed interface NamingStrategy {
      */
     object Plex : NamingStrategy {
         override val name: String = "Plex"
-        override val movieFolderTemplate: String = "{CleanTitle} ({year}) [imdbid-{imdbid}]"
-        override val movieFileTemplate: String = "{CleanTitle} ({year}).{ext}"
+        private const val BASE_NAME = "{CleanTitle} ({year})"
+        override val movieFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}]"
+        override val movieFileTemplate: String = "$BASE_NAME {version}.{ext}"
+
+        override val tvShowFolderTemplate: String = movieFolderTemplate
+        override val seasonFolderTemplate: String = "Season {season:2}"
+        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle} {version}.{ext}"
 
         override fun toString(): String {
-            return "$name [movieFolderTemplate='${movieFolderTemplate}', movieFileTemplate='${movieFileTemplate}']"
+            return """
+                $name [
+                    movieFolderTemplate='$movieFolderTemplate',
+                    movieFileTemplate='$movieFileTemplate',
+                    tvShowFolderTemplate='$tvShowFolderTemplate',
+                    seasonFolderTemplate='$seasonFolderTemplate',
+                    episodeFileTemplate='$episodeFileTemplate'
+                ]
+            """.trimIndent()
         }
     }
 
@@ -41,10 +55,22 @@ sealed interface NamingStrategy {
         override val name: String = "Jellyfin"
         private const val BASE_NAME = "{CleanTitle} ({year})"
         override val movieFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}] [tmdbid-{tmdbid}]"
-        override val movieFileTemplate: String = "$BASE_NAME{version}.{ext}"
+        override val movieFileTemplate: String = "$BASE_NAME {version}.{ext}"
+
+        override val tvShowFolderTemplate: String = movieFolderTemplate
+        override val seasonFolderTemplate: String = "Season {season:2}"
+        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle} {version}.{ext}"
 
         override fun toString(): String {
-            return "$name [movieFolderTemplate='${movieFolderTemplate}', movieFileTemplate='${movieFileTemplate}']"
+            return """
+                $name [
+                    movieFolderTemplate='${movieFolderTemplate}',
+                    movieFileTemplate='${movieFileTemplate}',
+                    tvShowFolderTemplate='${tvShowFolderTemplate}',
+                    seasonFolderTemplate='${seasonFolderTemplate}',
+                    episodeFileTemplate='${episodeFileTemplate}'
+                ]
+            """.trimIndent()
         }
     }
 
@@ -58,8 +84,20 @@ sealed interface NamingStrategy {
         override val movieFolderTemplate: String = fullTemplate.substringBeforeLast('/', missingDelimiterValue = "")
         override val movieFileTemplate: String = fullTemplate.substringAfterLast('/')
 
+        override val tvShowFolderTemplate: String = movieFolderTemplate
+        override val seasonFolderTemplate: String = "Season {season:2}"
+        override val episodeFileTemplate: String = "{CleanTitle} ({year}) - S{season:2}E{episode:2} - {episodeTitle} {version}.{ext}"
+
         override fun toString(): String {
-            return "$name [movieFolderTemplate='${movieFolderTemplate}', movieFileTemplate='${movieFileTemplate}']"
+            return """
+                $name [
+                    movieFolderTemplate='$movieFolderTemplate',
+                    movieFileTemplate='$movieFileTemplate',
+                    tvShowFolderTemplate='$tvShowFolderTemplate',
+                    seasonFolderTemplate='$seasonFolderTemplate',
+                    episodeFileTemplate='$episodeFileTemplate'
+                ]
+            """.trimIndent()
         }
     }
 }

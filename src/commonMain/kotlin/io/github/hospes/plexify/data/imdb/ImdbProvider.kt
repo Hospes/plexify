@@ -5,6 +5,7 @@ import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.imdb.dto.ImdbMediaItemDto
 import io.github.hospes.plexify.data.imdb.dto.ImdbSearchResponseDto
 import io.github.hospes.plexify.data.nonstrict
+import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -34,14 +35,32 @@ object ImdbProvider : MetadataProvider {
         httpClient.get("search/titles") {
             parameter("query", title)
             parameter("limit", 5)
-        }.body<ImdbSearchResponseDto>().items.map { it.toDomainModel() }
+        }.body<ImdbSearchResponseDto>().items.mapNotNull { it.toDomainModel() }
+    }
+
+    override suspend fun episode(
+        show: CanonicalMedia.TvShow,
+        season: Int,
+        episode: Int
+    ): Result<CanonicalMedia.Episode> {
+        return Result.failure(UnsupportedOperationException("IMDb provider does not support fetching episode details."))
     }
 }
 
-private fun ImdbMediaItemDto.toDomainModel(): MediaSearchResult = MediaSearchResult(
-    title = title,
-    year = startYear.toString(),
-    imdbId = id,
-    tmdbId = null,
-    provider = "IMDb"
-)
+private fun ImdbMediaItemDto.toDomainModel(): MediaSearchResult? {
+    return when (this) {
+        is ImdbMediaItemDto.Movie -> MediaSearchResult.Movie(
+            title = title,
+            year = startYear.toString(),
+            imdbId = id,
+            provider = "IMDb"
+        )
+
+        is ImdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
+            title = title,
+            year = startYear.toString(),
+            imdbId = id,
+            provider = "IMDb"
+        )
+    }
+}

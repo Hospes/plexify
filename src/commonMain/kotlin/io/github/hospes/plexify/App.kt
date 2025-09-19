@@ -14,11 +14,14 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.enum
 import io.github.hospes.plexify.core.DefaultFileOrganizer
+import io.github.hospes.plexify.core.FileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
+import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.OperationMode
+import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import kotlinx.coroutines.runBlocking
@@ -42,7 +45,7 @@ object App : CliktCommand(name = "Plexify") {
 
     val destination: Path by argument(name = "destination")
         .help("The root directory where the organized library will be created.")
-        .convert { Path(it) }
+        .convert { Path(it.removeSuffix("\"")) }
 
     // --- Operation Mode Option ---
     val mode: OperationMode by option("-m", "--mode", help = "Operation mode: MOVE or HARDLINK")
@@ -82,6 +85,16 @@ object App : CliktCommand(name = "Plexify") {
         echo("---")
         echo("Done.")
     }
+}
+
+private val testFileOrganizer = object : FileOrganizer {
+    override fun organize(
+        sourceFile: Path,
+        destinationRoot: Path,
+        media: CanonicalMedia,
+        parsedInfo: ParsedMediaInfo,
+        mode: OperationMode
+    ): Result<Path> = Result.failure(NotImplementedError("Dummy file organizer is not implemented for testing."))
 }
 
 

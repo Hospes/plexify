@@ -3,8 +3,10 @@ package io.github.hospes.plexify.data.tmdb
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
+import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
+import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -49,18 +51,39 @@ class TmdbProvider(
             parameter("page", 1)
         }.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel() }
     }
+
+    override suspend fun episode(
+        show: CanonicalMedia.TvShow,
+        season: Int,
+        episode: Int
+    ): Result<CanonicalMedia.Episode> = Result.runCatching {
+        requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
+        val dto = httpClient.get("tv/${show.tmdbId}/season/$season/episode/$episode")
+            .body<TmdbEpisodeDto>()
+
+        CanonicalMedia.Episode(
+            show = show,
+            season = dto.seasonNumber,
+            episode = dto.episodeNumber,
+            title = dto.title,
+        )
+    }
 }
 
 private fun TmdbMediaItemDto.toDomainModel(): MediaSearchResult? {
     return when (this) {
-        is TmdbMediaItemDto.Movie -> MediaSearchResult(
+        is TmdbMediaItemDto.Movie -> MediaSearchResult.Movie(
             title = title,
-            year = releaseDate.year.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
-            imdbId = null, // TMDB search results do NOT include IMDb ID
-            tmdbId = id, // The 'id' from this API IS the TMDB ID
+            year = releaseDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
+            tmdbId = id,
             provider = "TMDb"
         )
 
-        is TmdbMediaItemDto.TvShow -> null // Or map to a TvShow domain model later
+        is TmdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
+            title = title,
+            year = firstAirDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
+            tmdbId = id,
+            provider = "TMDb"
+        )
     }
 }
