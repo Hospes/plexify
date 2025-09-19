@@ -10,12 +10,67 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 
 class MediaProcessor(
     private val metadataProviders: List<MetadataProvider>,
     private val fileOrganizer: FileOrganizer,
 ) {
+    private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
+
+
     suspend fun process(source: Path, destination: Path, mode: OperationMode) {
+        if (!SystemFileSystem.exists(source)) {
+            println("Error: Source path does not exist: $source")
+            return
+        }
+
+        val metadata = SystemFileSystem.metadataOrNull(source)
+        if (metadata == null) {
+            println("Can't get metadata for file: $source")
+            return
+        }
+
+        if (metadata.isDirectory) {
+            println("Processing directory: $source")
+            val mediaFiles = try {
+                SystemFileSystem.list(source)
+                    // Construct the full path for each item in the directory
+                    .map { child -> Path(source.toString(), child.name) }
+                    .filter { fullPath ->
+                        val fileMetadata = SystemFileSystem.metadataOrNull(fullPath)
+                        fileMetadata?.isRegularFile == true && fullPath.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS
+                    }
+            } catch (e: Exception) {
+                println("  -> Error listing directory contents: ${e.message}")
+                return
+            }
+
+            if (mediaFiles.isEmpty()) {
+                println("  -> No supported media files found.")
+                return
+            }
+
+            println("  -> Found ${mediaFiles.size} media file(s) to process.")
+            mediaFiles.forEachIndexed { index, mediaFile ->
+                processFile(mediaFile, destination, mode)
+                if (index < mediaFiles.size - 1) {
+                    println("---") // Separator for clarity between files
+                }
+            }
+        } else if (metadata.isRegularFile) {
+            if (source.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS) {
+                processFile(source, destination, mode)
+            } else {
+                println("Warning: File is not a supported media type, skipping: $source")
+            }
+        } else {
+            println("Warning: Source is not a regular file or directory, skipping: $source")
+        }
+    }
+
+
+    private suspend fun processFile(source: Path, destination: Path, mode: OperationMode) {
         println("Processing: $source")
 
         // 1. Parse
