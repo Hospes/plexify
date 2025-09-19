@@ -129,10 +129,10 @@ class MediaProcessor(
             title = bestShowMatch.title,
             year = bestShowMatch.year?.toIntOrNull() ?: 0,
             imdbId = bestShowMatch.imdbId,
-            tmdbId = bestShowMatch.tmdbId
+            tmdbId = bestShowMatch.tmdbId,
         )
 
-        println("  -> Found show: ${canonicalShow.title} (${canonicalShow.year})")
+        println("  -> Found show: $canonicalShow")//${canonicalShow.title} (${canonicalShow.year})")
 
         // Fetch episode-specific details
         val episodeDetailsResults = episodeProviders(canonicalShow, parsedInfo.season, parsedInfo.episode)
@@ -149,13 +149,19 @@ class MediaProcessor(
 
     private suspend fun searchProviders(title: String, year: String?): List<MediaSearchResult> = coroutineScope {
         metadataProviders.map { provider ->
-            async { provider.search(title, year) }
+            async {
+                provider.search(title, year)
+                    .onFailure { error -> println("      -> Error(${provider::class.simpleName}): ${error.message}") }
+            }
         }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
     }
 
     private suspend fun episodeProviders(show: CanonicalMedia.TvShow, season: Int, episode: Int): List<CanonicalMedia.Episode> = coroutineScope {
         metadataProviders.map { provider ->
-            async { provider.episode(show, season, episode) }
+            async {
+                provider.episode(show, season, episode)
+                    .onFailure { error -> println("      -> Error(${provider::class.simpleName}): ${error.message}") }
+            }
         }.awaitAll().mapNotNull { it.getOrNull() }
     }
 

@@ -74,14 +74,16 @@ private fun TmdbMediaItemDto.toDomainModel(): MediaSearchResult? {
     return when (this) {
         is TmdbMediaItemDto.Movie -> MediaSearchResult.Movie(
             title = title,
-            year = releaseDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
+            //year = releaseDate?.year?.toString(),
+            year = releaseDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
             provider = "TMDb"
         )
 
         is TmdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
             title = title,
-            year = firstAirDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
+            //year = firstAirDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
+            year = firstAirDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
             provider = "TMDb"
         )

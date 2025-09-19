@@ -15,7 +15,7 @@ sealed interface TmdbMediaItemDto : MediaItemDto {
         @SerialName("id") override val id: String,
         @SerialName("title") override val title: String,
         @SerialName("original_title") val originalTitle: String,
-        @SerialName("release_date") val releaseDate: LocalDate? = null,
+        @SerialName("release_date") val releaseDate: String? = null,
     ) : TmdbMediaItemDto
 
     @Serializable
@@ -24,7 +24,7 @@ sealed interface TmdbMediaItemDto : MediaItemDto {
         @SerialName("id") override val id: String,
         @SerialName("name") override val title: String,
         @SerialName("original_name") val originalTitle: String,
-        @SerialName("first_air_date") val firstAirDate: LocalDate? = null,
+        @SerialName("first_air_date") val firstAirDate: String? = null,
     ) : TmdbMediaItemDto
 }
 
