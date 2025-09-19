@@ -87,5 +87,7 @@ private fun TmdbMediaItemDto.toDomainModel(): MediaSearchResult? {
             tmdbId = id,
             provider = "TMDb"
         )
+
+        else -> null
     }
 }
