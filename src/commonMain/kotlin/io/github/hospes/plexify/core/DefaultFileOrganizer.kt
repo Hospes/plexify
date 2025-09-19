@@ -43,7 +43,6 @@ class DefaultFileOrganizer(
         // Ensure the parent directory for the destination file exists
         val parentDir = finalPath.parent
         if (parentDir != null) {
-            println("  -> Creating parent dir if not exists: $parentDir")
             SystemFileSystem.createDirectories(parentDir, false)
         } else {
             throw IllegalStateException("Could not determine parent directory for $finalPath")

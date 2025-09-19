@@ -94,19 +94,22 @@ class MediaProcessor(
         }
 
         val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
-        if (bestMatch == null) {
+        if (bestMatch.isNullOrEmpty()) {
             println("  -> Could not find a confident match.")
             return
         }
 
         val canonicalMovie = CanonicalMedia.Movie(
-            title = bestMatch.title,
-            year = bestMatch.year?.toIntOrNull() ?: 0,
-            imdbId = bestMatch.imdbId,
-            tmdbId = bestMatch.tmdbId
+            // Prefer a title from a result that matches the parsed year, otherwise take the first.
+            title = bestMatch.firstOrNull { it.year == parsedInfo.year }?.title ?: bestMatch.first().title,
+            year = (bestMatch.firstOrNull { it.year == parsedInfo.year }?.year ?: bestMatch.first().year)?.toIntOrNull() ?: 0,
+            // Collect all unique IDs from the group.
+            imdbId = bestMatch.firstNotNullOfOrNull { it.imdbId },
+            tmdbId = bestMatch.firstNotNullOfOrNull { it.tmdbId },
+            tvdbId = bestMatch.firstNotNullOfOrNull { it.tvdbId },
         )
 
-        println("  -> Found match: ${canonicalMovie.title} (${canonicalMovie.year}) [imdbid-${canonicalMovie.imdbId}] [tmdbid-${canonicalMovie.tmdbId}]")
+        println("  -> Found match: $canonicalMovie")
         organizeFile(source, destination, canonicalMovie, parsedInfo, mode)
     }
 
@@ -119,20 +122,23 @@ class MediaProcessor(
             return
         }
 
-        val bestShowMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
-        if (bestShowMatch == null) {
+        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
+        if (bestMatch.isNullOrEmpty()) {
             println("  -> Could not find a confident match for the TV show.")
             return
         }
 
         val canonicalShow = CanonicalMedia.TvShow(
-            title = bestShowMatch.title,
-            year = bestShowMatch.year?.toIntOrNull() ?: 0,
-            imdbId = bestShowMatch.imdbId,
-            tmdbId = bestShowMatch.tmdbId,
+            // Prefer a title from a result that matches the parsed year, otherwise take the first.
+            title = bestMatch.firstOrNull { it.year == parsedInfo.year }?.title ?: bestMatch.first().title,
+            year = (bestMatch.firstOrNull { it.year == parsedInfo.year }?.year ?: bestMatch.first().year)?.toIntOrNull() ?: 0,
+            // Collect all unique IDs from the group.
+            imdbId = bestMatch.firstNotNullOfOrNull { it.imdbId },
+            tmdbId = bestMatch.firstNotNullOfOrNull { it.tmdbId },
+            tvdbId = bestMatch.firstNotNullOfOrNull { it.tvdbId },
         )
 
-        println("  -> Found show: $canonicalShow")//${canonicalShow.title} (${canonicalShow.year})")
+        println("  -> Found show: $canonicalShow")
 
         // Fetch episode-specific details
         val episodeDetailsResults = episodeProviders(canonicalShow, parsedInfo.season, parsedInfo.episode)
@@ -174,7 +180,7 @@ class MediaProcessor(
     private fun consolidateAndSelectBestMatch(
         results: List<MediaSearchResult>,
         parsedYear: String?
-    ): MediaSearchResult? {
+    ): List<MediaSearchResult>? {
         if (results.isEmpty()) return null
 
         val groupedByMedia = results.groupBy {
@@ -191,6 +197,6 @@ class MediaProcessor(
             // Higher score for having an IMDb ID, as it's a great identifier
             if (group.any { it.imdbId != null }) score += 3
             score
-        }?.firstOrNull()
+        }
     }
 }

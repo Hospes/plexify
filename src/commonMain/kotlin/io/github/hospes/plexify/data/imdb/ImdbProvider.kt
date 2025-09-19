@@ -62,5 +62,7 @@ private fun ImdbMediaItemDto.toDomainModel(): MediaSearchResult? {
             imdbId = id,
             provider = "IMDb"
         )
+
+        else -> null
     }
 }

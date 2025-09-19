@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.tmdb.dto
 
 import io.github.hospes.plexify.data.MediaItemDto
+import io.github.hospes.plexify.data.imdb.dto.ImdbMediaItemDto
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -26,6 +27,13 @@ sealed interface TmdbMediaItemDto : MediaItemDto {
         @SerialName("original_name") val originalTitle: String,
         @SerialName("first_air_date") val firstAirDate: String? = null,
     ) : TmdbMediaItemDto
+
+
+    @Serializable
+    data object Unknown : TmdbMediaItemDto {
+        override val id: String get() = "unknown"
+        override val title: String get() = ""
+    }
 }
 
 

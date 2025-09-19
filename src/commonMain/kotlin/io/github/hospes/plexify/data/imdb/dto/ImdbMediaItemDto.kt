@@ -25,6 +25,13 @@ sealed interface ImdbMediaItemDto : MediaItemDto {
         @SerialName("originalTitle") val originalTitle: String,
         @SerialName("startYear") val startYear: Int,    // Imdb represent year as single int (2019)
     ) : ImdbMediaItemDto
+
+
+    @Serializable
+    data object Unknown : ImdbMediaItemDto {
+        override val id: String get() = "unknown"
+        override val title: String get() = ""
+    }
 }
 
 
