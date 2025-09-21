@@ -80,6 +80,8 @@ The compiled executable will be located in:
 
 You can move this executable to a directory in your system's `PATH` (e.g., `/usr/local/bin` or `C:\Windows`) for easy access.
 
+> **Note:** For linux users you may need to run `chmod +x plexify.kexe` to make it executable. Also, you can rename the file to `plexify` if you want for cleaner usage in terminal
+
 ## 🖥️ Usage
 
 The basic command structure is:
