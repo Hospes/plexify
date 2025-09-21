@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.hospes"
-version = "1.0-SNAPSHOT"
+version = gitDescribe(project.providers).get() + versionSuffix(project.providers).get()
 
 buildConfig {
     packageName("io.github.hospes.plexify")
@@ -41,6 +41,8 @@ buildConfig {
             ?: localProperties["OMDB_API_KEY"]?.toString() ?: ""
         },
     )
+    
+    buildConfigField<String>(name = "VERSION", value = provider { version.toString() })
 }
 
 kotlin {
@@ -108,4 +110,23 @@ fun loadLocalProperties(): Properties {
         }
     }
     return properties
+}
+
+fun versionSuffix(providers: ProviderFactory): Provider<String> {
+    return providers.exec {
+        commandLine("git", "branch", "--show-current")
+    }.standardOutput.asText.map { branch ->
+        val branchName = branch.trim()
+        when {
+            branchName.matches("""release/(.+)""".toRegex()) -> "-RC"
+            branchName.matches("""feature/(.+)""".toRegex()) -> "-FEATURE"
+            else -> ""
+        }
+    }
+}
+
+fun gitDescribe(providers: ProviderFactory): Provider<String> {
+    return providers.exec {
+        commandLine("git", "describe", "--tags", "--always")
+    }.standardOutput.asText.map { it.split("\n").first().trim() }
 }

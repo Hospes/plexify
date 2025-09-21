@@ -8,10 +8,7 @@ import com.github.ajalt.clikt.parameters.arguments.help
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.groups.default
 import com.github.ajalt.clikt.parameters.groups.mutuallyExclusiveOptions
-import com.github.ajalt.clikt.parameters.options.convert
-import com.github.ajalt.clikt.parameters.options.default
-import com.github.ajalt.clikt.parameters.options.flag
-import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.options.*
 import com.github.ajalt.clikt.parameters.types.enum
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.FileOrganizer
@@ -66,6 +63,11 @@ object App : CliktCommand(name = "Plexify") {
             help = "Use a custom naming template. Use a forward slash '/' to separate the folder from the filename."
         ).convert { NamingStrategy.Custom(it) },
     ).default(NamingStrategy.Jellyfin)
+
+
+    init {
+        versionOption(version = BuildConfig.VERSION, names = setOf("-v", "--version"))
+    }
 
 
     override fun run() {
