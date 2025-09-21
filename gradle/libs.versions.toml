@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.2.10"
+kotlin = "2.2.20"
 kotlinx-serialization = "1.9.0"
 kotlinx-coroutines = "1.10.2"
 ktor = "3.3.0"
@@ -7,7 +7,7 @@ ktor = "3.3.0"
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-build-config = { id = "com.github.gmazzo.buildconfig", version = "5.6.7" }
+build-config = { id = "com.github.gmazzo.buildconfig", version = "5.6.8" }
 
 [libraries]
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
