@@ -1,0 +1,117 @@
+name: Build and Release
+
+# This workflow is triggered only when a new release is published.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  # Job to build the Linux executable
+  build-linux:
+    name: Build for Linux
+    # Use the latest version of Ubuntu provided by GitHub
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Check out the repository's code so the workflow can access it
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up the Java environment (Gradle needs a JDK to run)
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # Step 3: Use the official Gradle action to set up Gradle and leverage caching
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      # Step 4: Grant execute permission to the gradlew script (important for Linux runners)
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Step 5: Build the native Linux executable
+      - name: Build with Gradle
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
+        run: ./gradlew linkReleaseExecutableLinux --no-daemon --no-parallel --stacktrace
+
+      # Step 6: Create a compressed archive of the executable
+      - name: Package the executable
+        run: |
+          STAGING_DIR="build/dist"
+          mkdir -p "$STAGING_DIR"
+          ARCHIVE_PATH="$STAGING_DIR/plexify-${{ github.ref_name }}-linux-x64.tar.gz"
+          cp build/bin/linux/releaseExecutable/plexify.kexe "$STAGING_DIR/plexify"
+          tar -czf "$ARCHIVE_PATH" -C "$STAGING_DIR" plexify
+
+      - name: List files in build directory
+        run: ls -R build/dist
+
+      # Step 7: Upload the archive to the GitHub Release
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/dist/plexify-${{ github.ref_name }}-linux-x64.tar.gz
+          asset_name: plexify-${{ github.ref_name }}-linux-x64.tar.gz
+          asset_content_type: application/gzip
+
+  # Job to build the Windows executable
+  build-windows:
+    name: Build for Windows
+    # Use the latest version of Windows provided by GitHub
+    runs-on: windows-latest
+    steps:
+      # Step 1: Check out the repository's code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up the Java environment
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # Step 3: Use the official Gradle action to set up Gradle and leverage caching
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      # Step 4: Build the native Windows executable
+      - name: Build with Gradle
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
+        run: ./gradlew.bat linkReleaseExecutableWindows --no-daemon --no-parallel --stacktrace
+
+      # Step 5: Create a compressed ZIP archive of the executable
+      - name: Package the executable
+        # Use PowerShell's built-in compression command
+        shell: pwsh
+        run: |
+          $stagingDir = "build/dist"
+          mkdir -p $stagingDir
+          $archivePath = "build/dist/plexify-${{ github.ref_name }}-windows-x64.zip"
+          $exePath = "build/bin/windows/releaseExecutable/plexify.exe"
+          Copy-Item -Path $exePath -Destination "$stagingDir/plexify.exe"
+          Compress-Archive -Path "$stagingDir/*" -DestinationPath $archivePath
+
+      - name: List files in build directory
+        run: ls -R build/dist
+
+      # Step 6: Upload the archive to the GitHub Release
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/dist/plexify-${{ github.ref_name }}-windows-x64.zip
+          asset_name: plexify-${{ github.ref_name }}-windows-x64.zip
+          asset_content_type: application/zip
