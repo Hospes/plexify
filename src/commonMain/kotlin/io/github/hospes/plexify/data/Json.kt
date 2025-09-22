@@ -17,6 +17,7 @@ val nonstrict = Json {
         polymorphic(ImdbMediaItemDto::class) {
             subclass(ImdbMediaItemDto.Movie::class)
             subclass(ImdbMediaItemDto.TvShow::class)
+            subclass(ImdbMediaItemDto.TvMiniShow::class)
 
             defaultDeserializer { ImdbMediaItemDto.Unknown.serializer() }
         }

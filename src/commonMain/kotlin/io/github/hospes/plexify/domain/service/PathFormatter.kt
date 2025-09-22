@@ -99,6 +99,8 @@ class PathFormatter {
                     )
                 )
             }
+
+            is CanonicalMedia.TvShow -> throw IllegalArgumentException("TV show is not suppose to be here.")
         }
         return commonPlaceholders.filterValues { it != null }.mapKeys { it.key.lowercase() }
     }

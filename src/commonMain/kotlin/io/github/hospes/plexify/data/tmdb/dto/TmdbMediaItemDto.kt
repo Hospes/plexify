@@ -1,8 +1,6 @@
 package io.github.hospes.plexify.data.tmdb.dto
 
 import io.github.hospes.plexify.data.MediaItemDto
-import io.github.hospes.plexify.data.imdb.dto.ImdbMediaItemDto
-import kotlinx.datetime.LocalDate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator

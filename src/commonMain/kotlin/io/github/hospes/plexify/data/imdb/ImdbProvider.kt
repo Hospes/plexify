@@ -63,6 +63,13 @@ private fun ImdbMediaItemDto.toDomainModel(): MediaSearchResult? {
             provider = "IMDb"
         )
 
+        is ImdbMediaItemDto.TvMiniShow -> MediaSearchResult.TvShow(
+            title = title,
+            year = startYear.toString(),
+            imdbId = id,
+            provider = "IMDb"
+        )
+
         else -> null
     }
 }

@@ -37,6 +37,8 @@ class DefaultFileOrganizer(
                 parsedInfo = parsedInfo,
                 sourceFile = sourceFile
             )
+
+            is CanonicalMedia.TvShow -> throw IllegalArgumentException("TV show is not suppose to be here.")
         }
         val finalPath = Path(destinationRoot, relativePath.toString())
 

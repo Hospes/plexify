@@ -262,7 +262,7 @@ class MediaProcessor(
                 tmdbId = tmdbId,
                 tvdbId = tvdbId
             )
-        } as CanonicalMedia?
+        }
     }
 }
 

@@ -26,6 +26,15 @@ sealed interface ImdbMediaItemDto : MediaItemDto {
         @SerialName("startYear") val startYear: Int,    // Imdb represent year as single int (2019)
     ) : ImdbMediaItemDto
 
+    @Serializable
+    @SerialName("tvMiniSeries")
+    data class TvMiniShow(
+        @SerialName("id") override val id: String,
+        @SerialName("primaryTitle") override val title: String,
+        @SerialName("originalTitle") val originalTitle: String,
+        @SerialName("startYear") val startYear: Int,
+    ) : ImdbMediaItemDto
+
 
     @Serializable
     data object Unknown : ImdbMediaItemDto {
