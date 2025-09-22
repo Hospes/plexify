@@ -41,7 +41,7 @@ buildConfig {
             ?: localProperties["OMDB_API_KEY"]?.toString() ?: ""
         },
     )
-    
+
     buildConfigField<String>(name = "VERSION", value = provider { version.toString() })
 }
 

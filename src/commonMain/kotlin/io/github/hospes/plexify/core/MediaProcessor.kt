@@ -21,7 +21,7 @@ class MediaProcessor(
     private val fileOrganizer: FileOrganizer,
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
-
+    private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
 
     suspend fun process(source: Path, destination: Path, mode: OperationMode) {
         if (!SystemFileSystem.exists(source)) {
@@ -39,7 +39,6 @@ class MediaProcessor(
             println("Processing directory: $source")
             val mediaFiles = try {
                 SystemFileSystem.list(source)
-                    // Construct the full path for each item in the directory
                     .map { child -> Path(source.toString(), child.name) }
                     .filter { fullPath ->
                         val fileMetadata = SystemFileSystem.metadataOrNull(fullPath)
@@ -76,10 +75,7 @@ class MediaProcessor(
 
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode) {
         println("Processing: $source")
-
-        // 1. Parse
         val parsedInfo = MediaFilenameParser.parse(source.name)
-        //println("  -> Parsed as: $parsedInfo")
 
         when (parsedInfo) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo)
@@ -91,27 +87,21 @@ class MediaProcessor(
     private suspend fun processMovie(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Movie) {
         println("  -> Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
-        val searchResults = searchProviders(parsedInfo.title, parsedInfo.year).filterIsInstance<MediaSearchResult.Movie>()
+        val searchResults = searchProviders(parsedInfo.title, parsedInfo.year)
+            .filterIsInstance<MediaSearchResult.Movie>()
+
         if (searchResults.isEmpty()) {
             println("  -> No metadata found.")
             return
         }
 
-        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
-        if (bestMatch.isNullOrEmpty()) {
+        val canonicalMovie = findAndConsolidateBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
+                as? CanonicalMedia.Movie
+
+        if (canonicalMovie == null) {
             println("  -> Could not find a confident match.")
             return
         }
-
-        val canonicalMovie = CanonicalMedia.Movie(
-            // Prefer a title from a result that matches the parsed year, otherwise take the first.
-            title = bestMatch.firstOrNull { it.year == parsedInfo.year }?.title ?: bestMatch.first().title,
-            year = (bestMatch.firstOrNull { it.year == parsedInfo.year }?.year ?: bestMatch.first().year)?.toIntOrNull() ?: 0,
-            // Collect all unique IDs from the group.
-            imdbId = bestMatch.firstNotNullOfOrNull { it.imdbId },
-            tmdbId = bestMatch.firstNotNullOfOrNull { it.tmdbId },
-            tvdbId = bestMatch.firstNotNullOfOrNull { it.tvdbId },
-        )
 
         println("  -> Found match: $canonicalMovie")
         organizeFile(source, destination, canonicalMovie, parsedInfo, mode)
@@ -120,27 +110,21 @@ class MediaProcessor(
     private suspend fun processEpisode(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Episode) {
         println("  -> Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
 
-        val searchResults = searchProviders(parsedInfo.showTitle, parsedInfo.year).filterIsInstance<MediaSearchResult.TvShow>()
+        val searchResults = searchProviders(parsedInfo.showTitle, parsedInfo.year)
+            .filterIsInstance<MediaSearchResult.TvShow>()
+
         if (searchResults.isEmpty()) {
             println("  -> No metadata found for TV show.")
             return
         }
 
-        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.showTitle, parsedInfo.year)
-        if (bestMatch.isNullOrEmpty()) {
+        val canonicalShow = findAndConsolidateBestMatch(searchResults, parsedInfo.showTitle, parsedInfo.year)
+                as? CanonicalMedia.TvShow
+
+        if (canonicalShow == null) {
             println("  -> Could not find a confident match for the TV show.")
             return
         }
-
-        val canonicalShow = CanonicalMedia.TvShow(
-            // Prefer a title from a result that matches the parsed year, otherwise take the first.
-            title = bestMatch.firstOrNull { it.year == parsedInfo.year }?.title ?: bestMatch.first().title,
-            year = (bestMatch.firstOrNull { it.year == parsedInfo.year }?.year ?: bestMatch.first().year)?.toIntOrNull() ?: 0,
-            // Collect all unique IDs from the group.
-            imdbId = bestMatch.firstNotNullOfOrNull { it.imdbId },
-            tmdbId = bestMatch.firstNotNullOfOrNull { it.tmdbId },
-            tvdbId = bestMatch.firstNotNullOfOrNull { it.tvdbId },
-        )
 
         println("  -> Found show: $canonicalShow")
 
@@ -161,10 +145,7 @@ class MediaProcessor(
         metadataProviders.map { provider ->
             async {
                 provider.search(title, year)
-                    .onSuccess { results ->
-                        println("      -> Found ${results.size} results from ${provider::class.simpleName}")
-                        results.forEach { println("        -> $it") }
-                    }
+                    .onSuccess { results -> println("      -> Found ${results.size} results from ${provider::class.simpleName}") }
                     .onFailure { error -> println("      -> Error(${provider::class.simpleName}): ${error.message}") }
             }
         }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
@@ -211,11 +192,11 @@ class MediaProcessor(
         return cost[lhsLength]
     }
 
-    private fun consolidateAndSelectBestMatch(
+    private fun findAndConsolidateBestMatch(
         results: List<MediaSearchResult>,
         parsedTitle: String,
         parsedYear: String?
-    ): List<MediaSearchResult>? {
+    ): CanonicalMedia? {
         if (results.isEmpty()) return null
 
         println("  -> Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
@@ -224,54 +205,64 @@ class MediaProcessor(
             val normalizedTitle = it.title.lowercase().replace(Regex("[^a-z0-9]"), "")
             "$normalizedTitle:${it.year}"
         }
-
         println("  -> ${groupedByMedia.size} unique media candidates found.")
 
         val scoredGroups = groupedByMedia.values.mapNotNull { group ->
             val representative = group.first()
             val groupTitle = representative.title.lowercase()
-            val groupYear = representative.year
+            var score = 0.0
 
-            // 1. Title Similarity Score (most important)
             val distance = levenshtein(parsedTitle.lowercase(), groupTitle)
             val titleLength = max(parsedTitle.length, groupTitle.length)
             val similarity = if (titleLength > 0) 1.0 - (distance.toDouble() / titleLength) else 0.0
-            var score = similarity * 10.0 // Score up to 10 points for title match
 
-            // 2. Year Match Bonus
-            if (parsedYear != null && groupYear == parsedYear) {
-                score += 5
+            if (similarity < 0.4) {
+                println("    -> Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
+                return@mapNotNull null
             }
 
-            // 3. Provider Agreement Bonus
-            score += (group.distinctBy { it.provider }.size - 1) * 2 // Bonus points if multiple providers agree
-
-            // 4. ID Bonus (less important)
-            if (group.any { it.imdbId != null }) {
-                score += 1
-            }
+            score += similarity * 10.0
+            if (parsedYear != null && representative.year == parsedYear) score += 5.0
+            score += (group.distinctBy { it.provider }.size - 1) * 2.0
+            if (group.any { it.imdbId != null }) score += 1.0
 
             println("    -> Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
-
-            // Discard matches with very low similarity to avoid completely wrong results
-            if (similarity < 0.4) {
-                println("       -> Discarded (title similarity too low)")
-                null
-            } else {
-                group to score
-            }
-        }
-
-        if (scoredGroups.isEmpty()) {
-            println("  -> No candidates passed the similarity threshold.")
-            return null
+            group to score
         }
 
         val bestGroup = scoredGroups.maxByOrNull { it.second }
-
-        return bestGroup?.first.also {
-            println("  -> Best match selected: '${it?.first()?.title}' with score ${bestGroup?.second?.format(2)}")
+        if (bestGroup == null || bestGroup.second < MINIMUM_CONFIDENCE_SCORE) {
+            println("  -> No candidate passed the minimum confidence score of $MINIMUM_CONFIDENCE_SCORE.")
+            return null
         }
+
+        println("  -> Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
+
+        val groupItems = bestGroup.first
+        val bestItem = groupItems.firstOrNull { it.year == parsedYear } ?: groupItems.first()
+
+        // Consolidate all IDs from the winning group
+        val imdbId = groupItems.firstNotNullOfOrNull { it.imdbId }
+        val tmdbId = groupItems.firstNotNullOfOrNull { it.tmdbId }
+        val tvdbId = groupItems.firstNotNullOfOrNull { it.tvdbId }
+
+        return when (bestItem) {
+            is MediaSearchResult.Movie -> CanonicalMedia.Movie(
+                title = bestItem.title,
+                year = bestItem.year?.toIntOrNull() ?: 0,
+                imdbId = imdbId,
+                tmdbId = tmdbId,
+                tvdbId = tvdbId
+            )
+
+            is MediaSearchResult.TvShow -> CanonicalMedia.TvShow(
+                title = bestItem.title,
+                year = bestItem.year?.toIntOrNull() ?: 0,
+                imdbId = imdbId,
+                tmdbId = tmdbId,
+                tvdbId = tvdbId
+            )
+        } as CanonicalMedia?
     }
 }
 
