@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.types.enum
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.FileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
+import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
@@ -74,7 +75,8 @@ object App : CliktCommand(name = "Plexify") {
         val providers = listOfNotNull(tmdbProvider, imdbProvider)
         val pathFormatter = PathFormatter()
         val fileOrganizer = DefaultFileOrganizer(pathFormatter, template)
-        val processor = MediaProcessor(providers, fileOrganizer)
+        val cache = MetadataCache()
+        val processor = MediaProcessor(providers, fileOrganizer, cache)
 
         echo("Starting Plexify...")
         echo("Destination: $destination")

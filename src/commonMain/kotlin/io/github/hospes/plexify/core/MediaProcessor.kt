@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.core
 
+import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
@@ -19,6 +20,7 @@ import kotlin.math.roundToInt
 class MediaProcessor(
     private val metadataProviders: List<MetadataProvider>,
     private val fileOrganizer: FileOrganizer,
+    private val cache: MetadataCache,
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
@@ -110,36 +112,80 @@ class MediaProcessor(
     private suspend fun processEpisode(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Episode) {
         println("  -> Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
 
-        val searchResults = searchProviders(parsedInfo.showTitle, parsedInfo.year)
-            .filterIsInstance<MediaSearchResult.TvShow>()
-
-        if (searchResults.isEmpty()) {
-            println("  -> No metadata found for TV show.")
-            return
-        }
-
-        val canonicalShow = findAndConsolidateBestMatch(searchResults, parsedInfo.showTitle, parsedInfo.year)
-                as? CanonicalMedia.TvShow
-
+        // Step 1: Find the canonical show, using the cache first.
+        val canonicalShow = findOrFetchShow(parsedInfo.showTitle, parsedInfo.year)
         if (canonicalShow == null) {
             println("  -> Could not find a confident match for the TV show.")
             return
         }
-
         println("  -> Found show: $canonicalShow")
 
-        // Fetch episode-specific details
-        val episodeDetailsResults = episodeProviders(canonicalShow, parsedInfo.season, parsedInfo.episode)
-        if (episodeDetailsResults.isEmpty()) {
+        // Step 2: Find the episode details, using the cache first.
+        val bestEpisodeMatch = findOrFetchEpisode(canonicalShow, parsedInfo.season, parsedInfo.episode)
+        if (bestEpisodeMatch == null) {
             println("  -> Episode(S${parsedInfo.season}E${parsedInfo.episode}) not found.")
             return
         }
-        val bestEpisodeMatch = episodeDetailsResults.first()
 
         println("  -> Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode)
     }
 
+
+    /**
+     * Helper function to get a TV show's metadata, checking the cache before fetching from providers.
+     */
+    private suspend fun findOrFetchShow(title: String, year: String?): CanonicalMedia.TvShow? {
+        val cacheKey = "$title:$year"
+        val cachedShow = cache.getShow(cacheKey)
+        if (cachedShow != null) {
+            println("  -> Cache HIT for show: '$title'")
+            return cachedShow
+        }
+        println("  -> Cache MISS for show: '$title'. Searching providers...")
+
+        val searchResults = searchProviders(title, year)
+            .filterIsInstance<MediaSearchResult.TvShow>()
+
+        if (searchResults.isEmpty()) {
+            println("  -> No metadata found for TV show.")
+            return null
+        }
+
+        val canonicalShow = findAndConsolidateBestMatch(searchResults, title, year)
+                as? CanonicalMedia.TvShow
+
+        if (canonicalShow != null) {
+            cache.putShow(cacheKey, canonicalShow)
+        }
+
+        return canonicalShow
+    }
+
+    /**
+     * Helper function to get an episode's metadata, checking the cache before fetching from providers.
+     */
+    private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? {
+        // Use a stable ID for the cache key, like TMDB or IMDb ID, falling back to title.
+        val showId = show.tmdbId ?: show.imdbId ?: show.title
+        val cacheKey = "$showId:$season:$episode"
+
+        val cachedEpisode = cache.getEpisode(cacheKey)
+        if (cachedEpisode != null) {
+            println("  -> Cache HIT for episode: S${season}E${episode}")
+            return cachedEpisode
+        }
+        println("  -> Cache MISS for episode: S${season}E${episode}. Searching providers...")
+
+        val episodeDetailsResults = episodeProviders(show, season, episode)
+        if (episodeDetailsResults.isEmpty()) {
+            return null
+        }
+        val bestEpisodeMatch = episodeDetailsResults.first() // Assuming the first is the best
+        cache.putEpisode(cacheKey, bestEpisodeMatch)
+
+        return bestEpisodeMatch
+    }
 
     private suspend fun searchProviders(title: String, year: String?): List<MediaSearchResult> = coroutineScope {
         metadataProviders.map { provider ->
