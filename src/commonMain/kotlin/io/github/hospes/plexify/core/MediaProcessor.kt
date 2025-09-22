@@ -11,6 +11,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 class MediaProcessor(
     private val metadataProviders: List<MetadataProvider>,
@@ -93,7 +97,7 @@ class MediaProcessor(
             return
         }
 
-        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
+        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
         if (bestMatch.isNullOrEmpty()) {
             println("  -> Could not find a confident match.")
             return
@@ -122,7 +126,7 @@ class MediaProcessor(
             return
         }
 
-        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.year)
+        val bestMatch = consolidateAndSelectBestMatch(searchResults, parsedInfo.showTitle, parsedInfo.year)
         if (bestMatch.isNullOrEmpty()) {
             println("  -> Could not find a confident match for the TV show.")
             return
@@ -157,6 +161,10 @@ class MediaProcessor(
         metadataProviders.map { provider ->
             async {
                 provider.search(title, year)
+                    .onSuccess { results ->
+                        println("      -> Found ${results.size} results from ${provider::class.simpleName}")
+                        results.forEach { println("        -> $it") }
+                    }
                     .onFailure { error -> println("      -> Error(${provider::class.simpleName}): ${error.message}") }
             }
         }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
@@ -177,26 +185,104 @@ class MediaProcessor(
             .onFailure { error -> println("  -> Error: ${error.message}"); error.printStackTrace() }
     }
 
+    /**
+     * Calculates the Levenshtein distance between two strings.
+     * This is a measure of the number of single-character edits (insertions, deletions, or substitutions)
+     * required to change one word into the other.
+     */
+    private fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
+        val lhsLength = lhs.length
+        val rhsLength = rhs.length
+
+        var cost = Array(lhsLength + 1) { it }
+        val newCost = Array(lhsLength + 1) { 0 }
+
+        for (i in 1..rhsLength) {
+            newCost[0] = i
+            for (j in 1..lhsLength) {
+                val match = if (lhs[j - 1] == rhs[i - 1]) 0 else 1
+                val costReplace = cost[j - 1] + match
+                val costInsert = cost[j] + 1
+                val costDelete = newCost[j - 1] + 1
+                newCost[j] = min(min(costInsert, costDelete), costReplace)
+            }
+            cost = newCost.copyOf()
+        }
+        return cost[lhsLength]
+    }
+
     private fun consolidateAndSelectBestMatch(
         results: List<MediaSearchResult>,
+        parsedTitle: String,
         parsedYear: String?
     ): List<MediaSearchResult>? {
         if (results.isEmpty()) return null
+
+        println("  -> Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
 
         val groupedByMedia = results.groupBy {
             val normalizedTitle = it.title.lowercase().replace(Regex("[^a-z0-9]"), "")
             "$normalizedTitle:${it.year}"
         }
 
-        return groupedByMedia.values.maxByOrNull { group ->
-            var score = 0
-            // Higher score for more providers agreeing on this movie
-            score += group.distinctBy { it.provider }.size * 2
-            // Higher score if the year matches the one from the filename
-            if (parsedYear != null && group.any { it.year == parsedYear }) score += 5
-            // Higher score for having an IMDb ID, as it's a great identifier
-            if (group.any { it.imdbId != null }) score += 3
-            score
+        println("  -> ${groupedByMedia.size} unique media candidates found.")
+
+        val scoredGroups = groupedByMedia.values.mapNotNull { group ->
+            val representative = group.first()
+            val groupTitle = representative.title.lowercase()
+            val groupYear = representative.year
+
+            // 1. Title Similarity Score (most important)
+            val distance = levenshtein(parsedTitle.lowercase(), groupTitle)
+            val titleLength = max(parsedTitle.length, groupTitle.length)
+            val similarity = if (titleLength > 0) 1.0 - (distance.toDouble() / titleLength) else 0.0
+            var score = similarity * 10.0 // Score up to 10 points for title match
+
+            // 2. Year Match Bonus
+            if (parsedYear != null && groupYear == parsedYear) {
+                score += 5
+            }
+
+            // 3. Provider Agreement Bonus
+            score += (group.distinctBy { it.provider }.size - 1) * 2 // Bonus points if multiple providers agree
+
+            // 4. ID Bonus (less important)
+            if (group.any { it.imdbId != null }) {
+                score += 1
+            }
+
+            println("    -> Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
+
+            // Discard matches with very low similarity to avoid completely wrong results
+            if (similarity < 0.4) {
+                println("       -> Discarded (title similarity too low)")
+                null
+            } else {
+                group to score
+            }
+        }
+
+        if (scoredGroups.isEmpty()) {
+            println("  -> No candidates passed the similarity threshold.")
+            return null
+        }
+
+        val bestGroup = scoredGroups.maxByOrNull { it.second }
+
+        return bestGroup?.first.also {
+            println("  -> Best match selected: '${it?.first()?.title}' with score ${bestGroup?.second?.format(2)}")
         }
     }
+}
+
+// Helper function to format a Double to a specific number of decimal places in a multiplatform-safe way.
+private fun Double.format(digits: Int): String {
+    val factor = 10.0.pow(digits)
+    if (this.isNaN() || this.isInfinite()) {
+        return this.toString()
+    }
+    val scaled = (this * factor).roundToInt()
+    val intPart = scaled / factor.toInt()
+    val fracPart = scaled.mod(factor.toInt())
+    return "$intPart.${fracPart.toString().padStart(digits, '0')}"
 }

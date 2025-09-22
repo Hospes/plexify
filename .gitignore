@@ -3,6 +3,7 @@
 build/
 
 captures
+templates
 
 /local.properties
 
