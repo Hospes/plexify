@@ -49,7 +49,7 @@ Create the file `local.properties`:
 ```properties
 # Required for TMDB (The Movie Database)
 TMDB_API_KEY="your_tmdb_api_key"
-TMDB_API_READ_ACCESS_TOKEN="your_tmdb_access_token"
+TMDB_API_ACCESS_TOKEN="your_tmdb_access_token"
 
 # Optional, for future use
 # TVDB_API_KEY="your_tvdb_api_key"

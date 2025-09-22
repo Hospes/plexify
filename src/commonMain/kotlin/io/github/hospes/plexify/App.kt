@@ -27,8 +27,10 @@ import kotlinx.io.files.Path
 
 object App : CliktCommand(name = "Plexify") {
 
-    private val tmdbApiKey: String by option(help = "TMDB API key").default(BuildConfig.TMDB_API_KEY)
-    private val tmdbAccessToken: String by option(help = "TMDB Access Token").default(BuildConfig.TMDB_API_READ_ACCESS_TOKEN)
+    private val tmdbApiKey: String by option(envvar = "TMDB_API_KEY", help = "TMDB API key")
+        .default(BuildConfig.TMDB_API_KEY)
+    private val tmdbAccessToken: String by option(envvar = "TMDB_API_ACCESS_TOKEN",help = "TMDB Access Token")
+        .default(BuildConfig.TMDB_API_ACCESS_TOKEN)
     private val tmdbProvider: MetadataProvider? by lazy { tmdbApiKey.ifBlank { null }?.let { TmdbProvider(it, tmdbAccessToken) } }
 
     private val tvdbApiKey: String by option(help = "TVDB API key").default(BuildConfig.TVDB_API_KEY)

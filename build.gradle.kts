@@ -21,10 +21,10 @@ buildConfig {
         },
     )
     buildConfigField<String>(
-        name = "TMDB_API_READ_ACCESS_TOKEN",
+        name = "TMDB_API_ACCESS_TOKEN",
         value = provider {
-            System.getenv("TMDB_API_READ_ACCESS_TOKEN") ?: properties["TMDB_API_READ_ACCESS_TOKEN"]?.toString()
-            ?: localProperties["TMDB_API_READ_ACCESS_TOKEN"]?.toString() ?: ""
+            System.getenv("TMDB_API_ACCESS_TOKEN") ?: properties["TMDB_API_ACCESS_TOKEN"]?.toString()
+            ?: localProperties["TMDB_API_ACCESS_TOKEN"]?.toString() ?: ""
         },
     )
     buildConfigField<String>(
