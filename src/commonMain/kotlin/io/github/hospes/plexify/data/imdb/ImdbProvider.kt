@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.imdb
 
 import io.github.hospes.plexify.data.MetadataProvider
+import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.imdb.dto.ImdbMediaItemDto
 import io.github.hospes.plexify.data.imdb.dto.ImdbSearchResponseDto
@@ -35,7 +36,7 @@ object ImdbProvider : MetadataProvider {
         httpClient.get("search/titles") {
             parameter("query", title)
             parameter("limit", 5)
-        }.body<ImdbSearchResponseDto>().items.mapNotNull { it.toDomainModel() }
+        }.body<ImdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
     }
 
     override suspend fun episode(
@@ -47,27 +48,31 @@ object ImdbProvider : MetadataProvider {
     }
 }
 
-private fun ImdbMediaItemDto.toDomainModel(): MediaSearchResult? {
+private fun ImdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResult? {
+    val confidence = calculateTitleConfidence(queryTitle, this.title)
     return when (this) {
         is ImdbMediaItemDto.Movie -> MediaSearchResult.Movie(
             title = title,
             year = startYear.toString(),
             imdbId = id,
-            provider = "IMDb"
+            provider = "IMDb",
+            matchConfidence = confidence,
         )
 
         is ImdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
             title = title,
             year = startYear.toString(),
             imdbId = id,
-            provider = "IMDb"
+            provider = "IMDb",
+            matchConfidence = confidence,
         )
 
         is ImdbMediaItemDto.TvMiniShow -> MediaSearchResult.TvShow(
             title = title,
             year = startYear.toString(),
             imdbId = id,
-            provider = "IMDb"
+            provider = "IMDb",
+            matchConfidence = confidence,
         )
 
         else -> null

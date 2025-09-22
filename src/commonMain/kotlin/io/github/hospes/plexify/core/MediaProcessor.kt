@@ -166,31 +166,6 @@ class MediaProcessor(
             .onFailure { error -> println("  -> Error: ${error.message}"); error.printStackTrace() }
     }
 
-    /**
-     * Calculates the Levenshtein distance between two strings.
-     * This is a measure of the number of single-character edits (insertions, deletions, or substitutions)
-     * required to change one word into the other.
-     */
-    private fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
-        val lhsLength = lhs.length
-        val rhsLength = rhs.length
-
-        var cost = Array(lhsLength + 1) { it }
-        val newCost = Array(lhsLength + 1) { 0 }
-
-        for (i in 1..rhsLength) {
-            newCost[0] = i
-            for (j in 1..lhsLength) {
-                val match = if (lhs[j - 1] == rhs[i - 1]) 0 else 1
-                val costReplace = cost[j - 1] + match
-                val costInsert = cost[j] + 1
-                val costDelete = newCost[j - 1] + 1
-                newCost[j] = min(min(costInsert, costDelete), costReplace)
-            }
-            cost = newCost.copyOf()
-        }
-        return cost[lhsLength]
-    }
 
     private fun findAndConsolidateBestMatch(
         results: List<MediaSearchResult>,
@@ -224,7 +199,11 @@ class MediaProcessor(
             score += similarity * 10.0
             if (parsedYear != null && representative.year == parsedYear) score += 5.0
             score += (group.distinctBy { it.provider }.size - 1) * 2.0
-            if (group.any { it.imdbId != null }) score += 1.0
+
+            // Bonus based on the average confidence score reported by the providers
+            val avgProviderConfidence = group.map { it.matchConfidence }.average()
+            // We scale it (e.g., divide by 20) to make it a bonus, not the main driver of the score
+            score += avgProviderConfidence / 20.0
 
             println("    -> Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
             group to score
@@ -276,4 +255,30 @@ private fun Double.format(digits: Int): String {
     val intPart = scaled / factor.toInt()
     val fracPart = scaled.mod(factor.toInt())
     return "$intPart.${fracPart.toString().padStart(digits, '0')}"
+}
+
+/**
+ * Calculates the Levenshtein distance between two strings.
+ * This is a measure of the number of single-character edits (insertions, deletions, or substitutions)
+ * required to change one word into the other.
+ */
+internal fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
+    val lhsLength = lhs.length
+    val rhsLength = rhs.length
+
+    var cost = Array(lhsLength + 1) { it }
+    val newCost = Array(lhsLength + 1) { 0 }
+
+    for (i in 1..rhsLength) {
+        newCost[0] = i
+        for (j in 1..lhsLength) {
+            val match = if (lhs[j - 1] == rhs[i - 1]) 0 else 1
+            val costReplace = cost[j - 1] + match
+            val costInsert = cost[j] + 1
+            val costDelete = newCost[j - 1] + 1
+            newCost[j] = min(min(costInsert, costDelete), costReplace)
+        }
+        cost = newCost.copyOf()
+    }
+    return cost[lhsLength]
 }

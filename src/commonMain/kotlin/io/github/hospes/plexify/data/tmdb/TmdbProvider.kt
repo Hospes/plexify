@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.data.MetadataProvider
+import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
@@ -49,7 +50,7 @@ class TmdbProvider(
         httpClient.get("search/multi") {
             parameter("query", title)
             parameter("page", 1)
-        }.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel() }
+        }.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
     }
 
     override suspend fun episode(
@@ -70,14 +71,16 @@ class TmdbProvider(
     }
 }
 
-private fun TmdbMediaItemDto.toDomainModel(): MediaSearchResult? {
+private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResult? {
+    val confidence = calculateTitleConfidence(queryTitle, this.title)
     return when (this) {
         is TmdbMediaItemDto.Movie -> MediaSearchResult.Movie(
             title = title,
             //year = releaseDate?.year?.toString(),
             year = releaseDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
-            provider = "TMDb"
+            provider = "TMDb",
+            matchConfidence = confidence,
         )
 
         is TmdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
@@ -85,7 +88,8 @@ private fun TmdbMediaItemDto.toDomainModel(): MediaSearchResult? {
             //year = firstAirDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
             year = firstAirDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
-            provider = "TMDb"
+            provider = "TMDb",
+            matchConfidence = confidence,
         )
 
         else -> null

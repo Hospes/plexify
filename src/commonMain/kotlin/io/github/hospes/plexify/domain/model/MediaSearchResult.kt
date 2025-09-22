@@ -7,7 +7,7 @@ sealed interface MediaSearchResult {
     val tmdbId: String?
     val tvdbId: String?
     val provider: String
-    val matchConfidence: Int
+    val matchConfidence: Double
 
     data class Movie(
         override val title: String,
@@ -16,7 +16,7 @@ sealed interface MediaSearchResult {
         override val tmdbId: String? = null,
         override val tvdbId: String? = null,
         override val provider: String,
-        override val matchConfidence: Int = 0
+        override val matchConfidence: Double = 0.0,
     ) : MediaSearchResult
 
     data class TvShow(
@@ -26,6 +26,6 @@ sealed interface MediaSearchResult {
         override val tmdbId: String? = null,
         override val tvdbId: String? = null,
         override val provider: String,
-        override val matchConfidence: Int = 0
+        override val matchConfidence: Double = 0.0,
     ) : MediaSearchResult
 }
