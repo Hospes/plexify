@@ -25,7 +25,7 @@ class MediaProcessor(
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
 
-    suspend fun process(source: Path, destination: Path, mode: OperationMode) {
+    suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
         if (!SystemFileSystem.exists(source)) {
             println("Error: Source path does not exist: $source")
             return
@@ -58,14 +58,14 @@ class MediaProcessor(
 
             println("  -> Found ${mediaFiles.size} media file(s) to process.")
             mediaFiles.forEachIndexed { index, mediaFile ->
-                processFile(mediaFile, destination, mode)
+                processFile(mediaFile, destination, mode, isTestMode)
                 if (index < mediaFiles.size - 1) {
                     println("---") // Separator for clarity between files
                 }
             }
         } else if (metadata.isRegularFile) {
             if (source.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS) {
-                processFile(source, destination, mode)
+                processFile(source, destination, mode, isTestMode)
             } else {
                 println("Warning: File is not a supported media type, skipping: $source")
             }
@@ -75,18 +75,18 @@ class MediaProcessor(
     }
 
 
-    private suspend fun processFile(source: Path, destination: Path, mode: OperationMode) {
+    private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
         println("Processing: $source")
         val parsedInfo = MediaFilenameParser.parse(source.name)
 
         when (parsedInfo) {
-            is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo)
-            is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo)
+            is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
+            is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
     }
 
 
-    private suspend fun processMovie(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Movie) {
+    private suspend fun processMovie(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Movie, isTestMode: Boolean) {
         println("  -> Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
         val searchResults = searchProviders(parsedInfo.title, parsedInfo.year)
@@ -106,10 +106,16 @@ class MediaProcessor(
         }
 
         println("  -> Found match: $canonicalMovie")
-        organizeFile(source, destination, canonicalMovie, parsedInfo, mode)
+        organizeFile(source, destination, canonicalMovie, parsedInfo, mode, isTestMode)
     }
 
-    private suspend fun processEpisode(source: Path, destination: Path, mode: OperationMode, parsedInfo: ParsedMediaInfo.Episode) {
+    private suspend fun processEpisode(
+        source: Path,
+        destination: Path,
+        mode: OperationMode,
+        parsedInfo: ParsedMediaInfo.Episode,
+        isTestMode: Boolean,
+    ) {
         println("  -> Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
 
         // Step 1: Find the canonical show, using the cache first.
@@ -128,7 +134,7 @@ class MediaProcessor(
         }
 
         println("  -> Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
-        organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode)
+        organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
     }
 
 
@@ -206,8 +212,15 @@ class MediaProcessor(
         }.awaitAll().mapNotNull { it.getOrNull() }
     }
 
-    private fun organizeFile(source: Path, destination: Path, media: CanonicalMedia, parsedInfo: ParsedMediaInfo, mode: OperationMode) {
-        fileOrganizer.organize(source, destination, media, parsedInfo, mode)
+    private fun organizeFile(
+        source: Path,
+        destination: Path,
+        media: CanonicalMedia,
+        parsedInfo: ParsedMediaInfo,
+        mode: OperationMode,
+        isTestMode: Boolean,
+    ) {
+        fileOrganizer.organize(source, destination, media, parsedInfo, mode, isTestMode)
             .onSuccess { newPath -> println("  -> Successfully organized at: $newPath") }
             .onFailure { error -> println("  -> Error: ${error.message}"); error.printStackTrace() }
     }

@@ -11,15 +11,12 @@ import com.github.ajalt.clikt.parameters.groups.mutuallyExclusiveOptions
 import com.github.ajalt.clikt.parameters.options.*
 import com.github.ajalt.clikt.parameters.types.enum
 import io.github.hospes.plexify.core.DefaultFileOrganizer
-import io.github.hospes.plexify.core.FileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
-import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.OperationMode
-import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import kotlinx.coroutines.runBlocking
@@ -29,7 +26,7 @@ object App : CliktCommand(name = "Plexify") {
 
     private val tmdbApiKey: String by option(envvar = "TMDB_API_KEY", help = "TMDB API key")
         .default(BuildConfig.TMDB_API_KEY)
-    private val tmdbAccessToken: String by option(envvar = "TMDB_API_ACCESS_TOKEN",help = "TMDB Access Token")
+    private val tmdbAccessToken: String by option(envvar = "TMDB_API_ACCESS_TOKEN", help = "TMDB Access Token")
         .default(BuildConfig.TMDB_API_ACCESS_TOKEN)
     private val tmdbProvider: MetadataProvider? by lazy { tmdbApiKey.ifBlank { null }?.let { TmdbProvider(it, tmdbAccessToken) } }
 
@@ -51,6 +48,9 @@ object App : CliktCommand(name = "Plexify") {
     val mode: OperationMode by option("-m", "--mode", help = "Operation mode: MOVE or HARDLINK")
         .enum<OperationMode>(ignoreCase = true)
         .default(OperationMode.HARDLINK)
+
+    val testMode: Boolean by option("--test", help = "Perform a dry run without any actual file operations.")
+        .flag(default = false)
 
     val template: NamingStrategy by mutuallyExclusiveOptions(
         option(
@@ -81,28 +81,20 @@ object App : CliktCommand(name = "Plexify") {
         val processor = MediaProcessor(providers, fileOrganizer, cache)
 
         echo("Starting Plexify...")
+        if (testMode) {
+            echo("!!! RUNNING IN TEST MODE (DRY RUN) - NO FILES WILL BE MODIFIED !!!")
+        }
         echo("Destination: $destination")
         echo("Mode: $mode")
         echo("Template: $template")
         echo("---")
         for (source in sources) {
-            runBlocking { processor.process(source, destination, mode) }
+            runBlocking { processor.process(source, destination, mode, testMode) }
         }
         echo("---")
         echo("Done.")
     }
 }
-
-private val testFileOrganizer = object : FileOrganizer {
-    override fun organize(
-        sourceFile: Path,
-        destinationRoot: Path,
-        media: CanonicalMedia,
-        parsedInfo: ParsedMediaInfo,
-        mode: OperationMode
-    ): Result<Path> = Result.failure(NotImplementedError("Dummy file organizer is not implemented for testing."))
-}
-
 
 fun commonMain(args: Array<String>) = App
     //.subcommands(ExtraCommands, AnotherExtraCommands)

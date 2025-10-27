@@ -12,5 +12,6 @@ interface FileOrganizer {
         media: CanonicalMedia,
         parsedInfo: ParsedMediaInfo,
         mode: OperationMode,
+        isTestMode: Boolean,
     ): Result<Path> // Returns the new path on success
 }

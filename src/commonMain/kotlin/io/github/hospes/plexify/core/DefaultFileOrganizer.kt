@@ -19,6 +19,7 @@ class DefaultFileOrganizer(
         media: CanonicalMedia,
         parsedInfo: ParsedMediaInfo,
         mode: OperationMode,
+        isTestMode: Boolean,
     ): Result<Path> = Result.runCatching {
         val relativePath = when (media) {
             is CanonicalMedia.Movie -> pathFormatter.formatMoviePath(
@@ -41,6 +42,8 @@ class DefaultFileOrganizer(
             is CanonicalMedia.TvShow -> throw IllegalArgumentException("TV show is not suppose to be here.")
         }
         val finalPath = Path(destinationRoot, relativePath.toString())
+
+        if (isTestMode) return@runCatching finalPath
 
         // Ensure the parent directory for the destination file exists
         val parentDir = finalPath.parent
