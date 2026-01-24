@@ -17,6 +17,7 @@ import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
 import io.github.hospes.plexify.domain.model.OperationMode
+import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import io.github.hospes.plexify.logging.LoggingContext
@@ -79,7 +80,9 @@ object App : CliktCommand(name = "Plexify") {
         val pathFormatter = PathFormatter()
         val fileOrganizer = DefaultFileOrganizer(pathFormatter, template)
         val cache = MetadataCache()
-        val processor = MediaProcessor(providers, fileOrganizer, cache)
+
+        val metadataService = MetadataService(providers, template)
+        val processor = MediaProcessor(metadataService, fileOrganizer, cache)
 
         echo("Starting Plexify...")
         if (testMode) {

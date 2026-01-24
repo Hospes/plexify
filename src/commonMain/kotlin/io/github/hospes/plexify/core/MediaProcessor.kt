@@ -1,24 +1,25 @@
 package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.data.MetadataCache
-import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
+import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.logging.LoggingContext
 import io.github.hospes.plexify.logging.indent
 import io.github.hospes.plexify.logging.log
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlin.math.*
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 class MediaProcessor(
-    private val metadataProviders: List<MetadataProvider>,
+    private val metadataService: MetadataService,
     private val fileOrganizer: FileOrganizer,
     private val cache: MetadataCache,
 ) {
@@ -78,9 +79,7 @@ class MediaProcessor(
     context(_: LoggingContext)
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
         log("Processing: $source")
-        val parsedInfo = MediaFilenameParser.parse(source.name)
-
-        when (parsedInfo) {
+        when (val parsedInfo = MediaFilenameParser.parse(source.name)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
             is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
@@ -96,7 +95,7 @@ class MediaProcessor(
     ) = indent {
         log("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
-        val searchResults = searchProviders(parsedInfo.title, parsedInfo.year)
+        val searchResults = metadataService.search(parsedInfo.title, parsedInfo.year)
             .filterIsInstance<MediaSearchResult.Movie>()
 
         if (searchResults.isEmpty()) {
@@ -158,7 +157,7 @@ class MediaProcessor(
         }
         log("Cache MISS for show: '$title'. Searching providers...")
 
-        val searchResults = searchProviders(title, year)
+        val searchResults = metadataService.search(title, year)
             .filterIsInstance<MediaSearchResult.TvShow>()
 
         if (searchResults.isEmpty()) {
@@ -192,7 +191,7 @@ class MediaProcessor(
         }
         log("Cache MISS for episode: S${season}E${episode}. Searching providers...")
 
-        val episodeDetailsResults = episodeProviders(show, season, episode)
+        val episodeDetailsResults = metadataService.getEpisode(show, season, episode)
         if (episodeDetailsResults.isEmpty()) {
             return@indent null
         }
@@ -200,31 +199,6 @@ class MediaProcessor(
         cache.putEpisode(cacheKey, bestEpisodeMatch)
 
         return@indent bestEpisodeMatch
-    }
-
-    context(_: LoggingContext)
-    private suspend fun searchProviders(title: String, year: String?): List<MediaSearchResult> = coroutineScope {
-        indent {
-            metadataProviders.map { provider ->
-                async {
-                    provider.search(title, year)
-                        .onSuccess { results -> log("Found ${results.size} results from ${provider::class.simpleName}") }
-                        .onFailure { error -> log("Error(${provider::class.simpleName}): ${error.message}") }
-                }
-            }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
-        }
-    }
-
-    context(_: LoggingContext)
-    private suspend fun episodeProviders(show: CanonicalMedia.TvShow, season: Int, episode: Int): List<CanonicalMedia.Episode> = coroutineScope {
-        indent {
-            metadataProviders.map { provider ->
-                async {
-                    provider.episode(show, season, episode)
-                        .onFailure { error -> log("Error(${provider::class.simpleName}): ${error.message}") }
-                }
-            }.awaitAll().mapNotNull { it.getOrNull() }
-        }
     }
 
     context(_: LoggingContext)
