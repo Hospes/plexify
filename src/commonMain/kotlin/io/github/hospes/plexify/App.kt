@@ -19,6 +19,7 @@ import io.github.hospes.plexify.data.tmdb.TmdbProvider
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
+import io.github.hospes.plexify.logging.LoggingContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
@@ -89,7 +90,11 @@ object App : CliktCommand(name = "Plexify") {
         echo("Template: $template")
         echo("---")
         for (source in sources) {
-            runBlocking { processor.process(source, destination, mode, testMode) }
+            runBlocking {
+                with(LoggingContext()) {
+                    processor.process(source, destination, mode, testMode)
+                }
+            }
         }
         echo("---")
         echo("Done.")

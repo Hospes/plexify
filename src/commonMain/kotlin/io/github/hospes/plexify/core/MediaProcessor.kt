@@ -7,18 +7,16 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
+import io.github.hospes.plexify.logging.LoggingContext
 import io.github.hospes.plexify.logging.log
+import io.github.hospes.plexify.logging.withIndent
 import io.github.hospes.plexify.logging.withIndentSuspended
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.pow
-import kotlin.math.roundToInt
-import kotlin.math.abs
+import kotlin.math.*
 
 class MediaProcessor(
     private val metadataProviders: List<MetadataProvider>,
@@ -28,6 +26,7 @@ class MediaProcessor(
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
 
+    context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = withIndentSuspended {
         if (!SystemFileSystem.exists(source)) {
             log("Error: Source path does not exist: $source")
@@ -50,16 +49,16 @@ class MediaProcessor(
                     }
                     .toList()
             } catch (e: Exception) {
-                log("  -> Error listing directory contents: ${e.message}")
+                log("Error listing directory contents: ${e.message}")
                 return@withIndentSuspended
             }
 
             if (mediaFiles.isEmpty()) {
-                log("  -> No supported media files found.")
+                log("No supported media files found.")
                 return@withIndentSuspended
             }
 
-            log("  -> Found ${mediaFiles.size} media file(s) to process.")
+            log("Found ${mediaFiles.size} media file(s) to process.")
             mediaFiles.forEachIndexed { index, mediaFile ->
                 processFile(mediaFile, destination, mode, isTestMode)
                 if (index < mediaFiles.size - 1) {
@@ -77,8 +76,8 @@ class MediaProcessor(
         }
     }
 
-
-    private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
+    context(_: LoggingContext)
+    private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = withIndentSuspended {
         log("Processing: $source")
         val parsedInfo = MediaFilenameParser.parse(source.name)
 
@@ -88,7 +87,7 @@ class MediaProcessor(
         }
     }
 
-
+    context(_: LoggingContext)
     private suspend fun processMovie(
         source: Path,
         destination: Path,
@@ -96,13 +95,13 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo.Movie,
         isTestMode: Boolean,
     ) = withIndentSuspended {
-        log("-> Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
+        log("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
         val searchResults = searchProviders(parsedInfo.title, parsedInfo.year)
             .filterIsInstance<MediaSearchResult.Movie>()
 
         if (searchResults.isEmpty()) {
-            log("-> No metadata found.")
+            log("No metadata found.")
             return@withIndentSuspended
         }
 
@@ -110,14 +109,15 @@ class MediaProcessor(
                 as? CanonicalMedia.Movie
 
         if (canonicalMovie == null) {
-            log("-> Could not find a confident match.")
+            log("Could not find a confident match.")
             return@withIndentSuspended
         }
 
-        log("-> Found match: $canonicalMovie")
+        log("Found match: $canonicalMovie")
         organizeFile(source, destination, canonicalMovie, parsedInfo, mode, isTestMode)
     }
 
+    context(_: LoggingContext)
     private suspend fun processEpisode(
         source: Path,
         destination: Path,
@@ -125,46 +125,46 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo.Episode,
         isTestMode: Boolean,
     ) = withIndentSuspended {
-        log("-> Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
+        log("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
 
         // Step 1: Find the canonical show, using the cache first.
         val canonicalShow = findOrFetchShow(parsedInfo.showTitle, parsedInfo.year)
         if (canonicalShow == null) {
-            log("-> Could not find a confident match for the TV show.")
+            log("Could not find a confident match for the TV show.")
             return@withIndentSuspended
         }
-        log("-> Found show: $canonicalShow")
+        log("Found show: $canonicalShow")
 
         // Step 2: Find the episode details, using the cache first.
         val bestEpisodeMatch = findOrFetchEpisode(canonicalShow, parsedInfo.season, parsedInfo.episode)
         if (bestEpisodeMatch == null) {
-            log("-> Episode(S${parsedInfo.season}E${parsedInfo.episode}) not found.")
+            log("Episode(S${parsedInfo.season}E${parsedInfo.episode}) not found.")
             return@withIndentSuspended
         }
 
-        log("-> Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
+        log("Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
     }
-
 
     /**
      * Helper function to get a TV show's metadata, checking the cache before fetching from providers.
      */
-    private suspend fun findOrFetchShow(title: String, year: String?): CanonicalMedia.TvShow? {
+    context(_: LoggingContext)
+    private suspend fun findOrFetchShow(title: String, year: String?): CanonicalMedia.TvShow? = withIndentSuspended {
         val cacheKey = "$title:$year"
         val cachedShow = cache.getShow(cacheKey)
         if (cachedShow != null) {
-            log("  -> Cache HIT for show: '$title'")
-            return cachedShow
+            log("Cache HIT for show: '$title'")
+            return@withIndentSuspended cachedShow
         }
-        log("  -> Cache MISS for show: '$title'. Searching providers...")
+        log("Cache MISS for show: '$title'. Searching providers...")
 
         val searchResults = searchProviders(title, year)
             .filterIsInstance<MediaSearchResult.TvShow>()
 
         if (searchResults.isEmpty()) {
-            log("  -> No metadata found for TV show.")
-            return null
+            log("No metadata found for TV show.")
+            return@withIndentSuspended null
         }
 
         val canonicalShow = findAndConsolidateBestMatch(searchResults, title, year)
@@ -174,53 +174,61 @@ class MediaProcessor(
             cache.putShow(cacheKey, canonicalShow)
         }
 
-        return canonicalShow
+        return@withIndentSuspended canonicalShow
     }
 
     /**
      * Helper function to get an episode's metadata, checking the cache before fetching from providers.
      */
-    private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? {
+    context(_: LoggingContext)
+    private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? = withIndentSuspended {
         // Use a stable ID for the cache key, like TMDB or IMDb ID, falling back to title.
         val showId = show.tmdbId ?: show.imdbId ?: show.title
         val cacheKey = "$showId:$season:$episode"
 
         val cachedEpisode = cache.getEpisode(cacheKey)
         if (cachedEpisode != null) {
-            log("  -> Cache HIT for episode: S${season}E${episode}")
-            return cachedEpisode
+            log("Cache HIT for episode: S${season}E${episode}")
+            return@withIndentSuspended cachedEpisode
         }
-        log("  -> Cache MISS for episode: S${season}E${episode}. Searching providers...")
+        log("Cache MISS for episode: S${season}E${episode}. Searching providers...")
 
         val episodeDetailsResults = episodeProviders(show, season, episode)
         if (episodeDetailsResults.isEmpty()) {
-            return null
+            return@withIndentSuspended null
         }
         val bestEpisodeMatch = episodeDetailsResults.first() // Assuming the first is the best
         cache.putEpisode(cacheKey, bestEpisodeMatch)
 
-        return bestEpisodeMatch
+        return@withIndentSuspended bestEpisodeMatch
     }
 
+    context(_: LoggingContext)
     private suspend fun searchProviders(title: String, year: String?): List<MediaSearchResult> = coroutineScope {
-        metadataProviders.map { provider ->
-            async {
-                provider.search(title, year)
-                    .onSuccess { results -> log("      -> Found ${results.size} results from ${provider::class.simpleName}") }
-                    .onFailure { error -> log("      -> Error(${provider::class.simpleName}): ${error.message}") }
-            }
-        }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
+        withIndentSuspended {
+            metadataProviders.map { provider ->
+                async {
+                    provider.search(title, year)
+                        .onSuccess { results -> log("Found ${results.size} results from ${provider::class.simpleName}") }
+                        .onFailure { error -> log("Error(${provider::class.simpleName}): ${error.message}") }
+                }
+            }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
+        }
     }
 
+    context(_: LoggingContext)
     private suspend fun episodeProviders(show: CanonicalMedia.TvShow, season: Int, episode: Int): List<CanonicalMedia.Episode> = coroutineScope {
-        metadataProviders.map { provider ->
-            async {
-                provider.episode(show, season, episode)
-                    .onFailure { error -> log("      -> Error(${provider::class.simpleName}): ${error.message}") }
-            }
-        }.awaitAll().mapNotNull { it.getOrNull() }
+        withIndentSuspended {
+            metadataProviders.map { provider ->
+                async {
+                    provider.episode(show, season, episode)
+                        .onFailure { error -> log("Error(${provider::class.simpleName}): ${error.message}") }
+                }
+            }.awaitAll().mapNotNull { it.getOrNull() }
+        }
     }
 
+    context(_: LoggingContext)
     private fun organizeFile(
         source: Path,
         destination: Path,
@@ -228,27 +236,31 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo,
         mode: OperationMode,
         isTestMode: Boolean,
-    ) {
+    ) = run { // context functions are not necessarily suspendable, but we can wrap in run if needed, or just call directly.
+        // Here we just use the context.
         fileOrganizer.organize(source, destination, media, parsedInfo, mode, isTestMode)
-            .onSuccess { newPath -> log("  -> Successfully organized at: $newPath") }
-            .onFailure { error -> log("  -> Error: ${error.message}"); error.printStackTrace() }
+            .onSuccess { newPath -> log("Successfully organized at: $newPath") }
+            .onFailure { error ->
+                log("Error: ${error.message}")
+                error.printStackTrace()
+            }
     }
 
-
+    context(_: LoggingContext)
     private fun findAndConsolidateBestMatch(
         results: List<MediaSearchResult>,
         parsedTitle: String,
         parsedYear: String?
-    ): CanonicalMedia? {
-        if (results.isEmpty()) return null
+    ): CanonicalMedia? = withIndent { // Use withIndent for synchronous context
+        if (results.isEmpty()) return@withIndent null
 
-        log("  -> Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
+        log("Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
 
         val groupedByMedia = results.groupBy {
             val normalizedTitle = it.title.lowercase().replace(Regex("[^a-z0-9]"), "")
             "$normalizedTitle:${it.year}"
         }
-        log("  -> ${groupedByMedia.size} unique media candidates found.")
+        log("${groupedByMedia.size} unique media candidates found.")
 
         val scoredGroups = groupedByMedia.values.mapNotNull { group ->
             val representative = group.first()
@@ -264,7 +276,7 @@ class MediaProcessor(
             val similarity = if (titleLength > 0) 1.0 - (distance.toDouble() / titleLength) else 0.0
 
             if (similarity < 0.4) {
-                log("    -> Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
+                log("Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
                 return@mapNotNull null
             }
 
@@ -291,17 +303,17 @@ class MediaProcessor(
             // We scale it (e.g., divide by 20) to make it a bonus, not the main driver of the score
             score += avgProviderConfidence / 20.0
 
-            log("    -> Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
+            log("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
             group to score
         }
 
         val bestGroup = scoredGroups.maxByOrNull { it.second }
         if (bestGroup == null || bestGroup.second < MINIMUM_CONFIDENCE_SCORE) {
-            log("  -> No candidate passed the minimum confidence score of $MINIMUM_CONFIDENCE_SCORE.")
-            return null
+            log("No candidate passed the minimum confidence score of $MINIMUM_CONFIDENCE_SCORE.")
+            return@withIndent null
         }
 
-        log("  -> Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
+        log("Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
 
         val groupItems = bestGroup.first
         val bestItem = groupItems.firstOrNull { it.year == parsedYear } ?: groupItems.first()
@@ -311,7 +323,7 @@ class MediaProcessor(
         val tmdbId = groupItems.firstNotNullOfOrNull { it.tmdbId }
         val tvdbId = groupItems.firstNotNullOfOrNull { it.tvdbId }
 
-        return when (bestItem) {
+        when (bestItem) {
             is MediaSearchResult.Movie -> CanonicalMedia.Movie(
                 title = bestItem.title,
                 year = bestItem.year?.toIntOrNull() ?: 0,
