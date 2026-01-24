@@ -96,6 +96,13 @@ kotlin {
 
     compilerOptions {
         optIn.add("kotlinx.serialization.ExperimentalSerializationApi")
+
+        // Context parameters allow functions and properties to declare dependencies that are implicitly available in the surrounding context.
+        // https://kotlinlang.org/docs/context-parameters.html
+        freeCompilerArgs.add("-Xcontext-parameters")
+
+        // https://kotlinlang.org/docs/whatsnew23.html#explicit-backing-fields
+        freeCompilerArgs.add("-Xexplicit-backing-fields")
     }
 }
 
