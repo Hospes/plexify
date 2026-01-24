@@ -42,12 +42,12 @@ class MediaProcessor(
         if (metadata.isDirectory) {
             log("Processing directory: $source")
             val mediaFiles = try {
-                SystemFileSystem.list(source)
-                    .map { child -> Path(source.toString(), child.name) }
+                SystemFileSystem.walk(source)
                     .filter { fullPath ->
                         val fileMetadata = SystemFileSystem.metadataOrNull(fullPath)
                         fileMetadata?.isRegularFile == true && fullPath.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS
                     }
+                    .toList()
             } catch (e: Exception) {
                 log("  -> Error listing directory contents: ${e.message}")
                 return@withIndentSuspended
