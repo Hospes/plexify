@@ -1,8 +1,8 @@
 [versions]
 kotlin = "2.3.0"
-kotlinx-serialization = "1.10.0-RC"
+kotlinx-serialization = "1.10.0"
 kotlinx-coroutines = "1.10.2"
-ktor = "3.3.3"
+ktor = "3.4.0"
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -14,7 +14,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version = "0.7.1" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version = "0.8.2" }
-kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version = "0.29.0" }
+kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version = "0.31.0" }
 
 ktor-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-auth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor" }
@@ -22,7 +22,7 @@ ktor-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation",
 ktor-serialization-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-curl = { module = "io.ktor:ktor-client-curl", version.ref = "ktor" }
 
-clikt = { module = "com.github.ajalt.clikt:clikt", version = "5.0.3" }
+clikt = { module = "com.github.ajalt.clikt:clikt", version = "5.1.0" }
 
 # Unit Test dependencies
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
