@@ -4,6 +4,7 @@ import kotlinx.cinterop.*
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.windows.*
+import platform.posix.getenv
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun createHardLink(source: Path, destination: Path) {
@@ -41,4 +42,13 @@ actual fun createHardLink(source: Path, destination: Path) {
             throw Exception("Failed to create hardlink from '$source' to '$destination'. Error ($errorCode): $errorMessage")
         }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun getHomeDirectory(): Path {
+    val home = getenv("USERPROFILE")?.toKString()
+    if (home.isNullOrBlank()) {
+         throw IllegalStateException("Could not determine user home directory (USERPROFILE environment variable is missing).")
+    }
+    return Path(home)
 }

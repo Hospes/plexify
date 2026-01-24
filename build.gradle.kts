@@ -73,6 +73,7 @@ kotlin {
             implementation(libs.kotlinx.atomicfu)
             implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kaml)
 
             implementation(libs.ktor.core)
             implementation(libs.ktor.auth)

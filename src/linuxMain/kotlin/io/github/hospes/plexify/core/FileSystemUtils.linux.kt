@@ -5,6 +5,7 @@ import kotlinx.cinterop.toKString
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.posix.errno
+import platform.posix.getenv
 import platform.posix.link
 import platform.posix.strerror
 
@@ -27,4 +28,14 @@ actual fun createHardLink(source: Path, destination: Path) {
         val error = strerror(errno)?.toKString()
         throw Exception("Failed to create hardlink from '$source' to '$destination'. Error: $error")
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun getHomeDirectory(): Path {
+    val home = getenv("HOME")?.toKString()
+    if (home.isNullOrBlank()) {
+        // Fallback or throw? Linux usually has HOME.
+        throw IllegalStateException("Could not determine user home directory (HOME environment variable is missing).")
+    }
+    return Path(home)
 }

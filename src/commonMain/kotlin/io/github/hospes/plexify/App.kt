@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.groups.default
 import com.github.ajalt.clikt.parameters.groups.mutuallyExclusiveOptions
 import com.github.ajalt.clikt.parameters.options.*
 import com.github.ajalt.clikt.parameters.types.enum
+import io.github.hospes.plexify.config.ConfigService
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataCache
@@ -25,6 +26,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
 object App : CliktCommand(name = "Plexify") {
+
+    private val config by lazy { ConfigService.load() }
 
     private val tmdbApiKey: String by option(envvar = "TMDB_API_KEY", help = "TMDB API key")
         .default(BuildConfig.TMDB_API_KEY)
@@ -67,6 +70,13 @@ object App : CliktCommand(name = "Plexify") {
             "-tc", "--template-custom",
             help = "Use a custom naming template. Use a forward slash '/' to separate the folder from the filename."
         ).convert { NamingStrategy.Custom(it) },
+        option(
+            "--preset",
+            help = "Use a named template from configuration file."
+        ).convert {
+            val templateString = config.templates[it] ?: fail("Preset '$it' not found in configuration.")
+            NamingStrategy.Custom(templateString)
+        }
     ).default(NamingStrategy.Jellyfin)
 
 
@@ -76,6 +86,8 @@ object App : CliktCommand(name = "Plexify") {
 
 
     override fun run() {
+        config
+
         val providers = listOfNotNull(tmdbProvider, imdbProvider)
         val pathFormatter = PathFormatter()
         val fileOrganizer = DefaultFileOrganizer(pathFormatter, template)

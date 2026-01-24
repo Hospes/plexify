@@ -17,6 +17,11 @@ import kotlinx.io.files.Path
 expect fun createHardLink(source: Path, destination: Path)
 
 /**
+ * Returns the user's home directory.
+ */
+expect fun getHomeDirectory(): Path
+
+/**
  * Recursively walks the file system from the given [root] path, yielding all regular files found.
  *
  * This extension function traverses directories recursively and returns a [Sequence] of [Path]s
