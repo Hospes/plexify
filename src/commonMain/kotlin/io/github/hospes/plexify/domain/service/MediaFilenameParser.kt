@@ -81,7 +81,9 @@ object MediaFilenameParser {
 
         // *** FIX: Normalize common delimiters to spaces BEFORE parsing. ***
         // This makes word boundary matching (\b) reliable for all subsequent regexes.
-        workingTitle = workingTitle.replace('_', '.')
+        workingTitle = workingTitle.replace('.', ' ')
+            .replace('_', ' ')
+            .replace(Regex("\\s+"), " ") // Collapse multiple spaces
 
         // 2. Extract optional metadata from the full filename first.
         val resolution = resolutionRegex.find(workingTitle)?.value

@@ -55,7 +55,14 @@ class DefaultFileOrganizer(
 
         when (mode) {
             OperationMode.MOVE -> SystemFileSystem.atomicMove(sourceFile, finalPath)
-            OperationMode.HARDLINK -> createHardLink(source = sourceFile, destination = finalPath)
+            OperationMode.HARDLINK -> {
+                try {
+                    createHardLink(source = sourceFile, destination = finalPath)
+                } catch (e: Exception) {
+                    // Check message or errno if possible, otherwise generic warning
+                    throw Exception("Hardlink failed. Ensure source and destination are on the same volume/partition.", e)
+                }
+            }
         }
 
         finalPath
