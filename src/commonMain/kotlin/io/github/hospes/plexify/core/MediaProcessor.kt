@@ -18,6 +18,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.abs
 
 class MediaProcessor(
     private val metadataProviders: List<MetadataProvider>,
@@ -251,11 +252,15 @@ class MediaProcessor(
 
         val scoredGroups = groupedByMedia.values.mapNotNull { group ->
             val representative = group.first()
-            val groupTitle = representative.title.lowercase()
+
+            // Normalize: keep only alphanumeric chars for scoring to handle "Spider-Man" vs "Spiderman"
+            val normalizedParsedTitle = parsedTitle.filter { it.isLetterOrDigit() }.lowercase()
+            val normalizedGroupTitle = representative.title.filter { it.isLetterOrDigit() }.lowercase()
+
             var score = 0.0
 
-            val distance = levenshtein(parsedTitle.lowercase(), groupTitle)
-            val titleLength = max(parsedTitle.length, groupTitle.length)
+            val distance = levenshtein(normalizedParsedTitle, normalizedGroupTitle)
+            val titleLength = max(normalizedParsedTitle.length, normalizedGroupTitle.length)
             val similarity = if (titleLength > 0) 1.0 - (distance.toDouble() / titleLength) else 0.0
 
             if (similarity < 0.4) {
@@ -264,7 +269,21 @@ class MediaProcessor(
             }
 
             score += similarity * 10.0
-            if (parsedYear != null && representative.year == parsedYear) score += 5.0
+
+            // Year scoring: Exact(+10), Adjacent(+5), Mismatch(-10)
+            if (parsedYear != null) {
+                val parsedY = parsedYear.toIntOrNull()
+                val groupY = representative.year?.toIntOrNull()
+                if (parsedY != null && groupY != null) {
+                    val diff = abs(parsedY - groupY)
+                    when (diff) {
+                        0 -> score += 10.0
+                        1 -> score += 5.0
+                        else -> score -= 10.0
+                    }
+                }
+            }
+
             score += (group.distinctBy { it.provider }.size - 1) * 2.0
 
             // Bonus based on the average confidence score reported by the providers
