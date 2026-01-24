@@ -46,12 +46,13 @@ buildConfig {
 }
 
 kotlin {
-    linuxX64("linux") {
-        binaries {
-            executable {
-                entryPoint = "io.github.hospes.plexify.main"
-                baseName = "plexify"
-            }
+    listOf(
+        linuxX64(),
+        linuxArm64()
+    ).forEach {
+        it.binaries.executable {
+            entryPoint = "io.github.hospes.plexify.main"
+            baseName = "plexify"
         }
     }
     mingwX64("windows") {
@@ -80,7 +81,6 @@ kotlin {
         }
 
         commonTest.dependencies {
-            //implementation(kotlin("test"))
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
@@ -89,10 +89,8 @@ kotlin {
             implementation(libs.ktor.curl)
         }
 
-        val windowsMain by getting {
-            dependencies {
-                implementation(libs.ktor.curl)
-            }
+        mingwMain.dependencies {
+            implementation(libs.ktor.curl)
         }
     }
 
