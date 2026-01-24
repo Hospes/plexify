@@ -20,6 +20,14 @@ sealed interface NamingStrategy {
     val seasonFolderTemplate: String
     val episodeFileTemplate: String
 
+    fun requiredMetadataFields(): Set<String> {
+        val allTemplates = listOf(movieFolderTemplate, movieFileTemplate, tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate)
+        val regex = Regex("""\{(\w+)(?::\d+)?}""", RegexOption.IGNORE_CASE)
+        return allTemplates.flatMap { template ->
+            regex.findAll(template).map { it.groupValues[1].lowercase() }
+        }.toSet()
+    }
+
 
     /**
      * Naming strategy compliant with Plex's recommended format.
@@ -54,7 +62,7 @@ sealed interface NamingStrategy {
     object Jellyfin : NamingStrategy {
         override val name: String = "Jellyfin"
         private const val BASE_NAME = "{CleanTitle} ({year})"
-        override val movieFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}] [tmdbid-{tmdbid}]"
+        override val movieFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]"
         override val movieFileTemplate: String = "$BASE_NAME {version}.{ext}"
 
         override val tvShowFolderTemplate: String = movieFolderTemplate
