@@ -21,6 +21,8 @@ import io.ktor.util.*
 class TvDbProvider(
     private val apiKey: String,
 ) : MetadataProvider {
+    override val id: String = "tvdb"
+    override val supportedIds: Set<String> = setOf("tvdbid")
 
     // This http client required for single purpose to get AuthToken for the next api calls to TheTVDB
     private val authHttpClient by lazy {

@@ -6,6 +6,9 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlin.math.max
 
 interface MetadataProvider {
+    val id: String
+    val supportedIds: Set<String>
+
     suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>>
     suspend fun episode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode>
 }

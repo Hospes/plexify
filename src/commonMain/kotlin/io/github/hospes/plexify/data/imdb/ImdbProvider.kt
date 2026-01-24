@@ -19,6 +19,8 @@ import io.ktor.util.*
 
 // [ Base URL: api.imdbapi.dev ] -> https://imdbapi.dev/
 object ImdbProvider : MetadataProvider {
+    override val id: String = "imdb"
+    override val supportedIds: Set<String> = setOf("imdbid")
 
     private val httpClient by lazy {
         HttpClient(createHttpClientEngine()) {

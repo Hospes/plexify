@@ -24,6 +24,8 @@ class TmdbProvider(
     private val apiKey: String,
     private val accessToken: String? = null,
 ) : MetadataProvider {
+    override val id: String = "tmdb"
+    override val supportedIds: Set<String> = setOf("tmdbid")
 
     private val httpClient by lazy {
         HttpClient(createHttpClientEngine()) {
