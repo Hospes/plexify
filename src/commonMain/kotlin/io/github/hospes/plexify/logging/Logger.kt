@@ -1,23 +1,19 @@
 package io.github.hospes.plexify.logging
 
-class LoggingContext(val depth: Int = 0)
+class LoggingContext(val depth: Int = 0) {
+    operator fun plus(increment: Int): LoggingContext = LoggingContext(depth + increment)
+}
 
 private const val INDENT_STRING = "  " // 2 spaces
 
 context(ctx: LoggingContext)
 fun log(message: String) {
     val prefix = INDENT_STRING.repeat(ctx.depth)
-    println("$prefix$message")
+    val arrow = if (ctx.depth > 0) "-> " else ""
+    println("$prefix$arrow$message")
 }
 
 context(ctx: LoggingContext)
-fun <T> withIndent(block: context(LoggingContext) () -> T): T {
-    val newContext = LoggingContext(ctx.depth + 1)
-    return block(newContext)
-}
-
-context(ctx: LoggingContext)
-suspend fun <T> withIndentSuspended(block: suspend context(LoggingContext) () -> T): T {
-    val newContext = LoggingContext(ctx.depth + 1)
-    return block(newContext)
+inline fun <R> indent(block: context(LoggingContext) () -> R): R {
+    return block(ctx + 1)
 }
