@@ -63,7 +63,7 @@ sealed interface NamingStrategy {
         override val name: String = "Jellyfin"
         private const val BASE_NAME = "{CleanTitle} ({year})"
         override val movieFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]"
-        override val movieFileTemplate: String = "$BASE_NAME {version}.{ext}"
+        override val movieFileTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]{version}.{ext}"
 
         override val tvShowFolderTemplate: String = movieFolderTemplate
         override val seasonFolderTemplate: String = "Season {season:2}"
