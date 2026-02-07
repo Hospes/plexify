@@ -15,6 +15,7 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -37,6 +38,11 @@ class TmdbProvider(
                 }
             }
 
+            install(Logging) {
+                logger = Logger.DEFAULT
+                level = LogLevel.ALL
+            }
+
             defaultRequest {
                 url {
                     takeFrom("https://api.themoviedb.org/3/")
@@ -51,6 +57,7 @@ class TmdbProvider(
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.runCatching {
         httpClient.get("search/multi") {
             parameter("query", title)
+            parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
         }.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
     }

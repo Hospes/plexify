@@ -48,7 +48,7 @@ class MovieFilenameParserTest {
         // Test case: Year in parentheses followed by bracketed metadata
         TestCase(
             filename = "King Arthur (2004) - [1080p] [Extended] [Director's Cut].mkv",
-            expected = ParsedMediaInfo.Movie(title = "king arthur", year = "2004", resolution = "1080p")
+            expected = ParsedMediaInfo.Movie(title = "king arthur", year = "2004", resolution = "1080p", edition = "Extended")
         ),
         // Test case: Hyphen in title
         TestCase(
@@ -78,7 +78,7 @@ class MovieFilenameParserTest {
         // Test case: Edition tag 'Extended'
         TestCase(
             filename = "Who.Am.I.1998.Extended.WEB-DL.1080p.mkv",
-            expected = ParsedMediaInfo.Movie(title = "who am i", year = "1998", resolution = "1080p", quality = "WEB-DL")
+            expected = ParsedMediaInfo.Movie(title = "who am i", year = "1998", resolution = "1080p", quality = "WEB-DL", edition = "Extended")
         ),
         // Test case: Hyphenated title (X-Men)
         TestCase(

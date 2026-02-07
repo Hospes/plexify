@@ -6,7 +6,7 @@ object MediaFilenameParser {
 
     // --- Regex for TV Show Episode Extraction ---
     // Captures S01E01, s01e01, S1E1, etc.
-    private val episodeRegex = """[._\-\s]([Ss](\d{1,2})[Ee](\d{1,2}))[._\-\s]""".toRegex()
+    private val episodeRegex = """[._\-\s\[(]([Ss](\d{1,2})[Ee](\d{1,2}))(?:[._\-\s\])]|$)""".toRegex()
 
     // --- Regex for Year Extraction ---
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
@@ -25,7 +25,7 @@ object MediaFilenameParser {
     private val editionTags = listOf("unrated", "extended", "directors.cut", "limited", "theatrical")
     private val editionRegex = "\\b(${editionTags.joinToString("|").replace(".", "\\.")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    private val releaseGroupTags = listOf("LostFilm", "AniLibria")
+    private val releaseGroupTags = listOf("LostFilm")
     private val releaseGroupRegex = "\\b(${releaseGroupTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
 
@@ -75,8 +75,7 @@ object MediaFilenameParser {
     }
 
     private fun parseAsMovie(filename: String): ParsedMediaInfo {
-        // 1. Remove the file extension. This is always noise.
-        var workingTitle = filename.substringBeforeLast('.')
+        var workingTitle = filename
         var year: String? = null
 
         // *** FIX: Normalize common delimiters to spaces BEFORE parsing. ***

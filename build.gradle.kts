@@ -78,6 +78,7 @@ kotlin {
             implementation(libs.ktor.auth)
             implementation(libs.ktor.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            implementation(libs.ktor.logging)
         }
 
         commonTest.dependencies {
