@@ -79,7 +79,8 @@ class MediaProcessor(
     context(_: LoggingContext)
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
         log("Processing: $source")
-        when (val parsedInfo = MediaFilenameParser.parse(source.name)) {
+        val parentDirName = source.parent?.name
+        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
             is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
@@ -123,7 +124,11 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo.Episode,
         isTestMode: Boolean,
     ) = indent {
-        log("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
+        val season = parsedInfo.season ?: run {
+            log("Warning: No season number found in filename, defaulting to Season 1.")
+            1
+        }
+        log("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: $season, Episode: ${parsedInfo.episode}")
 
         // Step 1: Find the canonical show, using the cache first.
         val canonicalShow = findOrFetchShow(parsedInfo.showTitle, parsedInfo.year)
@@ -133,10 +138,10 @@ class MediaProcessor(
         }
         log("Found show: $canonicalShow")
 
-        // Step 2: Find the episode details, using the cache first.
-        val bestEpisodeMatch = findOrFetchEpisode(canonicalShow, parsedInfo.season, parsedInfo.episode)
+        // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
+        val bestEpisodeMatch = findOrFetchEpisode(canonicalShow, season, parsedInfo.episode)
         if (bestEpisodeMatch == null) {
-            log("Episode(S${parsedInfo.season}E${parsedInfo.episode}) not found.")
+            log("Episode(S${season}E${parsedInfo.episode}) not found.")
             return@indent
         }
 
@@ -176,29 +181,28 @@ class MediaProcessor(
     }
 
     /**
-     * Helper function to get an episode's metadata, checking the cache before fetching from providers.
+     * Fetches the whole season (one API call) and returns the requested episode.
+     * Subsequent episodes from the same season are served from cache.
      */
     context(_: LoggingContext)
     private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? = indent {
-        // Use a stable ID for the cache key, like TMDB or IMDb ID, falling back to title.
         val showId = show.tmdbId ?: show.imdbId ?: show.title
-        val cacheKey = "$showId:$season:$episode"
+        val cacheKey = "$showId:$season"
 
-        val cachedEpisode = cache.getEpisode(cacheKey)
-        if (cachedEpisode != null) {
-            log("Cache HIT for episode: S${season}E${episode}")
-            return@indent cachedEpisode
+        val cachedSeason = cache.getSeason(cacheKey) ?: run {
+            log("Cache MISS for season: S${season}. Fetching from providers...")
+            val seasonData = metadataService.getSeason(show, season) ?: return@indent null
+            cache.putSeason(cacheKey, seasonData)
+            seasonData
         }
-        log("Cache MISS for episode: S${season}E${episode}. Searching providers...")
 
-        val episodeDetailsResults = metadataService.getEpisode(show, season, episode)
-        if (episodeDetailsResults.isEmpty()) {
-            return@indent null
+        if (cachedSeason.episodes.isNotEmpty()) {
+            log("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
         }
-        val bestEpisodeMatch = episodeDetailsResults.first() // Assuming the first is the best
-        cache.putEpisode(cacheKey, bestEpisodeMatch)
 
-        return@indent bestEpisodeMatch
+        val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
+        if (match == null) log("Episode E${episode} not found in S${season} data.")
+        match
     }
 
     context(_: LoggingContext)

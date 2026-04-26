@@ -10,7 +10,12 @@ interface MetadataProvider {
     val supportedIds: Set<String>
 
     suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>>
-    suspend fun episode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode>
+
+    suspend fun episode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode> =
+        Result.failure(UnsupportedOperationException("episode() not supported by provider '$id'"))
+
+    suspend fun season(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> =
+        Result.failure(UnsupportedOperationException("season() not supported by provider '$id'"))
 }
 
 internal fun calculateTitleConfidence(query: String, resultTitle: String): Double {

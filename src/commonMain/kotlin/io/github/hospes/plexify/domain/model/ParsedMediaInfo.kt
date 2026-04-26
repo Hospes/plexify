@@ -19,7 +19,7 @@ sealed interface ParsedMediaInfo {
 
     data class Episode(
         val showTitle: String,
-        val season: Int,
+        val season: Int?,
         val episode: Int,
         val year: String?,
         override val resolution: String? = null,

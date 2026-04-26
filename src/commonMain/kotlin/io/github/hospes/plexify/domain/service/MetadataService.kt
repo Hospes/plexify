@@ -36,20 +36,24 @@ class MetadataService(
     }
 
     context(_: LoggingContext)
-    suspend fun getEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): List<CanonicalMedia.Episode> = coroutineScope {
-        indent {
+    suspend fun getSeason(show: CanonicalMedia.TvShow, season: Int): CanonicalMedia.Season? {
+        return indent {
             val activeProviders = resolveActiveProviders()
             if (activeProviders.isEmpty()) {
                 log("No active metadata providers available.")
-                return@coroutineScope emptyList()
+                return@indent null
             }
 
-            activeProviders.map { provider ->
-                async {
-                    provider.episode(show, season, episode)
-                        .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
+            for (provider in activeProviders) {
+                val result = provider.season(show, season)
+                    .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
+                val seasonData = result.getOrNull()
+                if (seasonData != null) {
+                    log("Season $season fetched from ${provider.id}")
+                    return@indent seasonData
                 }
-            }.awaitAll().mapNotNull { it.getOrNull() }
+            }
+            null
         }
     }
 

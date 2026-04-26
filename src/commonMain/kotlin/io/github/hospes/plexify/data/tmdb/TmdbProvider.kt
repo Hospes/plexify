@@ -7,6 +7,7 @@ import io.github.hospes.plexify.data.nonstrict
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.ktor.client.*
@@ -76,6 +77,28 @@ class TmdbProvider(
             season = dto.seasonNumber,
             episode = dto.episodeNumber,
             title = dto.title,
+        )
+    }
+
+    override suspend fun season(
+        show: CanonicalMedia.TvShow,
+        season: Int,
+    ): Result<CanonicalMedia.Season> = Result.runCatching {
+        requireNotNull(show.tmdbId) { "TMDb ID is required to fetch season details." }
+        val dto = httpClient.get("tv/${show.tmdbId}/season/$season")
+            .body<TmdbSeasonDto>()
+
+        CanonicalMedia.Season(
+            show = show,
+            seasonNumber = dto.seasonNumber,
+            episodes = dto.episodes.map { ep ->
+                CanonicalMedia.Episode(
+                    show = show,
+                    season = ep.seasonNumber,
+                    episode = ep.episodeNumber,
+                    title = ep.name,
+                )
+            },
         )
     }
 }

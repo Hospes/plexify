@@ -10,42 +10,16 @@ import kotlinx.coroutines.sync.withLock
  */
 class MetadataCache {
     private val showCache = mutableMapOf<String, CanonicalMedia.TvShow>()
-    private val episodeCache = mutableMapOf<String, CanonicalMedia.Episode>()
+    private val seasonCache = mutableMapOf<String, CanonicalMedia.Season>()
 
     private val showMutex = Mutex()
-    private val episodeMutex = Mutex()
+    private val seasonMutex = Mutex()
 
-    /**
-     * Retrieves a cached TV show.
-     * @param key A unique identifier for the show, typically "title:year".
-     */
-    suspend fun getShow(key: String): CanonicalMedia.TvShow? = showMutex.withLock {
-        showCache[key]
-    }
+    suspend fun getShow(key: String): CanonicalMedia.TvShow? = showMutex.withLock { showCache[key] }
 
-    /**
-     * Caches a TV show.
-     * @param key A unique identifier for the show.
-     * @param show The show object to cache.
-     */
-    suspend fun putShow(key: String, show: CanonicalMedia.TvShow) = showMutex.withLock {
-        showCache[key] = show
-    }
+    suspend fun putShow(key: String, show: CanonicalMedia.TvShow) = showMutex.withLock { showCache[key] = show }
 
-    /**
-     * Retrieves a cached episode.
-     * @param key A unique identifier for the episode, typically "showId:season:episode".
-     */
-    suspend fun getEpisode(key: String): CanonicalMedia.Episode? = episodeMutex.withLock {
-        episodeCache[key]
-    }
+    suspend fun getSeason(key: String): CanonicalMedia.Season? = seasonMutex.withLock { seasonCache[key] }
 
-    /**
-     * Caches an episode.
-     * @param key A unique identifier for the episode.
-     * @param episode The episode object to cache.
-     */
-    suspend fun putEpisode(key: String, episode: CanonicalMedia.Episode) = episodeMutex.withLock {
-        episodeCache[key] = episode
-    }
+    suspend fun putSeason(key: String, season: CanonicalMedia.Season) = seasonMutex.withLock { seasonCache[key] = season }
 }

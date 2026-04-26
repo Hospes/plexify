@@ -25,4 +25,10 @@ sealed interface CanonicalMedia {
         val tmdbId: String? = null,
         val tvdbId: String? = null,
     ) : CanonicalMedia
+
+    data class Season(
+        val show: TvShow,
+        val seasonNumber: Int,
+        val episodes: List<Episode>,
+    )
 }

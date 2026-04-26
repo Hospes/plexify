@@ -5,8 +5,17 @@ import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 object MediaFilenameParser {
 
     // --- Regex for TV Show Episode Extraction ---
-    // Captures S01E01, s01e01, S1E1, etc.
+    // Tier 1: Captures S01E01, s01e01, S1E1, etc.
     private val episodeRegex = """[._\-\s\[(]([Ss](\d{1,2})[Ee](\d{1,2}))(?:[._\-\s\])]|$)""".toRegex()
+
+    // Tier 2: "Season N" keyword in the (normalized) filename, e.g. "Season 2"
+    private val seasonKeywordRegex = """(?:^|\s)Season\s+(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
+
+    // Tiers 2-4: [NN] bracket episode — 1-3 digits only (avoids matching [1080p] which contains letters)
+    private val bracketEpisodeRegex = """[\[(](\d{1,3})[\])]""".toRegex()
+
+    // Tier 3: Season number from parent directory name ("Season 2", "S02", "S2")
+    private val seasonFromDirRegex = """(?:Season|S)\s*(\d{1,2})(?:\b|${'$'})""".toRegex(RegexOption.IGNORE_CASE)
 
     // --- Regex for Year Extraction ---
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
@@ -63,31 +72,74 @@ object MediaFilenameParser {
     private val cleanupRegex = "\\s+".toRegex()
 
 
-    fun parse(filename: String): ParsedMediaInfo {
+    fun parse(filename: String, parentDirName: String? = null): ParsedMediaInfo {
         val workingFilename = filename.substringBeforeLast('.')
+        // Normalize once; all tier regexes run against this
+        val normalized = workingFilename.replace('.', ' ').replace('_', ' ')
 
-        // --- TV SHOW PARSING LOGIC ---
+        // --- Tier 1: Standard SxxExx ---
         val episodeMatch = episodeRegex.find(workingFilename)
         if (episodeMatch != null) {
             val showTitle = workingFilename.substringBefore(episodeMatch.value)
-                .replace(delimiterRegex, " ")
-                .replace(cleanupRegex, " ").trim()
-            val season = episodeMatch.groupValues[2].toInt()
-            val episode = episodeMatch.groupValues[3].toInt()
-            val year = yearRegex.find(workingFilename)?.value
-            // Normalize for multi-word pattern matching (edition/HDR with space separators)
-            val normalizedFilename = workingFilename.replace('.', ' ').replace('_', ' ')
+                .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+            return ParsedMediaInfo.Episode(
+                showTitle = showTitle.lowercase(),
+                season = episodeMatch.groupValues[2].toInt(),
+                episode = episodeMatch.groupValues[3].toInt(),
+                year = yearRegex.find(workingFilename)?.value,
+                resolution = resolutionRegex.find(workingFilename)?.value,
+                quality = qualityRegex.find(workingFilename)?.value,
+                hdr = extractHdr(normalized),
+                releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
+                edition = extractEdition(normalized),
+            )
+        }
+
+        // --- Tier 2: "Season N" keyword in filename + [NN] bracket episode ---
+        val seasonKeywordMatch = seasonKeywordRegex.find(normalized)
+        if (seasonKeywordMatch != null) {
+            val season = seasonKeywordMatch.groupValues[1].toInt()
+            val afterSeason = normalized.substring(seasonKeywordMatch.range.last + 1)
+            val bracketEpMatch = bracketEpisodeRegex.find(afterSeason)
+            if (bracketEpMatch != null) {
+                val showTitle = normalized.substring(0, seasonKeywordMatch.range.first)
+                    .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+                return ParsedMediaInfo.Episode(
+                    showTitle = showTitle.lowercase(),
+                    season = season,
+                    episode = bracketEpMatch.groupValues[1].toInt(),
+                    year = yearRegex.find(workingFilename)?.value,
+                    resolution = resolutionRegex.find(workingFilename)?.value,
+                    quality = qualityRegex.find(workingFilename)?.value,
+                    hdr = extractHdr(normalized),
+                    releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
+                    edition = extractEdition(normalized),
+                )
+            }
+        }
+
+        // --- Tiers 3 & 4: bracket episode [NN] ---
+        val bracketEpMatch = bracketEpisodeRegex.find(normalized)
+        if (bracketEpMatch != null) {
+            val episode = bracketEpMatch.groupValues[1].toInt()
+            val rawTitle = normalized.substring(0, bracketEpMatch.range.first)
+            val showTitle = rawTitle.replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+
+            // Tier 3: season from parent directory name
+            val seasonFromDir = parentDirName
+                ?.let { seasonFromDirRegex.find(it) }
+                ?.groupValues?.get(1)?.toIntOrNull()
 
             return ParsedMediaInfo.Episode(
                 showTitle = showTitle.lowercase(),
-                season = season,
+                season = seasonFromDir,   // null when no parent-dir season found (Tier 4)
                 episode = episode,
-                year = year,
+                year = yearRegex.find(workingFilename)?.value,
                 resolution = resolutionRegex.find(workingFilename)?.value,
                 quality = qualityRegex.find(workingFilename)?.value,
-                hdr = extractHdr(normalizedFilename),
+                hdr = extractHdr(normalized),
                 releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
-                edition = extractEdition(normalizedFilename),
+                edition = extractEdition(normalized),
             )
         }
 
