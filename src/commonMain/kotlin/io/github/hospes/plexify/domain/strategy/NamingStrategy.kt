@@ -36,11 +36,13 @@ sealed interface NamingStrategy {
         override val name: String = "Plex"
         private const val BASE_NAME = "{CleanTitle} ({year})"
         override val movieFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}]"
-        override val movieFileTemplate: String = "$BASE_NAME {version}.{ext}"
+        // No space before {version}: version string includes its own " - " prefix when non-empty, and is ""
+        // when empty — a leading space in the template would leave "Title .ext" when version is absent.
+        override val movieFileTemplate: String = "$BASE_NAME{version}.{ext}"
 
-        override val tvShowFolderTemplate: String = movieFolderTemplate
+        override val tvShowFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}]"
         override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle} {version}.{ext}"
+        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
 
         override fun toString(): String {
             return """
@@ -57,7 +59,8 @@ sealed interface NamingStrategy {
 
     /**
      * Naming strategy compliant with Jellyfin's recommended format.
-     * Includes both IMDb and TMDb IDs for maximum compatibility.
+     * Uses TMDb IDs (our primary metadata provider). Show folders also include TVDb IDs
+     * as conditional tags so that either provider can be used for matching.
      */
     object Jellyfin : NamingStrategy {
         override val name: String = "Jellyfin"
@@ -65,9 +68,11 @@ sealed interface NamingStrategy {
         override val movieFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]"
         override val movieFileTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]{version}.{ext}"
 
-        override val tvShowFolderTemplate: String = movieFolderTemplate
+        // TV show folders include both TMDb and TVDb ID tags as conditional blocks.
+        // Whichever IDs are resolved will appear; absent ones are stripped automatically.
+        override val tvShowFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}][tvdbid-{tvdbid}]"
         override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle} {version}.{ext}"
+        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
 
         override fun toString(): String {
             return """
@@ -94,7 +99,7 @@ sealed interface NamingStrategy {
 
         override val tvShowFolderTemplate: String = movieFolderTemplate
         override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "{CleanTitle} ({year}) - S{season:2}E{episode:2} - {episodeTitle} {version}.{ext}"
+        override val episodeFileTemplate: String = "{CleanTitle} ({year}) - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
 
         override fun toString(): String {
             return """
