@@ -3,6 +3,7 @@ package io.github.hospes.plexify.domain.model
 sealed interface ParsedMediaInfo {
     val resolution: String?
     val quality: String?
+    val hdr: String?
     val releaseGroup: String?
     val edition: String?
 
@@ -11,6 +12,7 @@ sealed interface ParsedMediaInfo {
         val year: String?,
         override val resolution: String? = null,
         override val quality: String? = null,
+        override val hdr: String? = null,
         override val releaseGroup: String? = null,
         override val edition: String? = null,
     ) : ParsedMediaInfo
@@ -19,9 +21,10 @@ sealed interface ParsedMediaInfo {
         val showTitle: String,
         val season: Int,
         val episode: Int,
-        val year: String?, // Year can sometimes be in the filename
+        val year: String?,
         override val resolution: String? = null,
         override val quality: String? = null,
+        override val hdr: String? = null,
         override val releaseGroup: String? = null,
         override val edition: String? = null,
     ) : ParsedMediaInfo

@@ -38,10 +38,10 @@ class TmdbProvider(
                 }
             }
 
-            install(Logging) {
-                logger = Logger.DEFAULT
-                level = LogLevel.ALL
-            }
+//            install(Logging) {
+//                logger = Logger.DEFAULT
+//                level = LogLevel.ALL
+//            }
 
             defaultRequest {
                 url {

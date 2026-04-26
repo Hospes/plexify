@@ -58,12 +58,13 @@ class PathFormatter {
     // 1. Create a map of available placeholders and their values.
     private fun buildPlaceholderMap(media: CanonicalMedia, parsedInfo: ParsedMediaInfo, sourceFile: Path): Map<String, String?> {
         // 1a. Handle special composite placeholders like {version}
-        val versionTags = listOfNotNull(parsedInfo.resolution, parsedInfo.edition)
+        val versionTags = listOfNotNull(parsedInfo.resolution, parsedInfo.quality, parsedInfo.hdr, parsedInfo.edition)
         val versionString = if (versionTags.isNotEmpty()) " - ${versionTags.joinToString(" ") { "[$it]" }}" else ""
 
         val commonPlaceholders = mutableMapOf(
             "resolution" to parsedInfo.resolution,
             "quality" to parsedInfo.quality,
+            "hdr" to parsedInfo.hdr,
             "releasegroup" to parsedInfo.releaseGroup,
             "edition" to parsedInfo.edition,
             "version" to versionString,

@@ -22,8 +22,23 @@ object MediaFilenameParser {
     )
     private val qualityRegex = "\\b(${qualityTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    private val editionTags = listOf("unrated", "extended", "directors.cut", "limited", "theatrical")
-    private val editionRegex = "\\b(${editionTags.joinToString("|").replace(".", "\\.")})\\b".toRegex(RegexOption.IGNORE_CASE)
+    // Order matters: more specific variants must come before shorter ones (HDR10+ before HDR10 before HDR).
+    private val hdrCanonical = listOf("HDR10+", "HDR10", "HDR", "DV", "DoVi", "HLG", "SDR")
+    private val hdrLookup: Map<String, String> = hdrCanonical.associateBy { it.lowercase() }
+    // Trailing \b can't follow '+' (non-word char), so use (?!\w) lookahead instead.
+    private val hdrRegex = "\\b(${hdrCanonical.joinToString("|") { it.replace("+", "\\+") }})(?!\\w)".toRegex(RegexOption.IGNORE_CASE)
+
+    // Multi-word patterns use spaces as separators because the parser normalizes dots/underscores to
+    // spaces before running regexes, so dot-based separators would never match.
+    private val editionPatterns = listOf(
+        "unrated", "extended", "limited", "theatrical", "remastered", "redux", "imax",
+        "directors cut",
+        "director['’]s cut",
+        "special edition",
+        "anniversary edition",
+        "final cut",
+    )
+    private val editionRegex = "\\b(${editionPatterns.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
     private val releaseGroupTags = listOf("LostFilm")
     private val releaseGroupRegex = "\\b(${releaseGroupTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
@@ -34,7 +49,9 @@ object MediaFilenameParser {
         // Codecs & Audio
         "x264", "h264", "x265", "hevc", "xvid", "aac", "ac3", "dts", "dts-hd", "atmos",
         // Other tags that reliably appear after the title
-        "repack", "proper", "internal", "remux", "uhd", "bdremux"
+        "repack", "proper", "internal", "remux", "uhd", "bdremux",
+        // HDR — these reliably appear after the title; DV/HLG omitted (too short, higher false-positive risk)
+        "hdr10", "hdr", "dovi", "sdr",
     )
 
     // Combine all tags that signal the end of the title into a single regex.
@@ -58,6 +75,8 @@ object MediaFilenameParser {
             val season = episodeMatch.groupValues[2].toInt()
             val episode = episodeMatch.groupValues[3].toInt()
             val year = yearRegex.find(workingFilename)?.value
+            // Normalize for multi-word pattern matching (edition/HDR with space separators)
+            val normalizedFilename = workingFilename.replace('.', ' ').replace('_', ' ')
 
             return ParsedMediaInfo.Episode(
                 showTitle = showTitle.lowercase(),
@@ -66,7 +85,9 @@ object MediaFilenameParser {
                 year = year,
                 resolution = resolutionRegex.find(workingFilename)?.value,
                 quality = qualityRegex.find(workingFilename)?.value,
-                releaseGroup = releaseGroupRegex.find(workingFilename)?.value
+                hdr = extractHdr(normalizedFilename),
+                releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
+                edition = extractEdition(normalizedFilename),
             )
         }
 
@@ -87,11 +108,9 @@ object MediaFilenameParser {
         // 2. Extract optional metadata from the full filename first.
         val resolution = resolutionRegex.find(workingTitle)?.value
         val quality = qualityRegex.find(workingTitle)?.value
+        val hdr = extractHdr(workingTitle)
         val releaseGroup = releaseGroupRegex.find(workingTitle)?.value
-        val edition = editionRegex.find(workingTitle)?.value?.replace(".", " ")?.let {
-            // Capitalize words for better presentation, e.g., "directors cut" -> "Directors Cut"
-            it.split(" ").joinToString(" ") { word -> word.replaceFirstChar { char -> char.uppercase() } }
-        }
+        val edition = extractEdition(workingTitle)
 
         // 3. Find the year using a prioritized approach.
         val yearInBracketsMatch = yearInBracketsRegex.find(workingTitle)
@@ -130,8 +149,21 @@ object MediaFilenameParser {
             year = year,
             resolution = resolution,
             quality = quality,
+            hdr = hdr,
             releaseGroup = releaseGroup,
             edition = edition,
         )
     }
+
+    private fun extractHdr(normalizedText: String): String? =
+        hdrRegex.find(normalizedText)?.value?.let { hdrLookup[it.lowercase()] }
+
+    private fun extractEdition(normalizedText: String): String? =
+        editionRegex.find(normalizedText)?.value?.let { raw ->
+            raw.replace(Regex("['']"), "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .split(" ")
+                .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+        }
 }

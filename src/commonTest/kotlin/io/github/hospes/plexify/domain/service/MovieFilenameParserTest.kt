@@ -65,14 +65,15 @@ class MovieFilenameParserTest {
             filename = "Superman.1080p.rus.LostFilm.TV.mkv",
             expected = ParsedMediaInfo.Movie(title = "superman", year = null, resolution = "1080p", releaseGroup = "LostFilm")
         ),
-        // Test case: Complex title with a colon, year in parentheses
+        // Test case: Complex title with a colon, year in parentheses, SDR label
         TestCase(
             filename = "The Lord of the Rings. The War of the Rohirrim (2024) WEB-DL.2160p.SDR.mkv",
             expected = ParsedMediaInfo.Movie(
                 title = "the lord of the rings the war of the rohirrim",
                 year = "2024",
                 resolution = "2160p",
-                quality = "WEB-DL"
+                quality = "WEB-DL",
+                hdr = "SDR",
             )
         ),
         // Test case: Edition tag 'Extended'
@@ -95,10 +96,38 @@ class MovieFilenameParserTest {
             filename = "Ryzhaya.Sonya.2025.WEB-DLRip.AVC.mkv",
             expected = ParsedMediaInfo.Movie(title = "ryzhaya sonya", year = "2025", quality = "WEB-DLRip")
         ),
-        // Test case: Robustness against unicode garbage characters
+        // Test case: Robustness against unicode garbage characters, SDR label
         TestCase(
             filename = "The.Ritual.2025.2160p.UHD.AMZN.WEB-DL.SDR.HEVC-□'$'\\235''е□'$'\\207''ипо□'$'\\200''□'$'\\203''к.mkv",
-            expected = ParsedMediaInfo.Movie(title = "the ritual", year = "2025", resolution = "2160p", quality = "WEB-DL")
+            expected = ParsedMediaInfo.Movie(title = "the ritual", year = "2025", resolution = "2160p", quality = "WEB-DL", hdr = "SDR")
+        ),
+
+        // --- HDR test cases ---
+        TestCase(
+            filename = "Dune.Part.Two.2024.2160p.UHD.BluRay.HDR10.x265-GROUP.mkv",
+            expected = ParsedMediaInfo.Movie(title = "dune part two", year = "2024", resolution = "2160p", quality = "BluRay", hdr = "HDR10")
+        ),
+        TestCase(
+            filename = "Avatar.The.Way.of.Water.2022.2160p.HDR10+.WEB-DL.mkv",
+            expected = ParsedMediaInfo.Movie(title = "avatar the way of water", year = "2022", resolution = "2160p", quality = "WEB-DL", hdr = "HDR10+")
+        ),
+        TestCase(
+            filename = "Interstellar.2014.2160p.UHD.BluRay.DV.mkv",
+            expected = ParsedMediaInfo.Movie(title = "interstellar", year = "2014", resolution = "2160p", quality = "BluRay", hdr = "DV")
+        ),
+
+        // --- Edition test cases ---
+        TestCase(
+            filename = "Blade.Runner.1982.Directors.Cut.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", resolution = "1080p", quality = "BluRay", edition = "Directors Cut")
+        ),
+        TestCase(
+            filename = "The.Dark.Knight.2008.IMAX.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "the dark knight", year = "2008", resolution = "1080p", quality = "BluRay", edition = "IMAX")
+        ),
+        TestCase(
+            filename = "Aliens.1986.Remastered.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "aliens", year = "1986", resolution = "1080p", quality = "BluRay", edition = "Remastered")
         ),
     )
 
