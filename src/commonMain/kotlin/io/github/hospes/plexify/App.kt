@@ -54,6 +54,9 @@ object App : CliktCommand(name = "Plexify") {
     val testMode: Boolean by option("--test", help = "Perform a dry run without any actual file operations.")
         .flag(default = false)
 
+    val verbose: Boolean by option("--verbose", help = "Show detailed pipeline logs (parsing, cache, providers, match scoring).")
+        .flag(default = false)
+
     val template: NamingStrategy by mutuallyExclusiveOptions(
         option(
             "-tp", "--template-plex",
@@ -84,23 +87,24 @@ object App : CliktCommand(name = "Plexify") {
         val metadataService = MetadataService(providers, template)
         val processor = MediaProcessor(metadataService, fileOrganizer, cache)
 
-        echo("Starting Plexify...")
+        echo("Plexify ${BuildConfig.VERSION} | mode: $mode | template: ${template.name} | destination: $destination")
         if (testMode) {
             echo("!!! RUNNING IN TEST MODE (DRY RUN) - NO FILES WILL BE MODIFIED !!!")
         }
-        echo("Destination: $destination")
-        echo("Mode: $mode")
-        echo("Template: $template")
+        if (verbose) {
+            echo("Template: $template")
+        }
         echo("---")
         for (source in sources) {
             runBlocking {
-                with(LoggingContext()) {
+                with(LoggingContext(verbose = verbose)) {
                     processor.process(source, destination, mode, testMode)
                 }
             }
         }
         echo("---")
-        echo("Done.")
+        val stats = processor.stats
+        echo("Done: ${stats.organized} organized, ${stats.skipped} skipped, ${stats.failed} failed.")
     }
 }
 

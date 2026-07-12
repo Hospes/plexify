@@ -5,6 +5,7 @@ import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import io.github.hospes.plexify.logging.LoggingContext
+import io.github.hospes.plexify.logging.debug
 import io.github.hospes.plexify.logging.indent
 import io.github.hospes.plexify.logging.log
 import kotlinx.coroutines.async
@@ -28,7 +29,7 @@ class MetadataService(
             activeProviders.map { provider ->
                 async {
                     provider.search(title, year)
-                        .onSuccess { results -> log("Found ${results.size} results from ${provider.id}") }
+                        .onSuccess { results -> debug("Found ${results.size} results from ${provider.id}") }
                         .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
                 }
             }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
@@ -49,7 +50,7 @@ class MetadataService(
                     .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
                 val seasonData = result.getOrNull()
                 if (seasonData != null) {
-                    log("Season $season fetched from ${provider.id}")
+                    debug("Season $season fetched from ${provider.id}")
                     return@indent seasonData
                 }
             }

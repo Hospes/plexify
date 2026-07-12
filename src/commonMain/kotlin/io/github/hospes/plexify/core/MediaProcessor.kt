@@ -8,8 +8,10 @@ import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.logging.LoggingContext
+import io.github.hospes.plexify.logging.debug
 import io.github.hospes.plexify.logging.indent
 import io.github.hospes.plexify.logging.log
+import io.github.hospes.plexify.logging.status
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlin.math.abs
@@ -26,6 +28,14 @@ class MediaProcessor(
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
 
+    class Stats {
+        var organized: Int = 0
+        var skipped: Int = 0
+        var failed: Int = 0
+    }
+
+    val stats: Stats = Stats()
+
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
         if (!SystemFileSystem.exists(source)) {
@@ -40,7 +50,6 @@ class MediaProcessor(
         }
 
         if (metadata.isDirectory) {
-            log("Processing directory: $source")
             val mediaFiles = try {
                 SystemFileSystem.walk(source)
                     .filter { fullPath ->
@@ -49,20 +58,20 @@ class MediaProcessor(
                     }
                     .toList()
             } catch (e: Exception) {
-                log("Error listing directory contents: ${e.message}")
+                log("Error listing directory contents of $source: ${e.message}")
                 return
             }
 
             if (mediaFiles.isEmpty()) {
-                log("No supported media files found.")
+                log("No supported media files found in: $source")
                 return
             }
 
-            log("Found ${mediaFiles.size} media file(s) to process.")
+            log("Processing directory: $source (${mediaFiles.size} media files)")
             mediaFiles.forEachIndexed { index, mediaFile ->
                 processFile(mediaFile, destination, mode, isTestMode)
                 if (index < mediaFiles.size - 1) {
-                    log("---") // Separator for clarity between files
+                    debug("---") // Separator for clarity between files
                 }
             }
         } else if (metadata.isRegularFile) {
@@ -70,6 +79,7 @@ class MediaProcessor(
                 processFile(source, destination, mode, isTestMode)
             } else {
                 log("Warning: File is not a supported media type, skipping: $source")
+                stats.skipped++
             }
         } else {
             log("Warning: Source is not a regular file or directory, skipping: $source")
@@ -78,7 +88,7 @@ class MediaProcessor(
 
     context(_: LoggingContext)
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
-        log("Processing: $source")
+        debug("Processing: $source")
         val parentDirName = source.parent?.name
         when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
@@ -94,13 +104,14 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo.Movie,
         isTestMode: Boolean,
     ) = indent {
-        log("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
+        debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
         val searchResults = metadataService.search(parsedInfo.title, parsedInfo.year)
             .filterIsInstance<MediaSearchResult.Movie>()
 
         if (searchResults.isEmpty()) {
-            log("No metadata found.")
+            status("✗ ${source.name} — no metadata found for '${parsedInfo.title}'")
+            stats.skipped++
             return@indent
         }
 
@@ -108,11 +119,12 @@ class MediaProcessor(
                 as? CanonicalMedia.Movie
 
         if (canonicalMovie == null) {
-            log("Could not find a confident match.")
+            status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
+            stats.skipped++
             return@indent
         }
 
-        log("Found match: $canonicalMovie")
+        debug("Found match: $canonicalMovie")
         organizeFile(source, destination, canonicalMovie, parsedInfo, mode, isTestMode)
     }
 
@@ -125,27 +137,29 @@ class MediaProcessor(
         isTestMode: Boolean,
     ) = indent {
         val season = parsedInfo.season ?: run {
-            log("Warning: No season number found in filename, defaulting to Season 1.")
+            log("Warning: No season number found in '${source.name}', defaulting to Season 1.")
             1
         }
-        log("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: $season, Episode: ${parsedInfo.episode}")
+        debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: $season, Episode: ${parsedInfo.episode}")
 
         // Step 1: Find the canonical show, using the cache first.
         val canonicalShow = findOrFetchShow(parsedInfo.showTitle, parsedInfo.year)
         if (canonicalShow == null) {
-            log("Could not find a confident match for the TV show.")
+            status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
+            stats.skipped++
             return@indent
         }
-        log("Found show: $canonicalShow")
+        debug("Found show: $canonicalShow")
 
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
         val bestEpisodeMatch = findOrFetchEpisode(canonicalShow, season, parsedInfo.episode)
         if (bestEpisodeMatch == null) {
-            log("Episode(S${season}E${parsedInfo.episode}) not found.")
+            status("✗ ${source.name} — episode S${season}E${parsedInfo.episode} not found")
+            stats.skipped++
             return@indent
         }
 
-        log("Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
+        debug("Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
     }
 
@@ -157,16 +171,16 @@ class MediaProcessor(
         val cacheKey = "$title:$year"
         val cachedShow = cache.getShow(cacheKey)
         if (cachedShow != null) {
-            log("Cache HIT for show: '$title'")
+            debug("Cache HIT for show: '$title'")
             return@indent cachedShow
         }
-        log("Cache MISS for show: '$title'. Searching providers...")
+        debug("Cache MISS for show: '$title'. Searching providers...")
 
         val searchResults = metadataService.search(title, year)
             .filterIsInstance<MediaSearchResult.TvShow>()
 
         if (searchResults.isEmpty()) {
-            log("No metadata found for TV show.")
+            debug("No metadata found for TV show.")
             return@indent null
         }
 
@@ -175,6 +189,7 @@ class MediaProcessor(
 
         if (canonicalShow != null) {
             cache.putShow(cacheKey, canonicalShow)
+            status("Matched show: ${canonicalShow.describe()}")
         }
 
         return@indent canonicalShow
@@ -190,22 +205,22 @@ class MediaProcessor(
         val cacheKey = "$showId:$season"
 
         val cachedSeason = cache.getSeason(cacheKey) ?: run {
-            log("Cache MISS for season: S${season}. Fetching from providers...")
+            debug("Cache MISS for season: S${season}. Fetching from providers...")
             val seasonData = metadataService.getSeason(show, season) ?: return@indent null
             cache.putSeason(cacheKey, seasonData)
             seasonData
         }
 
         if (cachedSeason.episodes.isNotEmpty()) {
-            log("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
+            debug("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
         }
 
         val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
-        if (match == null) log("Episode E${episode} not found in S${season} data.")
+        if (match == null) debug("Episode E${episode} not found in S${season} data.")
         match
     }
 
-    context(_: LoggingContext)
+    context(ctx: LoggingContext)
     private fun organizeFile(
         source: Path,
         destination: Path,
@@ -215,10 +230,15 @@ class MediaProcessor(
         isTestMode: Boolean,
     ) = run {
         fileOrganizer.organize(source, destination, media, parsedInfo, mode, isTestMode)
-            .onSuccess { newPath -> log("Successfully organized at: $newPath") }
+            .onSuccess { newPath ->
+                status("✓ ${source.name} → ${media.describe()}")
+                debug("Organized at: $newPath")
+                stats.organized++
+            }
             .onFailure { error ->
-                log("Error: ${error.message}")
-                error.printStackTrace()
+                status("✗ ${source.name} — ${error.message}")
+                stats.failed++
+                if (ctx.verbose) error.printStackTrace()
             }
     }
 
@@ -230,13 +250,13 @@ class MediaProcessor(
     ): CanonicalMedia? = indent {
         if (results.isEmpty()) return@indent null
 
-        log("Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
+        debug("Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
 
         val groupedByMedia = results.groupBy {
             val normalizedTitle = it.title.lowercase().replace(Regex("[^a-z0-9]"), "")
             "$normalizedTitle:${it.year}"
         }
-        log("${groupedByMedia.size} unique media candidates found.")
+        debug("${groupedByMedia.size} unique media candidates found.")
 
         val scoredGroups = groupedByMedia.values.mapNotNull { group ->
             val representative = group.first()
@@ -252,7 +272,7 @@ class MediaProcessor(
             val similarity = if (titleLength > 0) 1.0 - (distance.toDouble() / titleLength) else 0.0
 
             if (similarity < 0.4) {
-                log("Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
+                debug("Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
                 return@mapNotNull null
             }
 
@@ -279,17 +299,17 @@ class MediaProcessor(
             // We scale it (e.g., divide by 20) to make it a bonus, not the main driver of the score
             score += avgProviderConfidence / 20.0
 
-            log("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
+            debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
             group to score
         }
 
         val bestGroup = scoredGroups.maxByOrNull { it.second }
         if (bestGroup == null || bestGroup.second < MINIMUM_CONFIDENCE_SCORE) {
-            log("No candidate passed the minimum confidence score of $MINIMUM_CONFIDENCE_SCORE.")
+            debug("No candidate passed the minimum confidence score of $MINIMUM_CONFIDENCE_SCORE.")
             return@indent null
         }
 
-        log("Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
+        debug("Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
 
         val groupItems = bestGroup.first
         val bestItem = groupItems.firstOrNull { it.year == parsedYear } ?: groupItems.first()
@@ -318,6 +338,20 @@ class MediaProcessor(
         }
     }
 }
+
+// Short human-readable labels for the concise log lines.
+private fun CanonicalMedia.describe(): String = when (this) {
+    is CanonicalMedia.Movie -> "$title ($year)"
+    is CanonicalMedia.Episode -> "S${season.pad2()}E${episode.pad2()} - $title"
+    is CanonicalMedia.TvShow -> buildString {
+        append("$title ($year)")
+        tmdbId?.let { append(" [tmdbid-$it]") }
+        tvdbId?.let { append(" [tvdbid-$it]") }
+        imdbId?.let { append(" [imdbid-$it]") }
+    }
+}
+
+private fun Int.pad2(): String = toString().padStart(2, '0')
 
 // Helper function to format a Double to a specific number of decimal places in a multiplatform-safe way.
 private fun Double.format(digits: Int): String {
