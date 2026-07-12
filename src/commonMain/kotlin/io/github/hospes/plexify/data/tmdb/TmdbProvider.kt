@@ -4,6 +4,7 @@ import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
+import io.github.hospes.plexify.data.tmdb.dto.TmdbAlternativeTitlesDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
@@ -56,11 +57,46 @@ class TmdbProvider(
 
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.runCatching {
-        httpClient.get("search/multi") {
+        val results = httpClient.get("search/multi") {
             parameter("query", title)
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
         }.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
+
+        // TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
+        // carries the localized and original titles. For results that don't resemble the query by
+        // either of those, pull the alternative titles so downstream scoring can see the alias.
+        var lookups = 0
+        results.map { result ->
+            if (result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
+                result
+            } else {
+                lookups++
+                enrichWithAlternativeTitles(result, title)
+            }
+        }
+    }
+
+    private suspend fun enrichWithAlternativeTitles(result: MediaSearchResult, queryTitle: String): MediaSearchResult {
+        val endpoint = when (result) {
+            is MediaSearchResult.Movie -> "movie/${result.tmdbId}/alternative_titles"
+            is MediaSearchResult.TvShow -> "tv/${result.tmdbId}/alternative_titles"
+        }
+        val altTitles = runCatching {
+            httpClient.get(endpoint).body<TmdbAlternativeTitlesDto>().all.map { it.title }
+        }.getOrDefault(emptyList())
+        if (altTitles.isEmpty()) return result
+
+        return when (result) {
+            is MediaSearchResult.Movie -> result.copy(alternativeTitles = altTitles)
+            is MediaSearchResult.TvShow -> result.copy(alternativeTitles = altTitles)
+        }.let { enriched ->
+            val confidence = enriched.allTitles.maxOf { calculateTitleConfidence(queryTitle, it) }
+            when (enriched) {
+                is MediaSearchResult.Movie -> enriched.copy(matchConfidence = confidence)
+                is MediaSearchResult.TvShow -> enriched.copy(matchConfidence = confidence)
+            }
+        }
     }
 
     override suspend fun episode(
@@ -103,8 +139,16 @@ class TmdbProvider(
     }
 }
 
+// A result whose title (or original title) already resembles the query this closely
+// doesn't need an alternative-titles lookup.
+private const val ALT_TITLES_CONFIDENCE_THRESHOLD = 60.0
+
+// Cap extra API calls per search: only the first few unconvincing results get an
+// alternative-titles lookup. TMDB orders results by relevance, so the alias match
+// (if any) is expected near the top.
+private const val MAX_ALT_TITLES_LOOKUPS = 3
+
 private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResult? {
-    val confidence = calculateTitleConfidence(queryTitle, this.title)
     return when (this) {
         is TmdbMediaItemDto.Movie -> MediaSearchResult.Movie(
             title = title,
@@ -112,7 +156,11 @@ private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResul
             year = releaseDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
             provider = "TMDb",
-            matchConfidence = confidence,
+            matchConfidence = maxOf(
+                calculateTitleConfidence(queryTitle, title),
+                calculateTitleConfidence(queryTitle, originalTitle),
+            ),
+            originalTitle = originalTitle,
         )
 
         is TmdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
@@ -121,7 +169,11 @@ private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResul
             year = firstAirDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
             provider = "TMDb",
-            matchConfidence = confidence,
+            matchConfidence = maxOf(
+                calculateTitleConfidence(queryTitle, title),
+                calculateTitleConfidence(queryTitle, originalTitle),
+            ),
+            originalTitle = originalTitle,
         )
 
         else -> null

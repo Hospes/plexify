@@ -243,7 +243,7 @@ class MediaProcessor(
     }
 
     context(_: LoggingContext)
-    private fun findAndConsolidateBestMatch(
+    internal fun findAndConsolidateBestMatch(
         results: List<MediaSearchResult>,
         parsedTitle: String,
         parsedYear: String?
@@ -263,13 +263,16 @@ class MediaProcessor(
 
             // Normalize: keep only alphanumeric chars for scoring to handle "Spider-Man" vs "Spiderman"
             val normalizedParsedTitle = parsedTitle.filter { it.isLetterOrDigit() }.lowercase()
-            val normalizedGroupTitle = representative.title.filter { it.isLetterOrDigit() }.lowercase()
+
+            // Score against every title the group is known by (display, original-language and
+            // alternative titles), so a release named with a romaji or localized alias still
+            // matches its canonical record.
+            val (bestTitle, similarity) = group.flatMap { it.allTitles }.distinct()
+                .map { candidateTitle -> candidateTitle to titleSimilarity(normalizedParsedTitle, candidateTitle.filter { it.isLetterOrDigit() }.lowercase()) }
+                .maxBy { (_, similarity) -> similarity }
+            val matchedVia = if (bestTitle != representative.title) " (matched via '${bestTitle}')" else ""
 
             var score = 0.0
-
-            val distance = levenshtein(normalizedParsedTitle, normalizedGroupTitle)
-            val titleLength = max(normalizedParsedTitle.length, normalizedGroupTitle.length)
-            val similarity = if (titleLength > 0) 1.0 - (distance.toDouble() / titleLength) else 0.0
 
             if (similarity < 0.4) {
                 debug("Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
@@ -299,7 +302,7 @@ class MediaProcessor(
             // We scale it (e.g., divide by 20) to make it a bonus, not the main driver of the score
             score += avgProviderConfidence / 20.0
 
-            debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}")
+            debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}$matchedVia")
             group to score
         }
 
@@ -363,6 +366,13 @@ private fun Double.format(digits: Int): String {
     val intPart = scaled / factor.toInt()
     val fracPart = scaled.mod(factor.toInt())
     return "$intPart.${fracPart.toString().padStart(digits, '0')}"
+}
+
+/** Normalized Levenshtein similarity in [0.0, 1.0]; 1.0 means identical strings. */
+internal fun titleSimilarity(lhs: String, rhs: String): Double {
+    val distance = levenshtein(lhs, rhs)
+    val length = max(lhs.length, rhs.length)
+    return if (length > 0) 1.0 - (distance.toDouble() / length) else 0.0
 }
 
 /**

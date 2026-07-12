@@ -9,6 +9,16 @@ sealed interface MediaSearchResult {
     val provider: String
     val matchConfidence: Double
 
+    /** Title in the media's original language, when the provider supplies one. */
+    val originalTitle: String?
+
+    /** Known aliases (translations, romanizations, working titles) usable for matching. */
+    val alternativeTitles: List<String>
+
+    /** Every title this result is known by, for similarity scoring. */
+    val allTitles: List<String>
+        get() = (listOf(title) + listOfNotNull(originalTitle) + alternativeTitles).distinct()
+
     data class Movie(
         override val title: String,
         override val year: String?,
@@ -17,6 +27,8 @@ sealed interface MediaSearchResult {
         override val tvdbId: String? = null,
         override val provider: String,
         override val matchConfidence: Double = 0.0,
+        override val originalTitle: String? = null,
+        override val alternativeTitles: List<String> = emptyList(),
     ) : MediaSearchResult
 
     data class TvShow(
@@ -27,5 +39,7 @@ sealed interface MediaSearchResult {
         override val tvdbId: String? = null,
         override val provider: String,
         override val matchConfidence: Double = 0.0,
+        override val originalTitle: String? = null,
+        override val alternativeTitles: List<String> = emptyList(),
     ) : MediaSearchResult
 }
