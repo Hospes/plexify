@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.groups.default
 import com.github.ajalt.clikt.parameters.groups.mutuallyExclusiveOptions
 import com.github.ajalt.clikt.parameters.options.*
 import com.github.ajalt.clikt.parameters.types.enum
+import com.github.ajalt.clikt.parameters.types.int
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataCache
@@ -57,6 +58,18 @@ object App : CliktCommand(name = "Plexify") {
     val verbose: Boolean by option("--verbose", help = "Show detailed pipeline logs (parsing, cache, providers, match scoring).")
         .flag(default = false)
 
+    val titleOverride: String? by option(
+        "-t", "--title",
+        help = "Override the title parsed from filenames. Applies to every file in this run; " +
+                "use when release names are too cryptic to detect the correct title."
+    )
+
+    val seasonOverride: Int? by option(
+        "-s", "--season",
+        help = "Override the season number parsed from filenames. Applies to every TV episode in this run " +
+                "(ignored for movies); use when the season only appears as a bare folder name like '2'."
+    ).int()
+
     val template: NamingStrategy by mutuallyExclusiveOptions(
         option(
             "-tp", "--template-plex",
@@ -85,9 +98,16 @@ object App : CliktCommand(name = "Plexify") {
         val cache = MetadataCache()
 
         val metadataService = MetadataService(providers, template)
-        val processor = MediaProcessor(metadataService, fileOrganizer, cache)
+        val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride)
 
         echo("Plexify ${BuildConfig.VERSION} | mode: $mode | template: ${template.name} | destination: $destination")
+        val overrides = listOfNotNull(
+            titleOverride?.let { "title='$it'" },
+            seasonOverride?.let { "season=$it" },
+        )
+        if (overrides.isNotEmpty()) {
+            echo("Overrides: ${overrides.joinToString(", ")}")
+        }
         if (testMode) {
             echo("!!! RUNNING IN TEST MODE (DRY RUN) - NO FILES WILL BE MODIFIED !!!")
         }

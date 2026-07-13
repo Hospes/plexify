@@ -5,6 +5,7 @@ import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
+import io.github.hospes.plexify.domain.model.withOverrides
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.logging.LoggingContext
@@ -24,6 +25,8 @@ class MediaProcessor(
     private val metadataService: MetadataService,
     private val fileOrganizer: FileOrganizer,
     private val cache: MetadataCache,
+    private val titleOverride: String? = null,
+    private val seasonOverride: Int? = null,
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
@@ -90,7 +93,7 @@ class MediaProcessor(
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
         debug("Processing: $source")
         val parentDirName = source.parent?.name
-        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName)) {
+        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName).withOverrides(titleOverride, seasonOverride)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
             is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
