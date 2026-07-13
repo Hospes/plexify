@@ -14,11 +14,14 @@ import kotlin.test.assertNull
 
 class MediaConsolidationTest {
 
-    private val processor = MediaProcessor(
+    private fun processor(yearOverride: String? = null) = MediaProcessor(
         metadataService = MetadataService(emptyList(), NamingStrategy.Jellyfin),
         fileOrganizer = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin),
         cache = MetadataCache(),
+        yearOverride = yearOverride,
     )
+
+    private val processor = processor()
 
     private fun kingdomsOfRuin(
         originalTitle: String? = null,
@@ -61,5 +64,24 @@ class MediaConsolidationTest {
         val match = processor.findAndConsolidateBestMatch(listOf(kingdomsOfRuin()), "hametsu no oukoku", null)
 
         assertNull(match)
+    }
+
+    @Test
+    fun `year override discards candidates with a different year`() = with(LoggingContext()) {
+        val results = listOf(kingdomsOfRuin(alternativeTitles = listOf("Hametsu no Oukoku")))
+
+        val match = processor(yearOverride = "1995").findAndConsolidateBestMatch(results, "hametsu no oukoku", "1995")
+
+        assertNull(match)
+    }
+
+    @Test
+    fun `year override keeps candidates with the matching year`() = with(LoggingContext()) {
+        val results = listOf(kingdomsOfRuin(alternativeTitles = listOf("Hametsu no Oukoku")))
+
+        val match = processor(yearOverride = "2023").findAndConsolidateBestMatch(results, "hametsu no oukoku", "2023")
+
+        assertIs<CanonicalMedia.TvShow>(match)
+        assertEquals("The Kingdoms of Ruin", match.title)
     }
 }

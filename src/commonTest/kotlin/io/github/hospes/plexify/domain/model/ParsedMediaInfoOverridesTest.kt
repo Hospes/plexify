@@ -9,25 +9,26 @@ class ParsedMediaInfoOverridesTest {
     private val movie = ParsedMediaInfo.Movie(title = "some cryptic rip", year = "2020")
 
     @Test
-    fun `episode gets title and season overrides`() {
-        val result = episode.withOverrides(title = "The Kingdoms of Ruin", season = 2) as ParsedMediaInfo.Episode
+    fun `episode gets title and season and year overrides`() {
+        val result = episode.withOverrides(title = "The Kingdoms of Ruin", season = 2, year = "2023") as ParsedMediaInfo.Episode
 
         assertEquals("The Kingdoms of Ruin", result.showTitle)
         assertEquals(2, result.season)
         assertEquals(3, result.episode)
+        assertEquals("2023", result.year)
     }
 
     @Test
     fun `null overrides keep parsed values`() {
-        assertEquals(episode, episode.withOverrides(title = null, season = null))
-        assertEquals(movie, movie.withOverrides(title = null, season = null))
+        assertEquals(episode, episode.withOverrides(title = null, season = null, year = null))
+        assertEquals(movie, movie.withOverrides(title = null, season = null, year = null))
     }
 
     @Test
-    fun `movie gets title override and ignores season`() {
-        val result = movie.withOverrides(title = "Actual Movie", season = 5) as ParsedMediaInfo.Movie
+    fun `movie gets title and year overrides and ignores season`() {
+        val result = movie.withOverrides(title = "Actual Movie", season = 5, year = "2019") as ParsedMediaInfo.Movie
 
         assertEquals("Actual Movie", result.title)
-        assertEquals("2020", result.year)
+        assertEquals("2019", result.year)
     }
 }

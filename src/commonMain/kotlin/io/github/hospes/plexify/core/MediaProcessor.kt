@@ -27,6 +27,7 @@ class MediaProcessor(
     private val cache: MetadataCache,
     private val titleOverride: String? = null,
     private val seasonOverride: Int? = null,
+    private val yearOverride: String? = null,
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
@@ -38,6 +39,10 @@ class MediaProcessor(
     }
 
     val stats: Stats = Stats()
+
+    // Directories already warned about missing season numbers, to avoid repeating the
+    // warning for every episode file of the same release.
+    private val seasonWarnedDirs = mutableSetOf<String>()
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -93,7 +98,7 @@ class MediaProcessor(
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
         debug("Processing: $source")
         val parentDirName = source.parent?.name
-        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName).withOverrides(titleOverride, seasonOverride)) {
+        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName).withOverrides(titleOverride, seasonOverride, yearOverride)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
             is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
@@ -140,7 +145,9 @@ class MediaProcessor(
         isTestMode: Boolean,
     ) = indent {
         val season = parsedInfo.season ?: run {
-            log("Warning: No season number found in '${source.name}', defaulting to Season 1.")
+            if (seasonWarnedDirs.add(source.parent?.toString() ?: source.name)) {
+                status("Warning: No season number found in filenames, defaulting to Season 1 (use -s/--season to set it explicitly).")
+            }
             1
         }
         debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: $season, Episode: ${parsedInfo.episode}")
@@ -177,22 +184,28 @@ class MediaProcessor(
             debug("Cache HIT for show: '$title'")
             return@indent cachedShow
         }
+        if (cache.isShowFailed(cacheKey)) {
+            debug("Cache HIT (negative) for show: '$title'")
+            return@indent null
+        }
         debug("Cache MISS for show: '$title'. Searching providers...")
 
         val searchResults = metadataService.search(title, year)
             .filterIsInstance<MediaSearchResult.TvShow>()
 
-        if (searchResults.isEmpty()) {
-            debug("No metadata found for TV show.")
-            return@indent null
+        val canonicalShow = if (searchResults.isEmpty()) {
+            status("No match for '$title': providers returned no results.")
+            null
+        } else {
+            findAndConsolidateBestMatch(searchResults, title, year) as? CanonicalMedia.TvShow
         }
-
-        val canonicalShow = findAndConsolidateBestMatch(searchResults, title, year)
-                as? CanonicalMedia.TvShow
 
         if (canonicalShow != null) {
             cache.putShow(cacheKey, canonicalShow)
             status("Matched show: ${canonicalShow.describe()}")
+        } else {
+            // Negative cache: don't repeat the search (and its log output) for every episode file.
+            cache.markShowFailed(cacheKey)
         }
 
         return@indent canonicalShow
@@ -265,8 +278,22 @@ class MediaProcessor(
         }
         debug("${groupedByMedia.size} unique media candidates found.")
 
+        // Collected so a failed lookup can report *why* in the concise output.
+        val yearRejected = mutableListOf<String>()
+
         val scoredGroups = groupedByMedia.values.mapNotNull { group ->
             val representative = group.first()
+
+            // A year explicitly provided by the user is a hard filter, not a scoring signal:
+            // discard candidates whose known year differs. Candidates without a year are kept,
+            // since there is nothing to verify against.
+            val overrideYear = yearOverride?.toIntOrNull()
+            val candidateYear = representative.year?.toIntOrNull()
+            if (overrideYear != null && candidateYear != null && candidateYear != overrideYear) {
+                debug("Candidate: '${representative.title} (${representative.year})' | Discarded (year does not match override $overrideYear)")
+                yearRejected += "'${representative.title} (${representative.year})'"
+                return@mapNotNull null
+            }
 
             // Normalize: keep only alphanumeric chars for scoring to handle "Spider-Man" vs "Spiderman"
             val normalizedParsedTitle = parsedTitle.filter { it.isLetterOrDigit() }.lowercase()
@@ -315,7 +342,22 @@ class MediaProcessor(
 
         val bestGroup = scoredGroups.maxByOrNull { it.second }
         if (bestGroup == null || bestGroup.second < MINIMUM_CONFIDENCE_SCORE) {
-            debug("No candidate passed the minimum confidence score of $MINIMUM_CONFIDENCE_SCORE.")
+            val reason = when {
+                yearRejected.isNotEmpty() -> {
+                    val listed = yearRejected.take(3).joinToString(", ")
+                    val more = if (yearRejected.size > 3) " and ${yearRejected.size - 3} more" else ""
+                    "$listed$more rejected (year does not match override $yearOverride)"
+                }
+
+                bestGroup != null -> {
+                    val candidate = bestGroup.first.first()
+                    "best candidate '${candidate.title} (${candidate.year})' scored ${bestGroup.second.format(2)}, " +
+                            "below the $MINIMUM_CONFIDENCE_SCORE confidence minimum"
+                }
+
+                else -> "none of ${results.size} provider result(s) resembled the title"
+            }
+            status("No match for '$parsedTitle': $reason")
             return@indent null
         }
 

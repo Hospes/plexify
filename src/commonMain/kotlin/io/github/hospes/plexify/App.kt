@@ -70,6 +70,12 @@ object App : CliktCommand(name = "Plexify") {
                 "(ignored for movies); use when the season only appears as a bare folder name like '2'."
     ).int()
 
+    val yearOverride: Int? by option(
+        "-y", "--year",
+        help = "Override the release year parsed from filenames. Applies to every file in this run; " +
+                "use when metadata search matches the wrong year."
+    ).int()
+
     val template: NamingStrategy by mutuallyExclusiveOptions(
         option(
             "-tp", "--template-plex",
@@ -98,12 +104,13 @@ object App : CliktCommand(name = "Plexify") {
         val cache = MetadataCache()
 
         val metadataService = MetadataService(providers, template)
-        val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride)
+        val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride, yearOverride?.toString())
 
         echo("Plexify ${BuildConfig.VERSION} | mode: $mode | template: ${template.name} | destination: $destination")
         val overrides = listOfNotNull(
             titleOverride?.let { "title='$it'" },
             seasonOverride?.let { "season=$it" },
+            yearOverride?.let { "year=$it" },
         )
         if (overrides.isNotEmpty()) {
             echo("Overrides: ${overrides.joinToString(", ")}")
