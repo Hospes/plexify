@@ -88,7 +88,7 @@ Only two things are platform-specific; everything else must stay in `commonMain`
 - `core/FileSystemUtils.kt` — `expect fun createHardLink(...)` (Win32 API on Windows, POSIX `link` on Linux)
 - `data/HttpClientFactory.kt` — Ktor engine selection (curl on both, but per-target setup)
 
-### Kotlin experimental features in use
+### Kotlin language features in use
 
-- **Context parameters** (`-Xcontext-parameters`): the logging system ([logging/Logger.kt](src/commonMain/kotlin/io/github/hospes/plexify/logging/Logger.kt)) passes `LoggingContext` implicitly via `context(_: LoggingContext)`. Nested pipeline steps use `indent { ... }` to increase log indentation — follow this pattern for any new logging inside the pipeline.
-- **Explicit backing fields** (`-Xexplicit-backing-fields`).
+- **Context parameters** (stable since Kotlin 2.4, no compiler flag needed): the logging system ([logging/Logger.kt](src/commonMain/kotlin/io/github/hospes/plexify/logging/Logger.kt)) passes `LoggingContext` implicitly via `context(_: LoggingContext)`. Nested pipeline steps use `indent { ... }` to increase log indentation — follow this pattern for any new logging inside the pipeline.
+- **Explicit backing fields** (stable since Kotlin 2.4).
