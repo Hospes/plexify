@@ -25,19 +25,29 @@ jobs:
             bin_dir: linuxArm64
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Releases are the only workflow in this repo, so they must be allowed
+          # to write the cache — otherwise it never gets populated and every
+          # build starts cold.
+          cache-read-only: false
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      # The Kotlin/Native toolchain (LLVM, sysroots, ...) lives outside the
+      # Gradle User Home and is re-downloaded on every cold run without this.
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
 
       - name: Build with Gradle
         env:
@@ -55,64 +65,57 @@ jobs:
         run: ls -R build/dist
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./build/dist/plexify-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz
-          asset_name: plexify-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          "build/dist/plexify-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz"
+          --clobber
 
   # Job to build the Windows executable
   build-windows:
     name: Build for Windows
-    # Use the latest version of Windows provided by GitHub
     runs-on: windows-latest
     steps:
-      # Step 1: Check out the repository's code
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      # Step 2: Set up the Java environment
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      # Step 3: Use the official Gradle action to set up Gradle and leverage caching
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
 
-      # Step 4: Build the native Windows executable
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
+
       - name: Build with Gradle
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
         run: ./gradlew.bat linkReleaseExecutableWindows --no-daemon --no-parallel --stacktrace
 
-      # Step 5: Create a compressed ZIP archive of the executable
       - name: Package the executable
-        # Use PowerShell's built-in compression command
         shell: pwsh
         run: |
-          $stagingDir = "build/dist"
-          mkdir -p $stagingDir
-          $archivePath = "build/dist/plexify-${{ github.ref_name }}-windows-x64.zip"
-          $exePath = "build/bin/windows/releaseExecutable/plexify.exe"
-          Copy-Item -Path $exePath -Destination "$stagingDir/plexify.exe"
-          Compress-Archive -Path "$stagingDir/*" -DestinationPath $archivePath
+          New-Item -ItemType Directory -Force build/dist | Out-Null
+          Copy-Item build/bin/windows/releaseExecutable/plexify.exe build/dist/plexify.exe
+          Compress-Archive -Path build/dist/plexify.exe -DestinationPath "build/dist/plexify-${{ github.ref_name }}-windows-x64.zip"
 
       - name: List files in build directory
         run: ls -R build/dist
 
-      # Step 6: Upload the archive to the GitHub Release
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./build/dist/plexify-${{ github.ref_name }}-windows-x64.zip
-          asset_name: plexify-${{ github.ref_name }}-windows-x64.zip
-          asset_content_type: application/zip
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          "build/dist/plexify-${{ github.ref_name }}-windows-x64.zip"
+          --clobber
