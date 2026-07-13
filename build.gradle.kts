@@ -1,4 +1,9 @@
+@file:OptIn(KotlinNativeCacheApi::class)
+
+import org.jetbrains.kotlin.gradle.plugin.mpp.DisableCacheInKotlinVersion
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCacheApi
 import org.jetbrains.kotlin.konan.properties.Properties
+import java.net.URI
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -49,10 +54,20 @@ kotlin {
     listOf(
         linuxX64(),
         linuxArm64()
-    ).forEach {
-        it.binaries.executable {
+    ).forEach { target ->
+        target.binaries.executable {
             entryPoint = "io.github.hospes.plexify.main"
             baseName = "plexify"
+        }
+        // The Kotlin/Native compilation cache on Linux links duplicate symbols from
+        // Clikt's split modules (ld.lld: duplicate symbol ...selfAndAncestors...).
+        // Applies to all binaries including the test executable.
+        target.binaries.all {
+            disableNativeCache(
+                version = DisableCacheInKotlinVersion.`2_4_0`,
+                reason = "Clikt duplicate symbol at link time with the native compilation cache",
+                issueUrl = URI("https://github.com/ajalt/clikt/issues/598"),
+            )
         }
     }
     mingwX64("windows") {
