@@ -1,7 +1,7 @@
 # Plexify
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Kotlin Version](https://img.shields.io/badge/Kotlin-2.2.20-blue.svg?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin Version](https://img.shields.io/badge/Kotlin-2.4.0-blue.svg?logo=kotlin)](https://kotlinlang.org)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/hospes/plexify) <!-- Placeholder -->
 
 Plexify is a powerful, cross-platform command-line tool designed to automatically organize your movie and TV show collections into a clean, structured library, perfect for media servers like Plex, Jellyfin, and Emby. It intelligently parses filenames, fetches accurate metadata from multiple online sources, and renames/organizes your files according to best practices.
@@ -11,9 +11,13 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 -   **Automatic Media Organization**: Processes individual files or entire directories, sorting them into a clean library structure.
 -   **Advanced Filename Parsing**: Intelligently extracts title, year, season, episode, resolution, and quality from even the most complex filenames.
 -   **Multi-Source Metadata**: Fetches and verifies media information from multiple databases (TMDB, IMDb) to find the most accurate match.
+-   **Alias-Aware Matching**: Also matches releases named with original-language or alternative titles (e.g. romaji anime titles like *Hametsu no Oukoku* → *The Kingdoms of Ruin*), while the library itself is named with the canonical title.
 -   **Intelligent Consolidation**: Compares search results from all providers, scores them, and selects the best "golden record" for your media.
+-   **Manual Overrides**: Force the title, season, or year (`-t`, `-s`, `-y`) when a release is too cryptic to parse — the season hidden in a folder named `2`, a remake matching the wrong year, and similar cases.
 -   **Customizable Naming**: Comes with pre-configured, optimal naming templates for **Plex** and **Jellyfin**, or you can define your own powerful custom templates.
 -   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup.
+-   **Dry Run Mode**: Preview every rename and the final library layout with `--test` before a single file is touched.
+-   **Readable Output**: One line per organized file with a final summary by default; a `--verbose` flag exposes the full pipeline (parsing, cache, providers, match scoring) for troubleshooting.
 -   **Cross-Platform**: Built with Kotlin Multiplatform to run natively on **Linux** and **Windows**.
 
 ## ⚙️ How It Works
@@ -21,8 +25,8 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 Plexify follows a simple but effective pipeline to organize your media:
 
 1.  **Parse**: It deconstructs the original filename to make an educated guess about the media's title, year, season, episode, and other details.
-2.  **Search**: It queries multiple online databases (currently TMDB and IMDb) for metadata based on the parsed information.
-3.  **Consolidate**: It compares results from all sources, scores them based on confidence, and selects the best possible match to create a canonical record.
+2.  **Search**: It queries multiple online databases (currently TMDB and IMDb) for metadata based on the parsed information, pulling in original-language and alternative titles when the primary title alone isn't convincing.
+3.  **Consolidate**: It compares results from all sources, scores them against every title a candidate is known by, and selects the best possible match to create a canonical record. Show and season lookups are cached per run, so a whole season costs one search and one season fetch.
 4.  **Format**: It uses the selected naming strategy (e.g., Jellyfin) and the canonical record to construct the ideal new file and folder path.
 5.  **Organize**: It creates the necessary directories and moves or hardlinks the file to its final, clean destination.
 
@@ -100,10 +104,18 @@ plexify [OPTIONS] <source...> <destination>
 | Option                  | Alias | Description                                                                                              | Default    |
 | ----------------------- | ----- | -------------------------------------------------------------------------------------------------------- | ---------- |
 | `--mode <MODE>`         | `-m`  | Operation mode: `MOVE` or `HARDLINK`.                                                                    | `HARDLINK` |
+| `--test`                |       | Dry run: report what would be organized without touching any files.                                      | `false`    |
 | `--template-plex`       | `-tp` | Use the predefined naming template for Plex.                                                             | `false`    |
 | `--template-jellyfin`   | `-tj` | Use the predefined naming template for Jellyfin.                                                         | `true`     |
 | `--template-custom <T>` | `-tc` | Use a custom naming template. See [Custom Naming Templates](#-custom-naming-templates) for syntax.       | `n/a`      |
+| `--title <TITLE>`       | `-t`  | Override the title parsed from filenames. Applies to every file in the run.                              | `n/a`      |
+| `--season <N>`          | `-s`  | Override the season number for TV episodes (ignored for movies).                                         | `n/a`      |
+| `--year <YYYY>`         | `-y`  | Override the release year. Acts as a strict filter: candidates with a different year are rejected.       | `n/a`      |
+| `--verbose`             |       | Show detailed pipeline logs (parsing, cache, providers, match scoring).                                  | `false`    |
+| `--version`             | `-v`  | Show the version and exit.                                                                               |            |
 | `--help`                | `-h`  | Show help message.                                                                                       |            |
+
+> **Note:** The override options apply to *every* file in the run, so use them when pointing Plexify at a single movie or one show's season folder — not a mixed batch.
 
 ### Examples
 
@@ -131,6 +143,20 @@ This example creates a folder like `The Matrix (1999)` and a file inside named `
 ```bash
 ./plexify --template-custom "{CleanTitle} ({year})/{CleanTitle} - {year} [{resolution}].{ext}" \
 "/downloads/The.Matrix.1999.1080p.mkv" "/movies"
+```
+
+**5. Preview a cryptic release with manual overrides (dry run):**
+When filenames don't carry enough information — say a season folder just named `2` — force the title and season, and check the result with `--test` first:
+
+```bash
+./plexify --test -t "The Kingdoms of Ruin" -s 2 "/anime/SomeShow/2" "/library/Anime"
+```
+
+**6. Pin a remake to the right year:**
+A remake often shares its title with the original; `--year` rejects candidates from any other year:
+
+```bash
+./plexify -y 2011 "/downloads/The.Thing.1080p.mkv" "/movies"
 ```
 
 ## 📝 Custom Naming Templates
