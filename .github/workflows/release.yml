@@ -1,4 +1,4 @@
-name: Build and Release
+﻿name: Build and Release
 
 # This workflow is triggered only when a new release is published.
 on:
@@ -44,7 +44,7 @@ jobs:
       # The Kotlin/Native toolchain (LLVM, sysroots, ...) lives outside the
       # Gradle User Home and is re-downloaded on every cold run without this.
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.konan
           key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
@@ -92,7 +92,7 @@ jobs:
           cache-read-only: false
 
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.konan
           key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
