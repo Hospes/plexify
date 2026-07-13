@@ -57,11 +57,13 @@ class TmdbProvider(
 
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.runCatching {
-        val results = httpClient.get("search/multi") {
+        val response = httpClient.get("search/multi") {
             parameter("query", title)
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
-        }.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
+        }
+        require(response.status.isSuccess()) { "HTTP ${response.status.value} searching for '$title'" }
+        val results = response.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
 
         // TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
         // carries the localized and original titles. For results that don't resemble the query by
@@ -105,8 +107,9 @@ class TmdbProvider(
         episode: Int
     ): Result<CanonicalMedia.Episode> = Result.runCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
-        val dto = httpClient.get("tv/${show.tmdbId}/season/$season/episode/$episode")
-            .body<TmdbEpisodeDto>()
+        val response = httpClient.get("tv/${show.tmdbId}/season/$season/episode/$episode")
+        require(response.status.isSuccess()) { "HTTP ${response.status.value} fetching S${season}E${episode} of '${show.title}'" }
+        val dto = response.body<TmdbEpisodeDto>()
 
         CanonicalMedia.Episode(
             show = show,
@@ -121,8 +124,9 @@ class TmdbProvider(
         season: Int,
     ): Result<CanonicalMedia.Season> = Result.runCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch season details." }
-        val dto = httpClient.get("tv/${show.tmdbId}/season/$season")
-            .body<TmdbSeasonDto>()
+        val response = httpClient.get("tv/${show.tmdbId}/season/$season")
+        require(response.status.isSuccess()) { "HTTP ${response.status.value} fetching season $season of '${show.title}'" }
+        val dto = response.body<TmdbSeasonDto>()
 
         CanonicalMedia.Season(
             show = show,

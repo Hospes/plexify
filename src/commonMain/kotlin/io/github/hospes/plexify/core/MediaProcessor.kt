@@ -209,7 +209,11 @@ class MediaProcessor(
 
         val cachedSeason = cache.getSeason(cacheKey) ?: run {
             debug("Cache MISS for season: S${season}. Fetching from providers...")
-            val seasonData = metadataService.getSeason(show, season) ?: return@indent null
+            val seasonData = metadataService.getSeason(show, season)
+                // Cache the failure as an empty season so the remaining files of this season
+                // don't re-query the providers and re-log the same error.
+                ?: CanonicalMedia.Season(show, season, emptyList())
+                    .also { log("Season $season of '${show.title}' is not available from providers.") }
             cache.putSeason(cacheKey, seasonData)
             seasonData
         }
