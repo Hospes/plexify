@@ -1,0 +1,44 @@
+name: Set up the Kotlin/Native build
+description: JDK 21, Gradle with its cache, and a restored Kotlin/Native toolchain.
+
+outputs:
+  konan-key:
+    description: Cache key of the Kotlin/Native toolchain, for the caller's save step.
+    value: ${{ steps.konan-key.outputs.key }}
+  konan-hit:
+    description: "'true' when the toolchain was restored from an exact cache hit."
+    value: ${{ steps.konan.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 21
+      uses: actions/setup-java@v6
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    # Default cache behaviour: written by runs on main only, read everywhere else.
+    # Release runs on a tag therefore start from the cache main last wrote.
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    # The toolchain (LLVM, sysroots, ...) depends only on the Kotlin version, so the
+    # key uses that rather than a hash of the whole catalog: a Ktor bump must not
+    # throw away ~700 MB that is still valid.
+    - name: Resolve the Kotlin/Native cache key
+      id: konan-key
+      shell: bash
+      run: |
+        kotlin="$(sed -n 's/^kotlin = "\(.*\)"/\1/p' gradle/libs.versions.toml)"
+        test -n "$kotlin" || { echo "::error::No kotlin version in gradle/libs.versions.toml"; exit 1; }
+        echo "key=konan-${RUNNER_OS}-${kotlin}" >> "$GITHUB_OUTPUT"
+
+    # Restore only. The caller saves after its build, and only on main, so pull
+    # requests (Dependabot's included) never upload a toolchain of their own.
+    - name: Restore Kotlin/Native toolchain
+      id: konan
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.konan
+        key: ${{ steps.konan-key.outputs.key }}
