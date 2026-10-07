@@ -11,7 +11,7 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 
 -   **Automatic Media Organization**: Processes individual files or entire directories, sorting them into a clean library structure.
 -   **Advanced Filename Parsing**: Intelligently extracts title, year, season, episode, resolution, and quality from even the most complex filenames.
--   **Multi-Source Metadata**: Fetches and verifies media information from multiple databases (TMDB, IMDb) to find the most accurate match.
+-   **TMDB Metadata**: Looks up and verifies media information on TMDB to find the most accurate match.
 -   **Alias-Aware Matching**: Also matches releases named with original-language or alternative titles (e.g. romaji anime titles like *Hametsu no Oukoku* → *The Kingdoms of Ruin*), while the library itself is named with the canonical title.
 -   **Split-Season Anime**: Releases that split a season TMDB keeps whole (e.g. *Gate* as two 12-episode seasons) are mapped through TMDB episode groups onto TMDB's own numbering.
 -   **Intelligent Consolidation**: Compares search results from all providers, scores them, and selects the best "golden record" for your media.
@@ -27,7 +27,7 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 Plexify follows a simple but effective pipeline to organize your media:
 
 1.  **Parse**: It deconstructs the original filename to make an educated guess about the media's title, year, season, episode, and other details.
-2.  **Search**: It queries multiple online databases (currently TMDB and IMDb) for metadata based on the parsed information, pulling in original-language and alternative titles when the primary title alone isn't convincing.
+2.  **Search**: It queries TMDB for metadata based on the parsed information, pulling in original-language and alternative titles when the primary title alone isn't convincing.
 3.  **Consolidate**: It compares results from all sources, scores them against every title a candidate is known by, and selects the best possible match to create a canonical record. Show and season lookups are cached per run, so a whole season costs one search and one season fetch.
 4.  **Format**: It uses the selected naming strategy (e.g., Jellyfin) and the canonical record to construct the ideal new file and folder path.
 5.  **Organize**: It creates the necessary directories and moves or hardlinks the file to its final, clean destination.
@@ -207,7 +207,7 @@ The following placeholders can be used in your custom templates.
 | `{year}`         | The release year of the movie or the first air date year of a show.          | `2022`                                  |
 | `{ext}`          | The original file extension.                                                 | `mkv`                                   |
 | **Metadata IDs** |                                                                              |                                         |
-| `{imdbid}`       | The IMDb ID (e.g., `tt1630029`).                                             | `tt1630029`                             |
+| `{imdbid}`       | The IMDb ID. Currently always empty: no metadata source supplies it.         | `tt1630029`                             |
 | `{tmdbid}`       | The TMDb ID (e.g., `76600`).                                                 | `76600`                                 |
 | `{tvdbid}`       | The TVDb ID (if available).                                                  | `12345`                                 |
 | **TV Shows**     |                                                                              |                                         |
@@ -227,8 +227,8 @@ The following placeholders can be used in your custom templates.
     -   `S{season:2}E{episode:2}` → `S01E05`
 
 -   **Conditional Blocks:** You can make parts of the template optional based on whether a placeholder has a value. Wrap the section in square brackets `[]`. The block will only be included if the placeholder inside it is available.
-    -   `{CleanTitle} ({year}) [imdbid-{imdbid}]` → `The Matrix (1999) [imdbid-tt0133093]`
-    -   If `imdbid` is not found, it becomes: `The Matrix (1999)`
+    -   `{CleanTitle} ({year}) [tmdbid-{tmdbid}]` → `The Matrix (1999) [tmdbid-603]`
+    -   If `tmdbid` is not found, it becomes: `The Matrix (1999)`
 
 ## 🛠️ Dependencies
 

@@ -16,8 +16,6 @@ import com.github.ajalt.clikt.parameters.types.int
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataCache
-import io.github.hospes.plexify.data.MetadataProvider
-import io.github.hospes.plexify.data.imdb.ImdbProvider
 import io.github.hospes.plexify.data.tmdb.TmdbCredentials
 import io.github.hospes.plexify.data.tmdb.TmdbCredentialsRejectedException
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
@@ -53,9 +51,6 @@ object App : CliktCommand(name = "Plexify") {
 
     private val tvdbApiKey: String by option(help = "TVDB API key").default(BuildConfig.TVDB_API_KEY)
     private val omdbApiKey: String by option(help = "OMDB API key").default(BuildConfig.OMDB_API_KEY)
-
-    private val imdbProvider: MetadataProvider by lazy { ImdbProvider }
-
 
     val sources: List<Path> by argument(name = "source")
         .help("The source path for the media to be managed. This can be a path to a single file, a directory, or multiple paths to various files and directories.")
@@ -135,8 +130,7 @@ object App : CliktCommand(name = "Plexify") {
 
 
     override fun run() {
-        checkTmdbCredentials()
-        val providers = listOfNotNull(tmdbProvider, imdbProvider)
+        val providers = listOf(verifiedTmdbProvider())
         val pathFormatter = PathFormatter()
         val fileOrganizer = DefaultFileOrganizer(pathFormatter, template, overwrite)
         val cache = MetadataCache()
@@ -174,16 +168,14 @@ object App : CliktCommand(name = "Plexify") {
     }
 
     /**
-     * Fails the run up front when TMDB rejects the credentials, with what to do about it,
-     * instead of an HTTP 401 on every file. Other failures (offline, timeouts) are left to
-     * the per-file errors, since they say nothing about the credentials.
+     * TMDB is the only metadata source, so the run fails up front when there are no credentials
+     * or TMDB rejects them, with what to do about it, instead of a miss or an HTTP 401 on every
+     * file. Other failures (offline, timeouts) are left to the per-file errors, since they say
+     * nothing about the credentials.
      */
-    private fun checkTmdbCredentials() {
-        val provider = tmdbProvider
-        if (provider == null) {
-            echo("No TMDB credentials: searching IMDb only. $HOW_TO_SET_TMDB_KEY", err = true)
-            return
-        }
+    private fun verifiedTmdbProvider(): TmdbProvider {
+        // No user credentials and nothing built in: a build made without local.properties.
+        val provider = tmdbProvider ?: throw CliktError("No TMDB credentials, and this build has no built-in key. $HOW_TO_SET_TMDB_KEY")
         val error = runBlocking { provider.verifyCredentials() }.exceptionOrNull()
         if (error is TmdbCredentialsRejectedException) {
             val message = when (error.source) {
@@ -197,6 +189,7 @@ object App : CliktCommand(name = "Plexify") {
             }
             throw CliktError(message)
         }
+        return provider
     }
 
     private val hasBuiltInTmdbKey: Boolean
