@@ -2,7 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Kotlin Version](https://img.shields.io/badge/Kotlin-2.4.20-blue.svg?logo=kotlin)](https://kotlinlang.org)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/hospes/plexify) <!-- Placeholder -->
+[![CI](https://github.com/Hospes/plexify/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hospes/plexify/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Hospes/plexify)](https://github.com/Hospes/plexify/releases/latest)
 
 Plexify is a powerful, cross-platform command-line tool designed to automatically organize your movie and TV show collections into a clean, structured library, perfect for media servers like Plex, Jellyfin, and Emby. It intelligently parses filenames, fetches accurate metadata from multiple online sources, and renames/organizes your files according to best practices.
 
