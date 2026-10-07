@@ -5,6 +5,7 @@ import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
+import kotlinx.io.IOException
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -20,7 +21,7 @@ class DefaultFileOrganizer(
         parsedInfo: ParsedMediaInfo,
         mode: OperationMode,
         isTestMode: Boolean,
-    ): Result<Path> = Result.runCatching {
+    ): Result<OrganizeOutcome> = Result.runCatching {
         val relativePath = when (media) {
             is CanonicalMedia.Movie -> pathFormatter.formatMoviePath(
                 folderTemplate = namingStrategy.movieFolderTemplate,
@@ -43,7 +44,17 @@ class DefaultFileOrganizer(
         }
         val finalPath = Path(destinationRoot, relativePath.toString())
 
-        if (isTestMode) return@runCatching finalPath
+        // Never replace what is already at the target. When it's the source itself (plexify run over its own
+        // library), linking would delete the only copy; when it's another file, replacing it would lose that file.
+        if (SystemFileSystem.exists(finalPath)) {
+            return@runCatching if (isSameFileOnDisk(sourceFile, finalPath)) {
+                OrganizeOutcome.AlreadyInPlace(finalPath)
+            } else {
+                OrganizeOutcome.TargetExists(finalPath)
+            }
+        }
+
+        if (isTestMode) return@runCatching OrganizeOutcome.Organized(finalPath)
 
         // Ensure the parent directory for the destination file exists
         val parentDir = finalPath.parent
@@ -59,12 +70,14 @@ class DefaultFileOrganizer(
                 try {
                     createHardLink(source = sourceFile, destination = finalPath)
                 } catch (e: Exception) {
-                    // Check message or errno if possible, otherwise generic warning
-                    throw Exception("Hardlink failed. Ensure source and destination are on the same volume/partition.", e)
+                    throw IOException("Hardlink failed: ${e.message}", e)
                 }
             }
         }
 
-        finalPath
+        OrganizeOutcome.Organized(finalPath)
     }
+
+    private fun isSameFileOnDisk(source: Path, target: Path): Boolean =
+        SystemFileSystem.resolve(source) == SystemFileSystem.resolve(target) || isSameFile(source, target)
 }

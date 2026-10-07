@@ -17,7 +17,7 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 -   **Intelligent Consolidation**: Compares search results from all providers, scores them, and selects the best "golden record" for your media.
 -   **Manual Overrides**: Force the title, season, episode offset, or year (`-t`, `-s`, `--episode-offset`, `-y`) when a release is too cryptic to parse — the season hidden in a folder named `2`, a remake matching the wrong year, and similar cases.
 -   **Customizable Naming**: Comes with pre-configured, optimal naming templates for **Plex** and **Jellyfin**, or you can define your own powerful custom templates.
--   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup.
+-   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup. Existing files in the library are never overwritten.
 -   **Dry Run Mode**: Preview every rename and the final library layout with `--test` before a single file is touched.
 -   **Readable Output**: One line per organized file with a final summary by default; a `--verbose` flag exposes the full pipeline (parsing, cache, providers, match scoring) for troubleshooting.
 -   **Cross-Platform**: Built with Kotlin Multiplatform to run natively on **Linux** and **Windows**.
@@ -129,6 +129,15 @@ plexify [OPTIONS] <source...> <destination>
 | `--help`                | `-h`  | Show help message.                                                                                       |            |
 
 > **Note:** The override options apply to *every* file in the run, so use them when pointing Plexify at a single movie or one show's season folder — not a mixed batch.
+
+### Existing files at the target
+
+Plexify never deletes or overwrites a file that is already at the computed target path, in either mode. Both cases below are counted as *skipped* in the summary, and `--test` reports them the same way.
+
+-   **The target is the file itself** — the source already sits at its target (for example, when Plexify is run over an existing library), or the target is a hardlink to the source. The file is left alone: `= Movie.mkv — already in the library: <path>`.
+-   **A different file is at the target** — both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, delete or rename the existing file and run Plexify again.
+
+If a hardlink can't be created, the error from the operating system is shown, e.g. when source and destination are on different volumes (hardlinks can't cross volumes or partitions).
 
 ### Examples
 

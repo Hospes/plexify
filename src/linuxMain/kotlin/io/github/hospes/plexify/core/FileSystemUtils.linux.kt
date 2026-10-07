@@ -1,30 +1,32 @@
 package io.github.hospes.plexify.core
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
+import kotlinx.io.IOException
 import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
+import platform.posix.EXDEV
 import platform.posix.errno
 import platform.posix.link
+import platform.posix.stat
 import platform.posix.strerror
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun createHardLink(source: Path, destination: Path) {
-    // Check if the destination file already exists.
-    if (SystemFileSystem.exists(destination)) {
-        println("  -> Destination '$destination' already exists. Deleting it to create a new hardlink.")
-        try {
-            // If it exists, delete it.
-            SystemFileSystem.delete(destination)
-        } catch (e: Exception) {
-            // Provide a more specific error if deletion fails (e.g., due to permissions).
-            throw Exception("Failed to delete existing file at '$destination' before creating hardlink.", e)
-        }
+    // link() fails with EEXIST rather than replacing an existing destination.
+    if (link(source.toString(), destination.toString()) != 0) {
+        val code = errno
+        val error = strerror(code)?.toKString() ?: "errno $code"
+        throw IOException(if (code == EXDEV) error + CROSS_VOLUME_HINT else error)
     }
+}
 
-    val result = link(source.toString(), destination.toString())
-    if (result != 0) {
-        val error = strerror(errno)?.toKString()
-        throw Exception("Failed to create hardlink from '$source' to '$destination'. Error: $error")
-    }
+@OptIn(ExperimentalForeignApi::class)
+actual fun isSameFile(first: Path, second: Path): Boolean = memScoped {
+    val firstStat = alloc<stat>()
+    val secondStat = alloc<stat>()
+    if (stat(first.toString(), firstStat.ptr) != 0 || stat(second.toString(), secondStat.ptr) != 0) return false
+    firstStat.st_dev == secondStat.st_dev && firstStat.st_ino == secondStat.st_ino
 }
