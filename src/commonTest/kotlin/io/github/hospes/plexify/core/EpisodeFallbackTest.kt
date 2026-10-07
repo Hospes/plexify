@@ -116,7 +116,7 @@ class EpisodeFallbackTest {
     fun `a multi-episode file gets the whole range and both titles`() = runTest {
         val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6)))
 
-        val run = run(provider, "Ghosts.S01E01E02.1080p.WEB.mkv")
+        val run = runProcessor(provider, "Ghosts.S01E01E02.1080p.WEB.mkv")
 
         val episode = run.organizer.organized["Ghosts.S01E01E02.1080p.WEB.mkv"] as CanonicalMedia.Episode
         assertEquals(1, episode.episode)
@@ -130,7 +130,7 @@ class EpisodeFallbackTest {
     fun `a range running past the season is filed as its first episode`() = runTest {
         val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6)))
 
-        val run = run(provider, "Ghosts.S01E06-E07.1080p.WEB.mkv")
+        val run = runProcessor(provider, "Ghosts.S01E06-E07.1080p.WEB.mkv")
 
         val episode = run.organizer.organized["Ghosts.S01E06-E07.1080p.WEB.mkv"] as CanonicalMedia.Episode
         assertEquals(6, episode.episode)
