@@ -57,16 +57,24 @@ jobs:
       - name: Set up build
         uses: ./.github/actions/setup-build
 
+      # The TMDB credentials are built into release binaries as the fallback key, used
+      # when the user sets none of their own (see TmdbCredentials). Anyone can extract a
+      # key from a binary, so this is a shared key that TMDB may revoke: users can always
+      # override it with TMDB_API_ACCESS_TOKEN. Empty secrets build a binary without one.
       - name: Build
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_API_ACCESS_TOKEN: ${{ secrets.TMDB_API_ACCESS_TOKEN }}
         run: ${{ matrix.gradlew }} ${{ matrix.task }} --no-daemon --no-parallel --stacktrace
 
       # The version is baked in from `git describe`; a binary that does not report
-      # exactly this tag was built from the wrong commit or without the tag.
+      # exactly this tag was built from the wrong commit or without the tag. Only the
+      # first line: the TMDB attribution notice follows it.
       - name: Check the binary reports the tag version
         if: matrix.runnable
         shell: bash
         run: |
-          version="$("${{ matrix.binary }}" --version)"
+          version="$("${{ matrix.binary }}" --version | head -n1 | tr -d '\r')"
           echo "$version"
           if [[ "$version" != *" $GITHUB_REF_NAME" ]]; then
             echo "::error::Binary reports '$version', expected version $GITHUB_REF_NAME"
@@ -240,6 +248,17 @@ jobs:
         with:
           name: release-notes
           path: release_notes
+
+      - name: Check the built-in TMDB key
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_API_ACCESS_TOKEN: ${{ secrets.TMDB_API_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$TMDB_API_KEY$TMDB_API_ACCESS_TOKEN" ]; then
+            msg="No TMDB_API_ACCESS_TOKEN or TMDB_API_KEY secret: these binaries have no built-in key, so every user must set their own."
+            echo "::warning title=No built-in TMDB key::$msg"
+            echo "> [!WARNING]"$'\n'"> $msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Create the release
         env:

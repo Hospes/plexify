@@ -31,7 +31,9 @@ There is no linter configured. Kotlin/Native linking is slow; prefer running tes
 
 ### API keys
 
-Metadata providers need keys, resolved in priority order: environment variables > `gradle.properties` > `local.properties` (untracked, in repo root). Keys: `TMDB_API_KEY`, `TMDB_API_ACCESS_TOKEN` (required for TMDB), `TVDB_API_KEY`, `OMDB_API_KEY` (optional). They are baked into the binary at build time via the `buildconfig` plugin (generated `BuildConfig` class).
+Metadata providers need keys, resolved at **build time** in priority order: environment variables > `gradle.properties` > `local.properties` (untracked, in repo root). Keys: `TMDB_API_KEY`, `TMDB_API_ACCESS_TOKEN` (either one is enough for TMDB; the token is preferred), `TVDB_API_KEY`, `OMDB_API_KEY` (optional). They are baked into the binary via the `buildconfig` plugin (generated `BuildConfig` class).
+
+At **runtime**, `data/tmdb/TmdbCredentials.resolve()` picks the user's own credentials (`--tmdb-access-token`/`--tmdb-api-key` or the `TMDB_API_ACCESS_TOKEN`/`TMDB_API_KEY` env vars) as a set, and falls back to the built-in `BuildConfig` values only when the user gave none — never a mix. Release binaries get the built-in key from the `TMDB_API_ACCESS_TOKEN`/`TMDB_API_KEY` repo secrets; it is shared by every user and extractable, so TMDB may revoke it. `App` checks the credentials once per run (`TmdbProvider.verifyCredentials()`) and fails with instructions on HTTP 401, distinguishing user vs built-in credentials. The TMDB terms (section 3) require the attribution notice `TMDB_ATTRIBUTION`, shown in `--help`, `--version` and the README — keep it.
 
 ### Versioning & releases
 

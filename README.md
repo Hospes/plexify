@@ -1,7 +1,7 @@
 # Plexify
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Kotlin Version](https://img.shields.io/badge/Kotlin-2.4.0-blue.svg?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin Version](https://img.shields.io/badge/Kotlin-2.4.20-blue.svg?logo=kotlin)](https://kotlinlang.org)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/hospes/plexify) <!-- Placeholder -->
 
 Plexify is a powerful, cross-platform command-line tool designed to automatically organize your movie and TV show collections into a clean, structured library, perfect for media servers like Plex, Jellyfin, and Emby. It intelligently parses filenames, fetches accurate metadata from multiple online sources, and renames/organizes your files according to best practices.
@@ -32,59 +32,67 @@ Plexify follows a simple but effective pipeline to organize your media:
 
 ## 🚀 Getting Started
 
-### Prerequisites
+### Download a release
 
--   Git
--   Java Development Kit (JDK) 11 or higher
+Pre-built binaries for **Windows**, **Linux x64** and **Linux arm64** are attached to every [GitHub release](https://github.com/Hospes/plexify/releases). Download the archive for your platform, extract it, and put `plexify` (or `plexify.exe`) somewhere on your `PATH`.
 
-### 1. Clone the Repository
+Release binaries work out of the box: they include a TMDB key, so there is nothing to configure.
+
+### TMDB API key
+
+Plexify looks up metadata on [TMDB](https://www.themoviedb.org/). It uses the first credentials it finds, in this order:
+
+1.  `--tmdb-access-token` / `--tmdb-api-key` on the command line
+2.  The `TMDB_API_ACCESS_TOKEN` / `TMDB_API_KEY` environment variables
+3.  The key built into release binaries
+
+The built-in key is shared by everyone who uses a release, so it can hit TMDB's rate limit or be revoked. If Plexify reports that TMDB rejected the built-in key, or you organize large libraries regularly, use your own. It's free:
+
+1.  Create a TMDB account and request an API key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api).
+2.  Copy the **API Read Access Token** (or the shorter **API Key**).
+3.  Set it in your environment, for example:
+
+    ```bash
+    export TMDB_API_ACCESS_TOKEN="your_read_access_token"
+    ```
+
+    On Windows (PowerShell): `setx TMDB_API_ACCESS_TOKEN "your_read_access_token"`, then open a new terminal.
+
+Either credential works on its own; when both are set, the access token is used.
+
+### Build from source
+
+Requires Git and JDK 21.
 
 ```bash
-git clone https://github.com/hospes/plexify.git
+git clone https://github.com/Hospes/plexify.git
 cd plexify
 ```
 
-### 2. Configure API Keys
-
-Plexify requires API keys to fetch metadata. You need to provide them by creating a `local.properties` file in the root of the project.
-
-Create the file `local.properties`:
+To build a key into your binary, create a `local.properties` file in the project root (it is git-ignored). Without one, your build has no built-in key and needs the environment variable at runtime instead.
 
 ```properties
-# Required for TMDB (The Movie Database)
-TMDB_API_KEY="your_tmdb_api_key"
-TMDB_API_ACCESS_TOKEN="your_tmdb_access_token"
-
-# Optional, for future use
-# TVDB_API_KEY="your_tvdb_api_key"
-# OMDB_API_KEY="your_omdb_api_key"
+TMDB_API_ACCESS_TOKEN=your_read_access_token
+# or
+# TMDB_API_KEY=your_api_key
 ```
 
-> **Note:** The application prioritizes keys in this order: Environment Variables > `gradle.properties` > `local.properties`.
+> **Note:** At build time the keys are read in this order: environment variables > `gradle.properties` > `local.properties`.
 
-### 3. Build the Executable
-
-Use the included Gradle wrapper to build the native executable for your platform.
-
-**For Linux:**
+Build the native executable with the Gradle wrapper:
 
 ```bash
-./gradlew linkReleaseExecutableLinux
+./gradlew linkReleaseExecutableLinuxX64       # Linux x64
+./gradlew linkReleaseExecutableLinuxArm64     # Linux arm64
+./gradlew.bat linkReleaseExecutableWindows    # Windows
 ```
 
-**For Windows (in PowerShell or CMD):**
-
-```bash
-./gradlew.bat linkReleaseExecutableWindows
-```
-
-The compiled executable will be located in:
--   Linux: `build/bin/linux/releaseExecutable/plexify.kexe`
+The executable is written to:
+-   Linux x64: `build/bin/linuxX64/releaseExecutable/plexify.kexe`
+-   Linux arm64: `build/bin/linuxArm64/releaseExecutable/plexify.kexe`
 -   Windows: `build/bin/windows/releaseExecutable/plexify.exe`
 
-You can move this executable to a directory in your system's `PATH` (e.g., `/usr/local/bin` or `C:\Windows`) for easy access.
-
-> **Note:** For linux users you may need to run `chmod +x plexify.kexe` to make it executable. Also, you can rename the file to `plexify` if you want for cleaner usage in terminal
+> **Note:** On Linux you may need `chmod +x plexify.kexe`, and you can rename it to `plexify` for cleaner use in the terminal.
 
 ## 🖥️ Usage
 
@@ -112,6 +120,8 @@ plexify [OPTIONS] <source...> <destination>
 | `--season <N>`          | `-s`  | Override the season number for TV episodes (ignored for movies).                                         | `n/a`      |
 | `--year <YYYY>`         | `-y`  | Override the release year. Acts as a strict filter: candidates with a different year are rejected.       | `n/a`      |
 | `--verbose`             |       | Show detailed pipeline logs (parsing, cache, providers, match scoring).                                  | `false`    |
+| `--tmdb-access-token <T>` |     | Your TMDB API Read Access Token. Overrides the built-in key. Env: `TMDB_API_ACCESS_TOKEN`.                | built-in   |
+| `--tmdb-api-key <KEY>`  |       | Your TMDB API key. Overrides the built-in key. Env: `TMDB_API_KEY`.                                      | built-in   |
 | `--version`             | `-v`  | Show the version and exit.                                                                               |            |
 | `--help`                | `-h`  | Show help message.                                                                                       |            |
 
@@ -210,6 +220,14 @@ This project is built with Kotlin and relies on several great open-source librar
 ## 🤝 Contributing
 
 Contributions are welcome! Whether it's bug reports, feature requests, or pull requests, please feel free to get involved.
+
+## 🎬 Attribution
+
+<a href="https://www.themoviedb.org/"><img src="docs/tmdb-logo.svg" alt="The Movie Database (TMDB)" width="150"></a>
+
+This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
+
+Metadata is provided by [The Movie Database (TMDB)](https://www.themoviedb.org/). The same notice is shown in `plexify --help` and `plexify --version`.
 
 ## 📜 License
 
