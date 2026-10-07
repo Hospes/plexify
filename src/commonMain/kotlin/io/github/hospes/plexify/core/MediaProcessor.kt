@@ -173,15 +173,54 @@ class MediaProcessor(
 
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
         val seasonKey = "${parsedInfo.showTitle}:${parsedInfo.year}:$season"
-        val bestEpisodeMatch = findEpisode(candidates, seasonKey, season, parsedInfo.episode)
-        if (bestEpisodeMatch == null) {
+        val firstEpisodeMatch = findEpisode(candidates, seasonKey, season, parsedInfo.episode)
+        if (firstEpisodeMatch == null) {
             status("✗ ${source.name} — episode S${season}E${parsedInfo.episode} not found")
             stats.skipped++
             return@indent
         }
+        val bestEpisodeMatch = parsedInfo.lastEpisode
+            ?.let { last -> extendToRange(firstEpisodeMatch, candidates, seasonKey, season, parsedInfo.episode, last, source.name) }
+            ?: firstEpisodeMatch
 
-        debug("Found episode: S${bestEpisodeMatch.season}E${bestEpisodeMatch.episode} - ${bestEpisodeMatch.title}")
+        debug("Found episode: ${bestEpisodeMatch.describe()}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
+    }
+
+    /**
+     * Extends the first episode of a multi-episode file ("S01E01-E03") to its whole range. Every other
+     * episode is looked up like the first (same show, cached season, episode groups); the range is kept
+     * only when they land on consecutive episodes of one provider season, else the file is filed as its
+     * first episode.
+     */
+    context(_: LoggingContext)
+    private suspend fun extendToRange(
+        first: CanonicalMedia.Episode,
+        candidates: List<CanonicalMedia.TvShow>,
+        seasonKey: String,
+        season: Int,
+        firstEpisode: Int,
+        lastEpisode: Int,
+        fileName: String,
+    ): CanonicalMedia.Episode {
+        val episodes = mutableListOf(first)
+        for (episode in (firstEpisode + 1)..lastEpisode) {
+            val match = findEpisode(candidates, seasonKey, season, episode)
+            val previous = episodes.last()
+            if (match == null || match.season != previous.season || match.episode != previous.episode + 1) {
+                status(
+                    "Warning: ${fileName} — S${season.pad2()}E${episode.pad2()} is not the episode after " +
+                            "S${previous.season.pad2()}E${previous.episode.pad2()} in '${first.show.title}'; " +
+                            "filing it as S${first.season.pad2()}E${first.episode.pad2()} only."
+                )
+                return first
+            }
+            episodes += match
+        }
+        return first.copy(
+            lastEpisode = episodes.last().episode,
+            title = episodes.map { it.title }.distinct().joinToString(" & "),
+        )
     }
 
     /**
@@ -564,7 +603,7 @@ class MediaProcessor(
 // Short human-readable labels for the concise log lines.
 private fun CanonicalMedia.describe(): String = when (this) {
     is CanonicalMedia.Movie -> "$title${year.inParens()}"
-    is CanonicalMedia.Episode -> "S${season.pad2()}E${episode.pad2()} - $title"
+    is CanonicalMedia.Episode -> "S${season.pad2()}E${episode.pad2()}${lastEpisode?.let { "-E${it.pad2()}" } ?: ""} - $title"
     is CanonicalMedia.TvShow -> buildString {
         append("$title${year.inParens()}")
         tmdbId?.let { append(" [tmdbid-$it]") }

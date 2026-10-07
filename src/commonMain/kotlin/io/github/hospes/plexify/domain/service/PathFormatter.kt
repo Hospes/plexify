@@ -97,6 +97,8 @@ class PathFormatter {
                         "year" to media.show.year?.toString(),
                         "season" to media.season.toString(),
                         "episode" to media.episode.toString(),
+                        // Composite like {version}: "-E02" closing "S01E01-E02" for a multi-episode file, else ""
+                        "multiepisode" to (media.lastEpisode?.let { "-E${it.toString().padStart(2, '0')}" } ?: ""),
                         "episodetitle" to media.title.replace(invalidCharsRegex, ""),
                         "imdbid" to media.show.imdbId,
                         "tmdbid" to media.show.tmdbId,

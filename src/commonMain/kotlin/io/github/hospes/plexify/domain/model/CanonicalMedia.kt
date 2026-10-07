@@ -15,7 +15,9 @@ sealed interface CanonicalMedia {
         val show: TvShow,
         val season: Int,
         val episode: Int,
-        val title: String, // Episode-specific title
+        val title: String, // Episode-specific title; the joined titles for a multi-episode file
+        /** The last episode of a multi-episode file, in the same season; null for a single episode. */
+        val lastEpisode: Int? = null,
     ) : CanonicalMedia
 
     data class Movie(

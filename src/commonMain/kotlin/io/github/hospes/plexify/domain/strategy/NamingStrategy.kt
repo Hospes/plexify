@@ -42,7 +42,7 @@ sealed interface NamingStrategy {
 
         override val tvShowFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}]"
         override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
+        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
 
         override fun toString(): String {
             return """
@@ -70,7 +70,7 @@ sealed interface NamingStrategy {
 
         override val tvShowFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]"
         override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
+        override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
 
         override fun toString(): String {
             return """
@@ -97,7 +97,7 @@ sealed interface NamingStrategy {
 
         override val tvShowFolderTemplate: String = movieFolderTemplate
         override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "{CleanTitle} ({year}) - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
+        override val episodeFileTemplate: String = "{CleanTitle} ({year}) - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
 
         override fun toString(): String {
             return """
