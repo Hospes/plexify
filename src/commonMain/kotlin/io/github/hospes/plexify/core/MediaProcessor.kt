@@ -43,6 +43,15 @@ class MediaProcessor(
 
     val stats: Stats = Stats()
 
+    /** A candidate from [rankMatches]: its record consolidated across providers, and how it matched. */
+    internal class RankedMatch(
+        val media: CanonicalMedia,
+        /** Best title similarity over every title the candidate is known by. */
+        val titleSimilarity: Double,
+        /** The [yearScore] it got, or null when the filename or the candidate has no year. */
+        val yearScore: Double?,
+    )
+
     // Directories already warned about missing season numbers, to avoid repeating the
     // warning for every episode file of the same release.
     private val seasonWarnedDirs = mutableSetOf<String>()
@@ -186,7 +195,8 @@ class MediaProcessor(
 
     /**
      * The shows matching a title, best first (empty when none is confident), checking the cache
-     * before searching providers. Only the best is reported; the rest back up the episode lookup.
+     * before searching providers. Only the best is reported; the rest, same-titled shows only
+     * (see [canStandInFor]), back up the episode lookup.
      */
     context(_: LoggingContext)
     private suspend fun findOrFetchShows(title: String, year: String?): List<CanonicalMedia.TvShow> = indent {
@@ -209,10 +219,17 @@ class MediaProcessor(
             status("No match for '$title': providers returned no results.")
             emptyList()
         } else {
+            val ranked = rankMatches(searchResults, title, year).filter { it.media is CanonicalMedia.TvShow }
+            val best = ranked.firstOrNull()
+            val runnerUps = ranked.drop(1).filter { candidate ->
+                (best != null && candidate.canStandInFor(best)).also { sameShow ->
+                    if (!sameShow) debug("Not a fallback for '$title': ${candidate.media.describe()} (title or year differs)")
+                }
+            }
             // Only the best match gets its external IDs now; a runner-up gets them if the
             // episode fallback picks it (see findEpisode).
-            val ranked = rankMatches(searchResults, title, year).filterIsInstance<CanonicalMedia.TvShow>()
-            ranked.take(1).map { it.withExternalIds() } + ranked.drop(1)
+            listOfNotNull(best).map { (it.media as CanonicalMedia.TvShow).withExternalIds() } +
+                    runnerUps.map { it.media as CanonicalMedia.TvShow }
         }
 
         if (shows.isNotEmpty()) {
@@ -228,8 +245,8 @@ class MediaProcessor(
 
     /**
      * Finds the episode in the best-matching show. When that show has no such season at all, it is
-     * not the release's show (e.g. a same-titled spin-off with one season), so the runner-up shows
-     * are tried and the first that has the exact episode is used. The show that places a season is
+     * not the release's show (e.g. a same-titled spin-off with one season), so the same-titled
+     * runner-up shows are tried and the first that has the exact episode is used. The show that places a season is
      * kept for the rest of that season's files, so one season never splits across shows.
      */
     context(_: LoggingContext)
@@ -308,6 +325,15 @@ class MediaProcessor(
         val cacheKey = show.seasonCacheKey(season)
         return cacheKey !in unavailableSeasons && cache.getSeason(cacheKey)?.episodes?.isEmpty() == true
     }
+
+    /**
+     * Whether this runner-up may take a season the best match lacks: only a show named as the
+     * release is, as closely as the best match (a same-titled show, like Being Human UK and US),
+     * and not contradicted by the filename year. A merely similar title clears the confidence
+     * minimum too, but it is a different show.
+     */
+    private fun RankedMatch.canStandInFor(best: RankedMatch): Boolean =
+        titleSimilarity >= best.titleSimilarity && (yearScore == null || yearScore > 0)
 
     private fun CanonicalMedia.TvShow.seasonCacheKey(season: Int): String = "${tmdbId ?: imdbId ?: title}:$season"
 
@@ -427,18 +453,19 @@ class MediaProcessor(
         results: List<MediaSearchResult>,
         parsedTitle: String,
         parsedYear: String?
-    ): CanonicalMedia? = rankMatches(results, parsedTitle, parsedYear).firstOrNull()
+    ): CanonicalMedia? = rankMatches(results, parsedTitle, parsedYear).firstOrNull()?.media
 
     /**
      * Every candidate scoring at least [MINIMUM_CONFIDENCE_SCORE], best first, each consolidated
-     * across providers. Empty, with the reason reported, when none qualifies.
+     * across providers, with its title similarity and year score. Empty, with the reason reported,
+     * when none qualifies.
      */
     context(_: LoggingContext)
     internal fun rankMatches(
         results: List<MediaSearchResult>,
         parsedTitle: String,
         parsedYear: String?
-    ): List<CanonicalMedia> = indent {
+    ): List<RankedMatch> = indent {
         if (results.isEmpty()) return@indent emptyList()
 
         debug("Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
@@ -466,14 +493,13 @@ class MediaProcessor(
                 return@mapNotNull null
             }
 
-            // Normalize: keep only alphanumeric chars for scoring to handle "Spider-Man" vs "Spiderman"
-            val normalizedParsedTitle = parsedTitle.filter { it.isLetterOrDigit() }.lowercase()
+            val normalizedParsedTitle = parsedTitle.normalizedTitle()
 
             // Score against every title the group is known by (display, original-language and
             // alternative titles), so a release named with a romaji or localized alias still
             // matches its canonical record.
             val (bestTitle, similarity) = group.flatMap { it.allTitles }.distinct()
-                .map { candidateTitle -> candidateTitle to titleSimilarity(normalizedParsedTitle, candidateTitle.filter { it.isLetterOrDigit() }.lowercase()) }
+                .map { candidateTitle -> candidateTitle to titleSimilarity(normalizedParsedTitle, candidateTitle.normalizedTitle()) }
                 .maxBy { (_, similarity) -> similarity }
             val matchedVia = if (bestTitle != representative.title) " (matched via '${bestTitle}')" else ""
 
@@ -488,9 +514,10 @@ class MediaProcessor(
 
             val parsedY = parsedYear?.toIntOrNull()
             val groupY = representative.year?.toIntOrNull()
-            if (parsedY != null && groupY != null) {
-                score += yearScore(parsedY, groupY, isShow = representative is MediaSearchResult.TvShow)
-            }
+            val yearScore = if (parsedY != null && groupY != null) {
+                yearScore(parsedY, groupY, isShow = representative is MediaSearchResult.TvShow)
+            } else null
+            score += yearScore ?: 0.0
 
             score += (group.distinctBy { it.provider }.size - 1) * 2.0
 
@@ -500,11 +527,11 @@ class MediaProcessor(
             score += avgProviderConfidence / 20.0
 
             debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}$matchedVia")
-            group to score
+            ScoredGroup(group, score, similarity, yearScore)
         }
 
-        val bestGroup = scoredGroups.maxByOrNull { it.second }
-        if (bestGroup == null || bestGroup.second < MINIMUM_CONFIDENCE_SCORE) {
+        val bestGroup = scoredGroups.maxByOrNull { it.score }
+        if (bestGroup == null || bestGroup.score < MINIMUM_CONFIDENCE_SCORE) {
             val reason = when {
                 yearRejected.isNotEmpty() -> {
                     val listed = yearRejected.take(3).joinToString(", ")
@@ -513,8 +540,8 @@ class MediaProcessor(
                 }
 
                 bestGroup != null -> {
-                    val candidate = bestGroup.first.first()
-                    "best candidate '${candidate.title} (${candidate.year})' scored ${bestGroup.second.format(2)}, " +
+                    val candidate = bestGroup.group.first()
+                    "best candidate '${candidate.title} (${candidate.year})' scored ${bestGroup.score.format(2)}, " +
                             "below the $MINIMUM_CONFIDENCE_SCORE confidence minimum"
                 }
 
@@ -524,14 +551,21 @@ class MediaProcessor(
             return@indent emptyList()
         }
 
-        debug("Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
+        debug("Best match selected: '${bestGroup.group.first().title}' with score ${bestGroup.score.format(2)}")
 
         // sortedByDescending is stable, so the best stays the one maxByOrNull picks on a tie.
         return@indent scoredGroups
-            .filter { (_, score) -> score >= MINIMUM_CONFIDENCE_SCORE }
-            .sortedByDescending { (_, score) -> score }
-            .map { (group, _) -> consolidate(group, parsedYear) }
+            .filter { it.score >= MINIMUM_CONFIDENCE_SCORE }
+            .sortedByDescending { it.score }
+            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore) }
     }
+
+    private class ScoredGroup(
+        val group: List<MediaSearchResult>,
+        val score: Double,
+        val similarity: Double,
+        val yearScore: Double?,
+    )
 
     /** Merges one candidate's results across providers into a golden record with all their IDs. */
     private fun consolidate(groupItems: List<MediaSearchResult>, parsedYear: String?): CanonicalMedia {
@@ -607,6 +641,9 @@ internal fun yearScore(parsedYear: Int, candidateYear: Int, isShow: Boolean): Do
         else -> -10.0
     }
 }
+
+// Keep only alphanumeric chars for title comparison, so "Spider-Man" matches "Spiderman".
+private fun String.normalizedTitle(): String = filter { it.isLetterOrDigit() }.lowercase()
 
 /** Normalized Levenshtein similarity in [0.0, 1.0]; 1.0 means identical strings. */
 internal fun titleSimilarity(lhs: String, rhs: String): Double {

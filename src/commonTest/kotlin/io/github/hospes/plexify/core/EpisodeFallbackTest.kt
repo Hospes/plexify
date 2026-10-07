@@ -157,6 +157,40 @@ class EpisodeFallbackTest {
     }
 
     @Test
+    fun `does not fall back to a show with a merely similar title`() = runTest {
+        // "Gates" clears the confidence minimum for "Gate" on similarity and provider confidence,
+        // and has the season the release numbers (split-cour anime, no episode group), but it is
+        // a different show.
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "Gate", year = "2015", tmdbId = "1", provider = "TMDb", matchConfidence = 100.0),
+            MediaSearchResult.TvShow(title = "Gates", year = "2018", tmdbId = "2", provider = "TMDb", matchConfidence = 80.0),
+        )
+        val provider = FakeTmdb(results, seasons = mapOf("1" to mapOf(1 to 1..24), "2" to mapOf(1 to 1..10, 2 to 1..10)))
+
+        val run = run(provider, "Gate_S2_[01]_[1080p].mkv")
+
+        assertTrue(run.organizer.organized.isEmpty())
+        assertEquals(1, run.stats.skipped)
+        assertEquals(listOf("1:2"), run.provider.seasonFetches)
+    }
+
+    @Test
+    fun `does not fall back to a same-titled show that premiered after the filename year`() = runTest {
+        // Ghosts (2021) scores exactly the confidence minimum against a 2019 filename year, but a
+        // show that started two years later cannot hold a 2019 release.
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "Ghosts", year = "2019", tmdbId = "1", provider = "TMDb", matchConfidence = 100.0),
+            MediaSearchResult.TvShow(title = "Ghosts", year = "2021", tmdbId = "2", provider = "TMDb", matchConfidence = 100.0),
+        )
+        val provider = FakeTmdb(results, seasons = mapOf("1" to mapOf(1 to 1..6), "2" to mapOf(4 to 1..8)))
+
+        val run = run(provider, "Ghosts (2019) - S04E01.mkv")
+
+        assertTrue(run.organizer.organized.isEmpty())
+        assertEquals(listOf("1:4"), run.provider.seasonFetches)
+    }
+
+    @Test
     fun `one season never splits across runner-up shows`() = runTest {
         val results = searchResults +
                 MediaSearchResult.TvShow(title = "Ghosts", year = "2023", tmdbId = "3", provider = "TMDb", matchConfidence = 80.0)
