@@ -14,6 +14,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.ktor.client.*
@@ -31,7 +32,7 @@ class TmdbProvider(
     private val credentials: TmdbCredentials,
 ) : MetadataProvider {
     override val id: String = "tmdb"
-    override val supportedIds: Set<String> = setOf("tmdbid", "imdbid")
+    override val supportedIds: Set<String> = setOf("tmdbid", "imdbid", "tvdbid")
 
     private val httpClient by lazy {
         HttpClient(createHttpClientEngine()) {
@@ -176,17 +177,21 @@ class TmdbProvider(
             }
     }
 
-    override suspend fun imdbId(media: CanonicalMedia): Result<String?> = Result.runCatching {
+    override suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> = Result.runCatching {
         // Search results carry no external IDs, so this is one extra call for the winning match.
         val (kind, tmdbId, title) = when (media) {
             is CanonicalMedia.Movie -> Triple("movie", media.tmdbId, media.title)
             is CanonicalMedia.TvShow -> Triple("tv", media.tmdbId, media.title)
-            else -> throw UnsupportedOperationException("IMDb IDs are looked up for movies and shows only.")
+            else -> throw UnsupportedOperationException("External IDs are looked up for movies and shows only.")
         }
-        requireNotNull(tmdbId) { "TMDb ID is required to fetch the IMDb ID." }
+        requireNotNull(tmdbId) { "TMDb ID is required to fetch external IDs." }
         val response = httpClient.get("$kind/$tmdbId/external_ids")
-        response.ensureSuccess { "fetching the IMDb ID of '$title'" }
-        response.body<TmdbExternalIdsDto>().imdbId?.ifBlank { null }
+        response.ensureSuccess { "fetching external IDs of '$title'" }
+        val dto = response.body<TmdbExternalIdsDto>()
+        ExternalIds(
+            imdbId = dto.imdbId?.ifBlank { null },
+            tvdbId = dto.tvdbId?.takeIf { it > 0 }?.toString(),
+        )
     }
 
     private fun HttpResponse.ensureSuccess(action: () -> String) {

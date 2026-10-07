@@ -2,6 +2,7 @@ package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
@@ -130,7 +131,7 @@ class MediaProcessor(
 
         val canonicalMovie = (findAndConsolidateBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
                 as? CanonicalMedia.Movie)
-            ?.let { movie -> movie.copy(imdbId = movie.imdbId ?: findImdbId(movie, movie.tmdbId)) }
+            ?.withExternalIds()
 
         if (canonicalMovie == null) {
             status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
@@ -204,7 +205,7 @@ class MediaProcessor(
             null
         } else {
             (findAndConsolidateBestMatch(searchResults, title, year) as? CanonicalMedia.TvShow)
-                ?.let { show -> show.copy(imdbId = show.imdbId ?: findImdbId(show, show.tmdbId)) }
+                ?.withExternalIds()
         }
 
         if (canonicalShow != null) {
@@ -291,16 +292,31 @@ class MediaProcessor(
         }
     }
 
+    /** Fills the winning movie's IMDb ID, which search results don't carry. See [findExternalIds]. */
+    context(_: LoggingContext)
+    private suspend fun CanonicalMedia.Movie.withExternalIds(): CanonicalMedia.Movie {
+        if (imdbId != null) return this
+        val ids = findExternalIds(this, tmdbId) ?: return this
+        return copy(imdbId = ids.imdbId)
+    }
+
+    /** Fills the winning show's IMDb and TVDb IDs, which search results don't carry. See [findExternalIds]. */
+    context(_: LoggingContext)
+    private suspend fun CanonicalMedia.TvShow.withExternalIds(): CanonicalMedia.TvShow {
+        if (imdbId != null && tvdbId != null) return this
+        val ids = findExternalIds(this, tmdbId) ?: return this
+        return copy(imdbId = imdbId ?: ids.imdbId, tvdbId = tvdbId ?: ids.tvdbId)
+    }
+
     /**
-     * The winning match's IMDb ID, which search results don't carry. Looked up once per TMDB
-     * record and run (the service skips it when the template doesn't use `{imdbid}`), so a
-     * season of episodes or several versions of a movie cost one call.
+     * Looked up once per TMDB record and run (the service skips it when the template uses neither
+     * `{imdbid}` nor `{tvdbid}`), so a season of episodes or several versions of a movie cost one call.
      */
     context(_: LoggingContext)
-    private suspend fun findImdbId(media: CanonicalMedia, tmdbId: String?): String? {
+    private suspend fun findExternalIds(media: CanonicalMedia, tmdbId: String?): ExternalIds? {
         if (tmdbId == null) return null
         val kind = if (media is CanonicalMedia.Movie) "movie" else "tv"
-        return cache.getOrPutImdbId("$kind:$tmdbId") { metadataService.getImdbId(media) }
+        return cache.getOrPutExternalIds("$kind:$tmdbId") { metadataService.getExternalIds(media) }
     }
 
     context(ctx: LoggingContext)

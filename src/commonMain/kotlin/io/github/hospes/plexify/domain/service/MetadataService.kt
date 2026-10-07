@@ -3,6 +3,7 @@ package io.github.hospes.plexify.domain.service
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import io.github.hospes.plexify.logging.LoggingContext
@@ -84,15 +85,22 @@ class MetadataService(
     }
 
     /**
-     * IMDb ID of a matched movie or show, from the first provider that supplies one. Null without
-     * a lookup when the naming template has no `{imdbid}`, so the extra call is only made when used.
+     * IMDb and TVDb IDs of a matched movie or show, from the first provider that supplies one.
+     * Null without a lookup when the naming template uses neither (TVDb counts for shows only),
+     * so the extra call is only made when its result is used.
      */
     context(_: LoggingContext)
-    suspend fun getImdbId(media: CanonicalMedia): String? {
-        if (IMDB_ID !in namingStrategy.requiredMetadataFields()) return null
+    suspend fun getExternalIds(media: CanonicalMedia): ExternalIds? {
+        val applicable = when (media) {
+            is CanonicalMedia.Movie -> setOf(IMDB_ID)
+            is CanonicalMedia.TvShow -> setOf(IMDB_ID, TVDB_ID)
+            else -> emptySet()
+        }
+        val wanted = applicable intersect namingStrategy.requiredMetadataFields()
+        if (wanted.isEmpty()) return null
         return indent {
-            for (provider in resolveActiveProviders().filter { IMDB_ID in it.supportedIds }) {
-                val imdbId = provider.imdbId(media)
+            for (provider in resolveActiveProviders().filter { p -> p.supportedIds.any { it in wanted } }) {
+                val ids = provider.externalIds(media)
                     .onFailure { error ->
                         when (error) {
                             is UnsupportedOperationException -> Unit
@@ -101,9 +109,9 @@ class MetadataService(
                         }
                     }
                     .getOrNull()
-                if (imdbId != null) {
-                    debug("IMDb ID $imdbId fetched from ${provider.id}")
-                    return@indent imdbId
+                if (ids != null && (ids.imdbId != null || ids.tvdbId != null)) {
+                    debug("External IDs fetched from ${provider.id}: imdb=${ids.imdbId}, tvdb=${ids.tvdbId}")
+                    return@indent ids
                 }
             }
             null
@@ -136,5 +144,6 @@ class MetadataService(
     }
 }
 
-// Template placeholder (lowercased, as requiredMetadataFields() reports it) for the IMDb ID.
+// Template placeholders (lowercased, as requiredMetadataFields() reports them) for external IDs.
 private const val IMDB_ID = "imdbid"
+private const val TVDB_ID = "tvdbid"
