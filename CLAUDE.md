@@ -29,6 +29,24 @@ Plexify is a cross-platform CLI tool (Kotlin Multiplatform / Native, no JVM at r
 
 There is no linter configured. Kotlin/Native linking is slow; prefer running tests over full links for iteration.
 
+### Verifying a change end to end
+
+Unit tests don't touch the network, and several bugs (alias matching, 404 season bodies, year scoring) only showed up against live TMDB. For anything in the parse → search → organize path, also run the binary as a dry run on real filenames, with keys from `local.properties` built in:
+
+```bash
+./gradlew linkDebugExecutableWindows      # Linux: linkDebugExecutableLinuxX64
+build/bin/windows/debugExecutable/plexify.exe --test <source-dir> <scratch-dest-dir>
+#   Linux: build/bin/linuxX64/debugExecutable/plexify.kexe
+```
+
+`--test` touches no files. Report the matched titles to the maintainer, who checks the result against real releases before a change is committed.
+
+### Workflow
+
+- `main` is protected by two repo rulesets: changes land only through a pull request, and the `Build & test (Linux)` and `Build & test (Windows)` checks must pass. Work on a branch and open a PR; the maintainer reviews and merges.
+- Merge with **rebase** (history is linear, no merge commits); head branches are deleted automatically after merge.
+- Release by pushing a tag on `main` once CI is green there (see below); never publish a GitHub Release by hand.
+
 ### API keys
 
 Metadata providers need keys, resolved at **build time** in priority order: environment variables > `gradle.properties` > `local.properties` (untracked, in repo root). Keys: `TMDB_API_KEY`, `TMDB_API_ACCESS_TOKEN` (either one is enough for TMDB; the token is preferred), `TVDB_API_KEY`, `OMDB_API_KEY` (optional). They are baked into the binary via the `buildconfig` plugin (generated `BuildConfig` class).
@@ -60,7 +78,7 @@ Commits follow **Conventional Commits** — release notes are generated automati
   - `refactor:` — code change with no behavior change
   - `docs:`, `test:`, `build:`, `ci:`, `chore:` — excluded from release notes
 - **Breaking changes**: append `!` after the type/scope (`feat!:` or `feat(cli)!:`) and/or add a `BREAKING CHANGE:` footer → major bump.
-- **Scopes** (optional, lowercase): `parser`, `metadata`, `naming`, `cli`, `core`, `cache`, `build`, `ci`.
+- **Scopes** (optional, lowercase): `parser`, `metadata`, `naming`, `cli`, `core`, `cache`, `build`, `ci`, `deps` (dependency bumps, as Dependabot writes them: `build(deps): …`, `ci(deps): …`).
 - Summary: imperative mood, lowercase after the colon, no trailing period, ≤ 72 chars.
 
 Examples:
@@ -95,4 +113,4 @@ Only two things are platform-specific; everything else must stay in `commonMain`
 ### Kotlin language features in use
 
 - **Context parameters** (stable since Kotlin 2.4, no compiler flag needed): the logging system ([logging/Logger.kt](src/commonMain/kotlin/io/github/hospes/plexify/logging/Logger.kt)) passes `LoggingContext` implicitly via `context(_: LoggingContext)`. Nested pipeline steps use `indent { ... }` to increase log indentation — follow this pattern for any new logging inside the pipeline.
-- **Explicit backing fields** (stable since Kotlin 2.4).
+- **Test names:** Kotlin/Native rejects commas in backticked test function names (`Name contains illegal characters: ","`); spaces are fine.
