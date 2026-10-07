@@ -27,7 +27,7 @@ import io.github.hospes.plexify.logging.LoggingContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
-object App : CliktCommand(name = "Plexify") {
+object App : CliktCommand(name = "plexify") {
 
     // Your own TMDB credentials (flag or environment) take precedence; release binaries
     // fall back to a key built in at release time, shared by every user.
