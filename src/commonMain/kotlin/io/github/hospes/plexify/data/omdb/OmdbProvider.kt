@@ -12,7 +12,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.*
 
-// [ Base URL: http://www.omdbapi.com/?apikey=[yourkey]& ] -> https://www.omdbapi.com/
+// [ Base URL: https://www.omdbapi.com/?apikey=[yourkey]& ]
 class OmdbProvider(
     private val apiKey: String,
 ) /*: MediaServiceApi*/ {
@@ -23,7 +23,7 @@ class OmdbProvider(
 
             defaultRequest {
                 url {
-                    takeFrom("http://www.omdbapi.com/")
+                    takeFrom("https://www.omdbapi.com/")
                     parameters.append("apikey", apiKey)
                 }
                 headers.appendIfNameAbsent(HttpHeaders.ContentType, ContentType.Application.Json.toString())
