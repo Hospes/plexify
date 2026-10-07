@@ -78,6 +78,27 @@ class EpisodeFilenameParserTest {
             filename = "Tsue_to_Tsurugi_no_Wistoria_Season_2_[01]_[1080p]_[HEVC].mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "tsue to tsurugi no wistoria", season = 2, episode = 1, year = null, resolution = "1080p")
         ),
+        // AniLibria marks a season's last episode "[NN_END]"; it must parse like its "[NN]" siblings
+        TestCase(
+            filename = "Kimetsu_no_Yaiba_[25]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba", season = null, episode = 25, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Kimetsu_no_Yaiba_[26_END]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba", season = null, episode = 26, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Kimetsu_no_Yaiba_-_Yuukaku-hen_[10]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba yuukaku hen", season = null, episode = 10, year = null, resolution = "1080p", quality = "WEBRip")
+        ),
+        TestCase(
+            filename = "Kimetsu_no_Yaiba_-_Yuukaku-hen_[11_END]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba yuukaku hen", season = null, episode = 11, year = null, resolution = "1080p", quality = "WEBRip")
+        ),
+        TestCase(
+            filename = "Gate_S2_[24_end]_[AniLibria_TV]_[HDTV-Rip_720p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 24, year = null, resolution = "720p", quality = "HDTV")
+        ),
         TestCase(
             filename = "The_Boys_S03E01_2022_720p_WEB-DL_LostFilm.mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = "2022", resolution = "720p", quality = "WEB-DL", releaseGroup = "LostFilm")
