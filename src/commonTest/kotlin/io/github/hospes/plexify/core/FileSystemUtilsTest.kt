@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.core
 
+import kotlinx.io.IOException
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -9,6 +10,9 @@ import kotlin.random.Random
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FileSystemUtilsTest {
@@ -53,6 +57,41 @@ class FileSystemUtilsTest {
     @Test
     fun `walkFiles yields nothing for a missing root`() {
         assertTrue(walkFiles(Path(root, "missing")) { path, error -> throw AssertionError("unreadable $path", error) }.none())
+    }
+
+    @Test
+    fun `resolveSymbolicLink follows a chain of links`() {
+        val real = file(Path(root, "real.mkv"))
+        val first = Path(root, "first.mkv")
+        val second = Path(root, "links", "second.mkv").also { PlatformFileSystem.createDirectories(it.parent!!) }
+        if (!createSymbolicLink(first, "real.mkv") || !createSymbolicLink(second, "../first.mkv")) return
+
+        val resolved = assertNotNull(resolveSymbolicLink(second))
+
+        assertEquals(real.name, resolved.name)
+        assertTrue(isSameFile(real, resolved))
+        assertNull(resolveSymbolicLink(real))
+    }
+
+    @Test
+    fun `resolveSymbolicLink fails on a dangling link`() {
+        val link = Path(root, "dangling.mkv")
+        if (!createSymbolicLink(link, "missing.mkv")) return
+
+        assertFailsWith<IOException> { resolveSymbolicLink(link) }
+    }
+
+    @Test
+    fun `delete removes a symlink but not its target`() {
+        val real = file(Path(root, "real.mkv"))
+        val link = Path(root, "link.mkv")
+        val dangling = Path(root, "dangling.mkv")
+        if (!createSymbolicLink(link, "real.mkv") || !createSymbolicLink(dangling, "missing.mkv")) return
+
+        PlatformFileSystem.delete(link)
+        PlatformFileSystem.delete(dangling)
+
+        assertEquals(listOf(real), PlatformFileSystem.list(root))
     }
 
     /** A media file path under [root] exactly [length] characters long, in nested directories of at most 100. */

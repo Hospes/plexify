@@ -69,7 +69,12 @@ class DefaultFileOrganizer(
 
         when (mode) {
             // atomicMove replaces an existing target in one step.
-            OperationMode.MOVE -> PlatformFileSystem.atomicMove(sourceFile, finalPath)
+            OperationMode.MOVE -> {
+                val linkTarget = resolveSymbolicLink(sourceFile)
+                if (linkTarget != null) moveSymbolicLink(sourceFile, linkTarget, finalPath)
+                else PlatformFileSystem.atomicMove(sourceFile, finalPath)
+            }
+            // createHardLink links the file a symlink points at, never the symlink itself.
             OperationMode.HARDLINK -> if (targetExists) replaceWithHardLink(sourceFile, finalPath) else hardLink(sourceFile, finalPath)
         }
 
@@ -85,12 +90,11 @@ class DefaultFileOrganizer(
     }
 
     /**
-     * Links [source] under a temporary name next to [target], then renames it over [target], so the existing
-     * file stays in place if linking fails. The temporary name is short and fixed-length, so it can't push the
-     * path past a length limit (Windows MAX_PATH) that the target itself fits in.
+     * Links [source] under a temporary name next to [target] ([temporaryPath]), then renames it over [target], so the
+     * existing file stays in place if linking fails.
      */
     private fun replaceWithHardLink(source: Path, target: Path) {
-        val temporary = Path(target.parent!!, ".plexify-${Random.nextInt().toUInt().toString(16).padStart(8, '0')}.tmp")
+        val temporary = temporaryPath(target)
         hardLink(source, temporary)
         try {
             PlatformFileSystem.atomicMove(temporary, target)
@@ -99,6 +103,38 @@ class DefaultFileOrganizer(
             throw IOException("Replacing '$target' failed: ${e.message}", e)
         }
     }
+
+    /**
+     * Moves the symlink [source] itself to [target], as a rename does with any file. A relative link would then
+     * point somewhere else from the library, so the link is first moved under a temporary name next to [target] and
+     * checked to still lead to [linkTarget]. If it doesn't, it goes back to [source] and the move fails, leaving a
+     * file already at [target] in place.
+     */
+    private fun moveSymbolicLink(source: Path, linkTarget: Path, target: Path) {
+        val temporary = temporaryPath(target)
+        PlatformFileSystem.atomicMove(source, temporary)
+        if (!isSameFile(temporary, linkTarget)) {
+            PlatformFileSystem.atomicMove(temporary, source)
+            throw IOException(
+                "'$source' is a symlink to '$linkTarget' that won't resolve from the library (a relative link?). " +
+                    "Use hardlink mode, or make the link absolute."
+            )
+        }
+        try {
+            PlatformFileSystem.atomicMove(temporary, target)
+        } catch (e: Exception) {
+            PlatformFileSystem.atomicMove(temporary, source)
+            throw IOException("Moving '$source' to '$target' failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * A temporary name next to [target]. It is short and fixed-length, so it can't push the path past a length limit
+     * (Windows MAX_PATH) that the target itself fits in. It has no video extension, so a media server scanning the
+     * library doesn't take it for a video.
+     */
+    private fun temporaryPath(target: Path): Path =
+        Path(target.parent!!, ".plexify-${Random.nextInt().toUInt().toString(16).padStart(8, '0')}.tmp")
 
     // kotlinx-io's resolve fails on Windows paths past MAX_PATH; isSameFile also recognizes the same path.
     private fun isSameFileOnDisk(source: Path, target: Path): Boolean =

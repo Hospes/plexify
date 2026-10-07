@@ -11,6 +11,10 @@ import kotlinx.io.files.Path
  *
  * It never replaces an existing file: if [destination] already exists, the call fails.
  *
+ * If [source] is a symbolic link, the link is followed and [destination] becomes a hardlink to the file it points at.
+ * Both platforms' own calls (`link` on Linux, `CreateHardLinkW` on Windows) would hardlink the symlink itself, which
+ * no longer resolves from another folder when it is relative.
+ *
  * @param source The existing file path to link from.
  * @param destination The new path where the hard link should be created.
  * @throws kotlinx.io.IOException If the link cannot be created (e.g., destination exists, cross-filesystem link,
@@ -23,6 +27,14 @@ expect fun createHardLink(source: Path, destination: Path)
  * (same device and inode on Linux, same volume and file index on Windows). Returns false if either path can't be read.
  */
 expect fun isSameFile(first: Path, second: Path): Boolean
+
+/**
+ * If [path] is a symbolic link, returns the absolute path of the file it finally points at (after every link in the
+ * chain). Returns null if [path] is not a symbolic link.
+ *
+ * @throws kotlinx.io.IOException If [path] can't be examined, or it is a link that can't be resolved (e.g. dangling).
+ */
+expect fun resolveSymbolicLink(path: Path): Path?
 
 /** Appended to the platform error when a hardlink fails because source and destination are on different volumes. */
 internal const val CROSS_VOLUME_HINT = " (source and destination must be on the same volume/partition)"
