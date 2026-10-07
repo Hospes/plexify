@@ -16,7 +16,13 @@ interface MetadataProvider {
 
     suspend fun season(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> =
         Result.failure(UnsupportedOperationException("season() not supported by provider '$id'"))
+
+    suspend fun episodeGroups(show: CanonicalMedia.TvShow): Result<List<CanonicalMedia.EpisodeGroup>> =
+        Result.failure(UnsupportedOperationException("episodeGroups() not supported by provider '$id'"))
 }
+
+/** The provider has no such record (HTTP 404), e.g. a season it numbers differently. Expected, not an error. */
+class MetadataNotFoundException(message: String) : Exception(message)
 
 internal fun calculateTitleConfidence(query: String, resultTitle: String): Double {
     val distance = levenshtein(query.lowercase(), resultTitle.lowercase())

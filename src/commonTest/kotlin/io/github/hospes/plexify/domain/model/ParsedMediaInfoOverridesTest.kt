@@ -25,8 +25,25 @@ class ParsedMediaInfoOverridesTest {
     }
 
     @Test
+    fun `episode offset shifts the parsed episode number`() {
+        val result = episode.withOverrides(title = null, season = 1, episodeOffset = 12) as ParsedMediaInfo.Episode
+
+        assertEquals(1, result.season)
+        assertEquals(15, result.episode)
+    }
+
+    @Test
+    fun `negative episode offset subtracts`() {
+        val absolute = episode.copy(episode = 15)
+
+        val result = absolute.withOverrides(title = null, season = 2, episodeOffset = -12) as ParsedMediaInfo.Episode
+
+        assertEquals(3, result.episode)
+    }
+
+    @Test
     fun `movie gets title and year overrides and ignores season`() {
-        val result = movie.withOverrides(title = "Actual Movie", season = 5, year = "2019") as ParsedMediaInfo.Movie
+        val result = movie.withOverrides(title = "Actual Movie", season = 5, year = "2019", episodeOffset = 12) as ParsedMediaInfo.Movie
 
         assertEquals("Actual Movie", result.title)
         assertEquals("2019", result.year)

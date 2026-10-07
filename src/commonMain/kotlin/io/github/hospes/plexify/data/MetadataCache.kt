@@ -12,9 +12,11 @@ class MetadataCache {
     private val showCache = mutableMapOf<String, CanonicalMedia.TvShow>()
     private val failedShowKeys = mutableSetOf<String>()
     private val seasonCache = mutableMapOf<String, CanonicalMedia.Season>()
+    private val episodeGroupCache = mutableMapOf<String, List<CanonicalMedia.EpisodeGroup>>()
 
     private val showMutex = Mutex()
     private val seasonMutex = Mutex()
+    private val episodeGroupMutex = Mutex()
 
     suspend fun getShow(key: String): CanonicalMedia.TvShow? = showMutex.withLock { showCache[key] }
 
@@ -28,4 +30,11 @@ class MetadataCache {
     suspend fun getSeason(key: String): CanonicalMedia.Season? = seasonMutex.withLock { seasonCache[key] }
 
     suspend fun putSeason(key: String, season: CanonicalMedia.Season) = seasonMutex.withLock { seasonCache[key] = season }
+
+    /** Episode groups by show; an empty list means the show has none (or they failed to load). */
+    suspend fun getEpisodeGroups(showKey: String): List<CanonicalMedia.EpisodeGroup>? =
+        episodeGroupMutex.withLock { episodeGroupCache[showKey] }
+
+    suspend fun putEpisodeGroups(showKey: String, groups: List<CanonicalMedia.EpisodeGroup>) =
+        episodeGroupMutex.withLock { episodeGroupCache[showKey] = groups }
 }

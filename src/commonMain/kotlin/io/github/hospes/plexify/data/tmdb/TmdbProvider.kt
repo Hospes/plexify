@@ -1,16 +1,20 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
 import io.github.hospes.plexify.data.tmdb.dto.TmdbAlternativeTitlesDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
+import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -149,10 +153,33 @@ class TmdbProvider(
         )
     }
 
+    override suspend fun episodeGroups(
+        show: CanonicalMedia.TvShow,
+    ): Result<List<CanonicalMedia.EpisodeGroup>> = Result.runCatching {
+        requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode groups." }
+        val response = httpClient.get("tv/${show.tmdbId}/episode_groups")
+        response.ensureSuccess { "fetching episode groups of '${show.title}'" }
+
+        // Each group's episodes take one more call, so fetch only orderings that can stand in
+        // for seasons (absolute and story-arc orderings are skipped), most trusted first.
+        val seasonLikeTypes = EpisodeGroupMapper.SEASON_LIKE_TYPES
+        response.body<TmdbEpisodeGroupsDto>().results
+            .mapNotNull { summary -> summary.type.toEpisodeGroupType()?.let { summary to it } }
+            .filter { (_, type) -> type in seasonLikeTypes }
+            .sortedBy { (_, type) -> seasonLikeTypes.indexOf(type) }
+            .take(MAX_EPISODE_GROUP_LOOKUPS)
+            .map { (summary, type) ->
+                val groupResponse = httpClient.get("tv/episode_group/${summary.id}")
+                groupResponse.ensureSuccess { "fetching episode group '${summary.name}' of '${show.title}'" }
+                groupResponse.body<TmdbEpisodeGroupDto>().toDomainModel(show, type)
+            }
+    }
+
     private fun HttpResponse.ensureSuccess(action: () -> String) {
         when {
             status.isSuccess() -> Unit
             status == HttpStatusCode.Unauthorized -> throw TmdbCredentialsRejectedException(credentials.source)
+            status == HttpStatusCode.NotFound -> throw MetadataNotFoundException("HTTP 404 ${action()}")
             status == HttpStatusCode.TooManyRequests && credentials.source == TmdbCredentials.Source.BUILT_IN ->
                 error("TMDB rate limit reached (HTTP 429) ${action()}. The built-in key is shared by all Plexify users; set your own with TMDB_API_ACCESS_TOKEN (see README).")
 
@@ -169,6 +196,35 @@ private const val ALT_TITLES_CONFIDENCE_THRESHOLD = 60.0
 // alternative-titles lookup. TMDB orders results by relevance, so the alias match
 // (if any) is expected near the top.
 private const val MAX_ALT_TITLES_LOOKUPS = 3
+
+// Cap extra API calls per show: popular shows can carry a dozen community-made groups.
+private const val MAX_EPISODE_GROUP_LOOKUPS = 6
+
+// TMDB numbers the types 1..7 in this order.
+private fun Int.toEpisodeGroupType(): CanonicalMedia.EpisodeGroup.Type? =
+    CanonicalMedia.EpisodeGroup.Type.entries.getOrNull(this - 1)
+
+private fun TmdbEpisodeGroupDto.toDomainModel(
+    show: CanonicalMedia.TvShow,
+    type: CanonicalMedia.EpisodeGroup.Type,
+) = CanonicalMedia.EpisodeGroup(
+    name = name,
+    type = type,
+    parts = groups.map { part ->
+        CanonicalMedia.EpisodeGroup.Part(
+            name = part.name,
+            order = part.order,
+            episodes = part.episodes.sortedBy { it.order }.map { ep ->
+                CanonicalMedia.Episode(
+                    show = show,
+                    season = ep.seasonNumber,
+                    episode = ep.episodeNumber,
+                    title = ep.name,
+                )
+            },
+        )
+    },
+)
 
 private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResult? {
     return when (this) {

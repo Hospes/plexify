@@ -100,7 +100,7 @@ The processing pipeline (README "How It Works"): **Parse → Search → Consolid
 5. **Format** — `domain/strategy/NamingStrategy` (sealed: `Plex`, `Jellyfin` (default), `Custom`) holds template strings; `domain/service/PathFormatter` renders placeholders like `{CleanTitle}`, `{season:2}` (zero-padding), and `[...]` conditional blocks that drop out when a placeholder is missing.
 6. **Organize** — `core/DefaultFileOrganizer` builds the final path and either `atomicMove`s or hardlinks (`OperationMode`, default `HARDLINK`). `--test` performs a dry run.
 
-**Caching**: `data/MetadataCache` is in-memory, per-run, mutex-guarded. TV shows are cached by `title:year`; seasons are fetched whole (one API call) and cached by `showId:season`, so processing a season's worth of episodes costs one season fetch.
+**Caching**: `data/MetadataCache` is in-memory, per-run, mutex-guarded. TV shows are cached by `title:year`; seasons are fetched whole (one API call) and cached by `showId:season`, so processing a season's worth of episodes costs one season fetch. When an episode isn't in the TMDB season (typically anime split into cours that TMDB keeps as one season), `MediaProcessor` falls back to the show's TMDB episode groups (cached per show) and `domain/service/EpisodeGroupMapper` maps the release's S/E onto TMDB's own episode, so the file gets TMDB numbering.
 
 **Domain models**: `ParsedMediaInfo` (guess from filename) vs `CanonicalMedia` (verified truth from providers) — keep this distinction; `PathFormatter` receives both because parsed info supplies `{resolution}`/`{quality}`-style placeholders while canonical media supplies titles/years/IDs.
 
