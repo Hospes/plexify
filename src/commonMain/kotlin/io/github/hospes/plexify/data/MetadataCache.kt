@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data
 
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.ExternalIds
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -13,12 +14,12 @@ class MetadataCache {
     private val failedShowKeys = mutableSetOf<String>()
     private val seasonCache = mutableMapOf<String, CanonicalMedia.Season>()
     private val episodeGroupCache = mutableMapOf<String, List<CanonicalMedia.EpisodeGroup>>()
-    private val imdbIdCache = mutableMapOf<String, String?>()
+    private val externalIdsCache = mutableMapOf<String, ExternalIds?>()
 
     private val showMutex = Mutex()
     private val seasonMutex = Mutex()
     private val episodeGroupMutex = Mutex()
-    private val imdbIdMutex = Mutex()
+    private val externalIdsMutex = Mutex()
 
     suspend fun getShow(key: String): CanonicalMedia.TvShow? = showMutex.withLock { showCache[key] }
 
@@ -41,11 +42,12 @@ class MetadataCache {
         episodeGroupMutex.withLock { episodeGroupCache[showKey] = groups }
 
     /**
-     * IMDb ID by media key, looked up once per run. A null result (the record has none, or the
-     * lookup failed) is cached too. The lock is held through [lookup], so concurrent callers
-     * asking for the same key wait for the first lookup instead of repeating it.
+     * External IDs by media key, looked up once per run. A null result (not needed, or the lookup
+     * failed) is cached too. The lock is held through [lookup], so concurrent callers asking for
+     * the same key wait for the first lookup instead of repeating it.
      */
-    suspend fun getOrPutImdbId(key: String, lookup: suspend () -> String?): String? = imdbIdMutex.withLock {
-        if (key in imdbIdCache) imdbIdCache[key] else lookup().also { imdbIdCache[key] = it }
-    }
+    suspend fun getOrPutExternalIds(key: String, lookup: suspend () -> ExternalIds?): ExternalIds? =
+        externalIdsMutex.withLock {
+            if (key in externalIdsCache) externalIdsCache[key] else lookup().also { externalIdsCache[key] = it }
+        }
 }

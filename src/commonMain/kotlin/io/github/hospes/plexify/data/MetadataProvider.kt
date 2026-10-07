@@ -2,6 +2,7 @@ package io.github.hospes.plexify.data
 
 import io.github.hospes.plexify.core.levenshtein
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlin.math.max
 
@@ -20,9 +21,9 @@ interface MetadataProvider {
     suspend fun episodeGroups(show: CanonicalMedia.TvShow): Result<List<CanonicalMedia.EpisodeGroup>> =
         Result.failure(UnsupportedOperationException("episodeGroups() not supported by provider '$id'"))
 
-    /** IMDb ID of a matched movie or show; null when the provider knows of none. */
-    suspend fun imdbId(media: CanonicalMedia): Result<String?> =
-        Result.failure(UnsupportedOperationException("imdbId() not supported by provider '$id'"))
+    /** Other databases' IDs for a matched movie or show; a field is null when the provider knows of none. */
+    suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> =
+        Result.failure(UnsupportedOperationException("externalIds() not supported by provider '$id'"))
 }
 
 /** The provider has no such record (HTTP 404), e.g. a season it numbers differently. Expected, not an error. */

@@ -209,7 +209,7 @@ The following placeholders can be used in your custom templates.
 | **Metadata IDs** |                                                                              |                                         |
 | `{imdbid}`       | The IMDb ID, looked up on TMDB for the match; empty when TMDB has none.      | `tt1630029`                             |
 | `{tmdbid}`       | The TMDb ID (e.g., `76600`).                                                 | `76600`                                 |
-| `{tvdbid}`       | The TVDb ID (if available).                                                  | `12345`                                 |
+| `{tvdbid}`       | The TVDb ID (if available), looked up on TMDB; TV shows only.                | `81189`                                 |
 | **TV Shows**     |                                                                              |                                         |
 | `{season}`       | The season number.                                                           | `1`                                     |
 | `{episode}`      | The episode number.                                                          | `5`                                     |
