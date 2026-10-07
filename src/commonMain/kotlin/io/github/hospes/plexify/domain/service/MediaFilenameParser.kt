@@ -11,8 +11,9 @@ object MediaFilenameParser {
     // Tier 2: season marker in the (normalized) filename: "Season 2", or a bare "S2" token as in "Gate_S2_[01]"
     private val seasonKeywordRegex = """(?:^|\s)(?:Season\s+|S)(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
 
-    // Tiers 2-4: [NN] bracket episode — 1-3 digits only (avoids matching [1080p] which contains letters)
-    private val bracketEpisodeRegex = """[\[(](\d{1,3})[\])]""".toRegex()
+    // Tiers 2-4: [NN] bracket episode — 1-3 digits only (avoids matching [1080p] which contains letters).
+    // AniLibria marks a season's last episode "[26_END]", which reads "[26 END]" once normalized.
+    private val bracketEpisodeRegex = """[\[(](\d{1,3})(?:\s+END)?[\])]""".toRegex(RegexOption.IGNORE_CASE)
 
     // Tier 3: Season number from parent directory name ("Season 2", "S02", "S2")
     private val seasonFromDirRegex = """(?:Season|S)\s*(\d{1,2})(?:\b|${'$'})""".toRegex(RegexOption.IGNORE_CASE)
