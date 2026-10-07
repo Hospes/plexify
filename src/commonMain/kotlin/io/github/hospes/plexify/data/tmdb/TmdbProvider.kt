@@ -9,6 +9,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbAlternativeTitlesDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupsDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbExternalIdsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
@@ -30,7 +31,7 @@ class TmdbProvider(
     private val credentials: TmdbCredentials,
 ) : MetadataProvider {
     override val id: String = "tmdb"
-    override val supportedIds: Set<String> = setOf("tmdbid")
+    override val supportedIds: Set<String> = setOf("tmdbid", "imdbid")
 
     private val httpClient by lazy {
         HttpClient(createHttpClientEngine()) {
@@ -173,6 +174,19 @@ class TmdbProvider(
                 groupResponse.ensureSuccess { "fetching episode group '${summary.name}' of '${show.title}'" }
                 groupResponse.body<TmdbEpisodeGroupDto>().toDomainModel(show, type)
             }
+    }
+
+    override suspend fun imdbId(media: CanonicalMedia): Result<String?> = Result.runCatching {
+        // Search results carry no external IDs, so this is one extra call for the winning match.
+        val (kind, tmdbId, title) = when (media) {
+            is CanonicalMedia.Movie -> Triple("movie", media.tmdbId, media.title)
+            is CanonicalMedia.TvShow -> Triple("tv", media.tmdbId, media.title)
+            else -> throw UnsupportedOperationException("IMDb IDs are looked up for movies and shows only.")
+        }
+        requireNotNull(tmdbId) { "TMDb ID is required to fetch the IMDb ID." }
+        val response = httpClient.get("$kind/$tmdbId/external_ids")
+        response.ensureSuccess { "fetching the IMDb ID of '$title'" }
+        response.body<TmdbExternalIdsDto>().imdbId?.ifBlank { null }
     }
 
     private fun HttpResponse.ensureSuccess(action: () -> String) {

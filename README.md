@@ -207,7 +207,7 @@ The following placeholders can be used in your custom templates.
 | `{year}`         | The release year of the movie or the first air date year of a show.          | `2022`                                  |
 | `{ext}`          | The original file extension.                                                 | `mkv`                                   |
 | **Metadata IDs** |                                                                              |                                         |
-| `{imdbid}`       | The IMDb ID. Currently always empty: no metadata source supplies it.         | `tt1630029`                             |
+| `{imdbid}`       | The IMDb ID, looked up on TMDB for the match; empty when TMDB has none.      | `tt1630029`                             |
 | `{tmdbid}`       | The TMDb ID (e.g., `76600`).                                                 | `76600`                                 |
 | `{tvdbid}`       | The TVDb ID (if available).                                                  | `12345`                                 |
 | **TV Shows**     |                                                                              |                                         |
