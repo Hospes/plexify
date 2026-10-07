@@ -8,8 +8,8 @@ object MediaFilenameParser {
     // Tier 1: Captures S01E01, s01e01, S1E1, etc.
     private val episodeRegex = """[._\-\s\[(]([Ss](\d{1,2})[Ee](\d{1,2}))(?:[._\-\s\])]|$)""".toRegex()
 
-    // Tier 2: "Season N" keyword in the (normalized) filename, e.g. "Season 2"
-    private val seasonKeywordRegex = """(?:^|\s)Season\s+(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
+    // Tier 2: season marker in the (normalized) filename: "Season 2", or a bare "S2" token as in "Gate_S2_[01]"
+    private val seasonKeywordRegex = """(?:^|\s)(?:Season\s+|S)(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
 
     // Tiers 2-4: [NN] bracket episode — 1-3 digits only (avoids matching [1080p] which contains letters)
     private val bracketEpisodeRegex = """[\[(](\d{1,3})[\])]""".toRegex()
@@ -95,7 +95,7 @@ object MediaFilenameParser {
             )
         }
 
-        // --- Tier 2: "Season N" keyword in filename + [NN] bracket episode ---
+        // --- Tier 2: "Season N" / "SN" marker in filename + [NN] bracket episode ---
         val seasonKeywordMatch = seasonKeywordRegex.find(normalized)
         if (seasonKeywordMatch != null) {
             val season = seasonKeywordMatch.groupValues[1].toInt()

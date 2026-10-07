@@ -2,6 +2,7 @@ package io.github.hospes.plexify.domain.service
 
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class EpisodeFilenameParserTest {
@@ -36,6 +37,10 @@ class EpisodeFilenameParserTest {
             filename = "Some.Anime.Season.1.[12].1080p.mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "some anime", season = 1, episode = 12, year = null, resolution = "1080p")
         ),
+        TestCase(
+            filename = "Some.Anime.S2.[05].1080p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some anime", season = 2, episode = 5, year = null, resolution = "1080p")
+        ),
 
         // --- Tier 3: [NN] bracket + season from parent directory ---
         TestCase(
@@ -59,6 +64,27 @@ class EpisodeFilenameParserTest {
             expected = ParsedMediaInfo.Episode(showTitle = "naruto shippuden", season = null, episode = 420, year = null)
         ),
     )
+
+    // Split-cour anime: the release's S2 is TMDB's S1E13+, remapped later via episode groups,
+    // so only title, season and episode matter here.
+    @Test
+    fun `parses split cour release numbering`() {
+        val firstCour = MediaFilenameParser.parse(
+            "Gate_[01]_[AniLibria_Tv]_[HDTV-Rip_720p].mkv",
+            "Gate - AniLibria.TV [HDTV-Rip 720p]",
+        ) as ParsedMediaInfo.Episode
+        assertEquals("gate", firstCour.showTitle)
+        assertEquals(null, firstCour.season)
+        assertEquals(1, firstCour.episode)
+
+        val secondCour = MediaFilenameParser.parse(
+            "Gate_S2_[12]_[AniLibria_TV]_[HDTV-Rip_720p].mkv",
+            "Gate S2 - AniLibria.TV [HDTV-Rip 720p]",
+        ) as ParsedMediaInfo.Episode
+        assertEquals("gate", secondCour.showTitle)
+        assertEquals(2, secondCour.season)
+        assertEquals(12, secondCour.episode)
+    }
 
     @Test
     fun `parses list of episodes correctly`() {
