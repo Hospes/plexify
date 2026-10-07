@@ -65,11 +65,11 @@ class TmdbProvider(
 
 
     /** One cheap call before a run, so wrong or revoked credentials fail once and clearly. */
-    suspend fun verifyCredentials(): Result<Unit> = Result.runCatching {
+    suspend fun verifyCredentials(): Result<Unit> = tmdbCatching {
         httpClient.get("authentication").ensureSuccess { "verifying credentials" }
     }
 
-    override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.runCatching {
+    override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = tmdbCatching {
         val response = httpClient.get("search/multi") {
             parameter("query", title)
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
@@ -118,7 +118,7 @@ class TmdbProvider(
         show: CanonicalMedia.TvShow,
         season: Int,
         episode: Int
-    ): Result<CanonicalMedia.Episode> = Result.runCatching {
+    ): Result<CanonicalMedia.Episode> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
         val response = httpClient.get("tv/${show.tmdbId}/season/$season/episode/$episode")
         response.ensureSuccess { "fetching S${season}E${episode} of '${show.title}'" }
@@ -135,7 +135,7 @@ class TmdbProvider(
     override suspend fun season(
         show: CanonicalMedia.TvShow,
         season: Int,
-    ): Result<CanonicalMedia.Season> = Result.runCatching {
+    ): Result<CanonicalMedia.Season> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch season details." }
         val response = httpClient.get("tv/${show.tmdbId}/season/$season")
         response.ensureSuccess { "fetching season $season of '${show.title}'" }
@@ -157,7 +157,7 @@ class TmdbProvider(
 
     override suspend fun episodeGroups(
         show: CanonicalMedia.TvShow,
-    ): Result<List<CanonicalMedia.EpisodeGroup>> = Result.runCatching {
+    ): Result<List<CanonicalMedia.EpisodeGroup>> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode groups." }
         val response = httpClient.get("tv/${show.tmdbId}/episode_groups")
         response.ensureSuccess { "fetching episode groups of '${show.title}'" }
@@ -177,7 +177,7 @@ class TmdbProvider(
             }
     }
 
-    override suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> = Result.runCatching {
+    override suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> = tmdbCatching {
         // Search results carry no external IDs, so this is one extra call for the winning match.
         val (kind, tmdbId, title) = when (media) {
             is CanonicalMedia.Movie -> Triple("movie", media.tmdbId, media.title)
@@ -193,6 +193,14 @@ class TmdbProvider(
             tvdbId = dto.tvdbId?.takeIf { it > 0 }?.toString(),
         )
     }
+
+    // Every result leaves through here, so no caller can print a credential from an error message.
+    private inline fun <T> tmdbCatching(block: () -> T): Result<T> =
+        try {
+            Result.success(block())
+        } catch (e: Throwable) {
+            Result.failure(credentials.redact(e))
+        }
 
     private fun HttpResponse.ensureSuccess(action: () -> String) {
         when {

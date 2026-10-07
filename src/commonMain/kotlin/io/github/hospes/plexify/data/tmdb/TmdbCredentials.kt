@@ -23,6 +23,33 @@ class TmdbCredentials(
     override fun toString(): String =
         "TmdbCredentials(source=$source, apiKey=${apiKey.mask()}, accessToken=${accessToken.mask()})"
 
+    /**
+     * [text] with every credential masked: this run's key and token wherever they appear, plus
+     * any `api_key=` query value or Bearer token. Ktor's curl engine puts the full request URL,
+     * query included, into connection errors, and users paste those into GitHub issues.
+     */
+    fun redact(text: String): String {
+        var redacted = text
+        listOfNotNull(apiKey, accessToken).filter { it.isNotEmpty() }.forEach { redacted = redacted.replace(it, MASK) }
+        redacted = API_KEY_PARAM.replace(redacted) { it.groupValues[1] + MASK }
+        return BEARER.replace(redacted) { it.groupValues[1] + MASK }
+    }
+
+    /**
+     * [error] itself when no message in its cause chain carries a credential, so callers can still
+     * tell its type; otherwise the chain retold as [TmdbRedactedException]s with masked messages.
+     */
+    fun redact(error: Throwable): Throwable {
+        val leaks = generateSequence(error) { it.cause }.any { e -> e.message?.let { redact(it) != it } == true }
+        return if (leaks) redactChain(error) else error
+    }
+
+    private fun redactChain(error: Throwable): Throwable = TmdbRedactedException(
+        originalType = error::class.simpleName,
+        message = error.message?.let(::redact),
+        cause = error.cause?.let(::redactChain),
+    )
+
     companion object {
         /**
          * The user's credentials win as a set: a user key is never mixed with the built-in
@@ -43,10 +70,26 @@ class TmdbCredentials(
 
         private fun String?.nonBlank(): String? = this?.trim()?.ifEmpty { null }
 
-        private fun String?.mask(): String = if (this == null) "none" else "***"
+        private fun String?.mask(): String = if (this == null) "none" else MASK
+
+        private const val MASK = "***"
+        private val API_KEY_PARAM = Regex("""(api_key=)[^&\s'"#]+""", RegexOption.IGNORE_CASE)
+        private val BEARER = Regex("""(Bearer\s+)[^\s'",]+""", RegexOption.IGNORE_CASE)
     }
 }
 
 /** TMDB answered 401: the credentials are wrong, revoked or expired. */
 class TmdbCredentialsRejectedException(val source: TmdbCredentials.Source) :
     Exception("TMDB rejected the ${if (source == TmdbCredentials.Source.USER) "supplied" else "built-in"} credentials (HTTP 401)")
+
+/**
+ * A TMDB failure retold with the credentials masked (see [TmdbCredentials.redact]). [toString], which
+ * stack traces print, keeps the original exception's type.
+ */
+class TmdbRedactedException(
+    private val originalType: String?,
+    message: String?,
+    cause: Throwable?,
+) : Exception(message, cause) {
+    override fun toString(): String = listOfNotNull(originalType ?: "Exception", message).joinToString(": ")
+}
