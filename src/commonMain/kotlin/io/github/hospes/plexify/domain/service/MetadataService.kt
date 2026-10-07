@@ -2,6 +2,7 @@ package io.github.hospes.plexify.domain.service
 
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
+import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
@@ -19,22 +20,31 @@ class MetadataService(
     private val namingStrategy: NamingStrategy,
 ) {
 
+    /**
+     * Results from every active provider. Fails with the [MetadataTimeoutException] when nothing came
+     * back and a provider timed out: no results then says nothing about the title, and the caller
+     * reports it. Other provider errors are logged and count as no results.
+     */
     context(_: LoggingContext)
-    suspend fun search(title: String, year: String?): List<MediaSearchResult> = coroutineScope {
+    suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = coroutineScope {
         indent {
             val activeProviders = resolveActiveProviders()
             if (activeProviders.isEmpty()) {
                 log("No active metadata providers available.")
-                return@coroutineScope emptyList()
+                return@coroutineScope Result.success(emptyList())
             }
 
-            activeProviders.map { provider ->
-                async {
-                    provider.search(title, year)
-                        .onSuccess { results -> debug("Found ${results.size} results from ${provider.id}") }
-                        .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
-                }
-            }.awaitAll().flatMap { it.getOrDefault(emptyList()) }
+            val outcomes = activeProviders.map { provider -> async { provider to provider.search(title, year) } }.awaitAll()
+            val results = outcomes.flatMap { (_, outcome) -> outcome.getOrDefault(emptyList()) }
+            val timeout = outcomes.firstNotNullOfOrNull { (_, outcome) -> outcome.exceptionOrNull() as? MetadataTimeoutException }
+            if (results.isEmpty() && timeout != null) return@coroutineScope Result.failure(timeout)
+
+            for ((provider, outcome) in outcomes) {
+                outcome
+                    .onSuccess { found -> debug("Found ${found.size} results from ${provider.id}") }
+                    .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
+            }
+            Result.success(results)
         }
     }
 

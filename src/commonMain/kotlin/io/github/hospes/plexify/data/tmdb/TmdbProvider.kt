@@ -2,6 +2,7 @@ package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
+import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
@@ -226,7 +227,7 @@ class TmdbProvider(
         val response = try {
             httpClient.get(path, block)
         } catch (e: Throwable) {
-            if (e.isTimeout()) throw TmdbTimeoutException("TMDB request timed out ${action()}")
+            if (e.isTimeout()) throw MetadataTimeoutException("TMDB request timed out ${action()}")
             throw e
         }
         response.ensureSuccess(action)
@@ -256,9 +257,6 @@ data class TmdbTimeouts(
     /** Extra tries after a timeout, out of the three retries a call gets (HTTP 429 may use all three). */
     val retries: Int = 1,
 )
-
-/** TMDB did not answer in time. Carries no cause, so no stack trace prints the request URL. */
-class TmdbTimeoutException(message: String) : Exception(message)
 
 // Ktor may deliver a timeout wrapped in a CancellationException.
 private fun Throwable.isTimeout(): Boolean = generateSequence(this) { it.cause }.take(8).any {
