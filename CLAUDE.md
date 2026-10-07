@@ -35,7 +35,9 @@ Metadata providers need keys, resolved in priority order: environment variables 
 
 ### Versioning & releases
 
-`version` is derived from `git describe --tags` plus a branch-based suffix (`release/*` → `-RC`, `feature/*` → `-FEATURE`) — see [build.gradle.kts](build.gradle.kts). Releases are cut by publishing a GitHub Release with a semver tag (e.g. `0.1.3`); [.github/workflows/release.yml](.github/workflows/release.yml) then builds Linux x64/arm64 + Windows binaries and uploads them as release assets.
+`version` is derived from `git describe --tags` plus a branch-based suffix (`release/*` → `-RC`, `feature/*` → `-FEATURE`) — see [build.gradle.kts](build.gradle.kts). A release is cut by pushing a semver tag (e.g. `0.2.1`, no `v` prefix) on `main`: [.github/workflows/release.yml](.github/workflows/release.yml) builds Linux x64/arm64 + Windows binaries and, in parallel, has Gemini CLI write the notes by following the `release-notes` skill. [scripts/validate-release-notes.sh](scripts/validate-release-notes.sh) checks those notes, and the GitHub Release is created last, with the binaries and the notes together. If notes generation or validation fails, the release still ships with GitHub's generated notes and a warning on the run; use the `release-notes` skill locally to rewrite them. Re-running the workflow uses the workflow files from the tagged commit, so a workflow fix needs the tag moved to a commit that has it.
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every PR and push to `main`: Linux (`linuxX64Test` + arm64 test link) and Windows (`windowsTest`). Its job names are required status checks in the repo's `main – safety` ruleset — renaming a job means updating the ruleset. Dependabot opens grouped monthly PRs for Gradle and Actions.
 
 ## Commit Convention (required)
 

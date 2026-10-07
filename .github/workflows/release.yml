@@ -1,121 +1,245 @@
-﻿name: Build and Release
+name: Release
 
-# This workflow is triggered only when a new release is published.
+# Pushing a semver tag (e.g. 0.2.1) is the whole release. Binaries are built and the
+# notes are written in parallel; the GitHub release is created last, with both, so a
+# release never appears with missing downloads.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: write
+  contents: read
+
+# Never cancel a release in progress; a second push of the same tag waits its turn.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
 
 jobs:
-  # Jobs to build Linux executables (x64 and arm64 run in parallel via matrix)
-  build-linux:
-    name: Build for Linux (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: x64
-            gradle_task: linkReleaseExecutableLinuxX64
-            bin_dir: linuxX64
-          - arch: arm64
-            gradle_task: linkReleaseExecutableLinuxArm64
-            bin_dir: linuxArm64
+          - name: Linux x64
+            os: ubuntu-latest
+            gradlew: ./gradlew
+            task: linkReleaseExecutableLinuxX64
+            binary: build/bin/linuxX64/releaseExecutable/plexify.kexe
+            asset: linux-x64
+            runnable: true
+          # Cross-compiled on x64: the binary cannot be run here, only built.
+          - name: Linux arm64
+            os: ubuntu-latest
+            gradlew: ./gradlew
+            task: linkReleaseExecutableLinuxArm64
+            binary: build/bin/linuxArm64/releaseExecutable/plexify.kexe
+            asset: linux-arm64
+            runnable: false
+          - name: Windows x64
+            os: windows-latest
+            gradlew: ./gradlew.bat
+            task: linkReleaseExecutableWindows
+            binary: build/bin/windows/releaseExecutable/plexify.exe
+            asset: windows-x64
+            runnable: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6
-        with:
-          java-version: '21'
-          distribution: 'temurin'
+      - name: Set up build
+        uses: ./.github/actions/setup-build
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          # Releases are the only workflow in this repo, so they must be allowed
-          # to write the cache — otherwise it never gets populated and every
-          # build starts cold.
-          cache-read-only: false
+      - name: Build
+        run: ${{ matrix.gradlew }} ${{ matrix.task }} --no-daemon --no-parallel --stacktrace
 
-      # The Kotlin/Native toolchain (LLVM, sysroots, ...) lives outside the
-      # Gradle User Home and is re-downloaded on every cold run without this.
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
-
-      - name: Build with Gradle
-        env:
-          GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
-        run: ./gradlew ${{ matrix.gradle_task }} --no-daemon --no-parallel --stacktrace
-
-      - name: Package the executable
+      # The version is baked in from `git describe`; a binary that does not report
+      # exactly this tag was built from the wrong commit or without the tag.
+      - name: Check the binary reports the tag version
+        if: matrix.runnable
+        shell: bash
         run: |
-          STAGING_DIR="build/dist"
-          mkdir -p "$STAGING_DIR"
-          cp build/bin/${{ matrix.bin_dir }}/releaseExecutable/plexify.kexe "$STAGING_DIR/plexify"
-          tar -czf "$STAGING_DIR/plexify-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz" -C "$STAGING_DIR" plexify
+          version="$("${{ matrix.binary }}" --version)"
+          echo "$version"
+          if [[ "$version" != *" $GITHUB_REF_NAME" ]]; then
+            echo "::error::Binary reports '$version', expected version $GITHUB_REF_NAME"
+            exit 1
+          fi
 
-      - name: List files in build directory
-        run: ls -R build/dist
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary }}" dist/plexify
+          tar -czf "dist/plexify-${GITHUB_REF_NAME}-${{ matrix.asset }}.tar.gz" -C dist plexify
 
-      - name: Upload Release Asset
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh release upload "${{ github.event.release.tag_name }}"
-          "build/dist/plexify-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz"
-          --clobber
-
-  # Job to build the Windows executable
-  build-windows:
-    name: Build for Windows
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: false
-
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
-
-      - name: Build with Gradle
-        env:
-          GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
-        run: ./gradlew.bat linkReleaseExecutableWindows --no-daemon --no-parallel --stacktrace
-
-      - name: Package the executable
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force build/dist | Out-Null
-          Copy-Item build/bin/windows/releaseExecutable/plexify.exe build/dist/plexify.exe
-          Compress-Archive -Path build/dist/plexify.exe -DestinationPath "build/dist/plexify-${{ github.ref_name }}-windows-x64.zip"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "${{ matrix.binary }}" dist/plexify.exe
+          Compress-Archive -Path dist/plexify.exe -DestinationPath "dist/plexify-$env:GITHUB_REF_NAME-${{ matrix.asset }}.zip"
 
-      - name: List files in build directory
-        run: ls -R build/dist
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: binary-${{ matrix.asset }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Upload Release Asset
+  # Gemini writes the notes by following the release-notes skill, then the validator,
+  # run as its own step, decides whether they are usable. If anything here fails the
+  # release still ships, with GitHub's generated notes instead (see the release job),
+  # so the job is allowed to fail without failing the run.
+  notes:
+    name: Write release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    # Read-only on purpose: the model reads commit messages anyone could have written
+    # in a pull request, so this job holds no token that can change the repository.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the log and diff of the whole range
+          persist-credentials: false
+
+      # The base is the preceding tag. A tag that was pushed but whose release was
+      # deleted would have its changes described there and omitted here; acceptable
+      # for a project where every tag is a release.
+      - name: Resolve the release range
+        id: range
+        run: |
+          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -z "$previous" ]; then
+            echo "::error::No tag precedes $GITHUB_REF_NAME, so there is no range to describe."
+            exit 1
+          fi
+          echo "Release notes for ${previous}..${GITHUB_REF_NAME}"
+          echo "from=$previous" >> "$GITHUB_OUTPUT"
+
+      # The action runs Gemini CLI with --yolo, so every tool call is auto-approved.
+      # tools.core is what keeps that safe: it is an allowlist, the CLI denies every
+      # tool not on it, and shell access is limited to read-only git commands and the
+      # validator. The CLI version and the model are pinned so neither can change how
+      # a release run behaves on the day a tag is pushed; Dependabot bumps the action
+      # but not these two inputs.
+      - name: Generate release notes
+        timeout-minutes: 10
+        uses: google-github-actions/run-gemini-cli@v0.1.22
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_cli_version: 0.63.0
+          gemini_model: gemini-2.5-pro
+          settings: |
+            {
+              "privacy": { "usageStatisticsEnabled": false },
+              "tools": {
+                "core": [
+                  "read_file",
+                  "write_file",
+                  "replace",
+                  "glob",
+                  "grep_search",
+                  "list_directory",
+                  "run_shell_command(git log)",
+                  "run_shell_command(git diff)",
+                  "run_shell_command(git show)",
+                  "run_shell_command(git tag)",
+                  "run_shell_command(./scripts/validate-release-notes.sh)"
+                ]
+              }
+            }
+          prompt: |
+            Read .claude/skills/release-notes/SKILL.md and follow it in non-interactive
+            CI mode. No human is present: never ask a question, and never end your turn
+            on a failure without acting on it.
+
+            Range: ${{ steps.range.outputs.from }}..${{ github.ref_name }}
+            Version: ${{ github.ref_name }}
+            Formats: GitHub only
+            Output: file mode, writing the GitHub notes to release_notes/github.md and
+            nothing else.
+
+            Then run this and act on what it reports:
+              ./scripts/validate-release-notes.sh release_notes/github.md ${{ steps.range.outputs.from }} ${{ github.ref_name }}
+
+            Correct what it names and run it again, up to 5 attempts, until it exits 0.
+            CI runs the same validator afterwards and discards notes that fail it, so
+            there is nothing to gain by stopping early.
+
+      # Run by the pipeline, not by the generator: the thing being checked never
+      # decides whether it passed.
+      - name: Validate release notes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh release upload "${{ github.event.release.tag_name }}"
-          "build/dist/plexify-${{ github.ref_name }}-windows-x64.zip"
-          --clobber
+          FROM: ${{ steps.range.outputs.from }}
+        run: ./scripts/validate-release-notes.sh release_notes/github.md "$FROM" "$GITHUB_REF_NAME"
+
+      # Uploaded only after validation passes, so the release job can treat "the
+      # artifact exists" as "the notes are usable".
+      - name: Upload release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release_notes/github.md
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Publish GitHub release
+    needs: [build, notes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+
+      - name: Download release notes
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: release_notes
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if [ -s release_notes/github.md ]; then
+            notes=(--notes-file release_notes/github.md)
+          else
+            msg="Gemini could not write the release notes, so GitHub generated them. See the 'Write release notes' job, then edit the release."
+            echo "::warning title=Release notes fell back::$msg"
+            echo "> [!WARNING]"$'\n'"> $msg" >> "$GITHUB_STEP_SUMMARY"
+            notes=(--generate-notes)
+          fi
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # A rerun after the release already exists: refresh the binaries and keep
+            # the notes, which may have been edited by hand since.
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --verify-tag "${notes[@]}"
+          fi
