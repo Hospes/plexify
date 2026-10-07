@@ -32,13 +32,6 @@ buildConfig {
             ?: localProperties["TMDB_API_ACCESS_TOKEN"]?.toString() ?: ""
         },
     )
-    buildConfigField<String>(
-        name = "TVDB_API_KEY",
-        value = provider<String> {
-            System.getenv("TVDB_API_KEY") ?: providers.gradleProperty("TVDB_API_KEY").orNull
-            ?: localProperties["TVDB_API_KEY"]?.toString() ?: ""
-        },
-    )
 
     buildConfigField<String>(name = "VERSION", value = provider { version.toString() })
 }
@@ -83,7 +76,6 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
 
             implementation(libs.ktor.core)
-            implementation(libs.ktor.auth)
             implementation(libs.ktor.content.negotiation)
             implementation(libs.ktor.serialization.json)
             implementation(libs.ktor.logging)

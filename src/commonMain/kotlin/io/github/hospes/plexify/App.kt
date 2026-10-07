@@ -49,8 +49,6 @@ object App : CliktCommand(name = "Plexify") {
     }
     private val tmdbProvider: TmdbProvider? by lazy { tmdbCredentials?.let { TmdbProvider(it) } }
 
-    private val tvdbApiKey: String by option(help = "TVDB API key").default(BuildConfig.TVDB_API_KEY)
-
     val sources: List<Path> by argument(name = "source")
         .help("The source path for the media to be managed. This can be a path to a single file, a directory, or multiple paths to various files and directories.")
         .convert { Path(it) }.multiple()
