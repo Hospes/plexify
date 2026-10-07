@@ -13,8 +13,9 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 -   **Advanced Filename Parsing**: Intelligently extracts title, year, season, episode, resolution, and quality from even the most complex filenames.
 -   **Multi-Source Metadata**: Fetches and verifies media information from multiple databases (TMDB, IMDb) to find the most accurate match.
 -   **Alias-Aware Matching**: Also matches releases named with original-language or alternative titles (e.g. romaji anime titles like *Hametsu no Oukoku* → *The Kingdoms of Ruin*), while the library itself is named with the canonical title.
+-   **Split-Season Anime**: Releases that split a season TMDB keeps whole (e.g. *Gate* as two 12-episode seasons) are mapped through TMDB episode groups onto TMDB's own numbering.
 -   **Intelligent Consolidation**: Compares search results from all providers, scores them, and selects the best "golden record" for your media.
--   **Manual Overrides**: Force the title, season, or year (`-t`, `-s`, `-y`) when a release is too cryptic to parse — the season hidden in a folder named `2`, a remake matching the wrong year, and similar cases.
+-   **Manual Overrides**: Force the title, season, episode offset, or year (`-t`, `-s`, `--episode-offset`, `-y`) when a release is too cryptic to parse — the season hidden in a folder named `2`, a remake matching the wrong year, and similar cases.
 -   **Customizable Naming**: Comes with pre-configured, optimal naming templates for **Plex** and **Jellyfin**, or you can define your own powerful custom templates.
 -   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup.
 -   **Dry Run Mode**: Preview every rename and the final library layout with `--test` before a single file is touched.
@@ -119,6 +120,7 @@ plexify [OPTIONS] <source...> <destination>
 | `--template-custom <T>` | `-tc` | Use a custom naming template. See [Custom Naming Templates](#-custom-naming-templates) for syntax.       | `n/a`      |
 | `--title <TITLE>`       | `-t`  | Override the title parsed from filenames. Applies to every file in the run.                              | `n/a`      |
 | `--season <N>`          | `-s`  | Override the season number for TV episodes (ignored for movies).                                         | `n/a`      |
+| `--episode-offset <N>`  |       | Add N to every parsed episode number (negative subtracts). With `-s`, places a split season, e.g. S2E01 → S01E13. | `n/a`      |
 | `--year <YYYY>`         | `-y`  | Override the release year. Acts as a strict filter: candidates with a different year are rejected.       | `n/a`      |
 | `--verbose`             |       | Show detailed pipeline logs (parsing, cache, providers, match scoring).                                  | `false`    |
 | `--tmdb-access-token <T>` |     | Your TMDB API Read Access Token. Overrides the built-in key. Env: `TMDB_API_ACCESS_TOKEN`.                | built-in   |
@@ -168,6 +170,13 @@ A remake often shares its title with the original; `--year` rejects candidates f
 
 ```bash
 ./plexify -y 2011 "/downloads/The.Thing.1080p.mkv" "/movies"
+```
+
+**7. Anime split into seasons that TMDB keeps as one:**
+TMDB lists *Gate* as a single 24-episode season, while releases ship it as two 12-episode seasons. When a season isn't on TMDB, Plexify looks it up in the show's TMDB episode groups and files it under TMDB's numbering, so `Gate S2 [01]` becomes `S01E13`. If a show has no such group, place the season yourself:
+
+```bash
+./plexify -s 1 --episode-offset 12 "/anime/Gate S2" "/library/Anime"
 ```
 
 ## 📝 Custom Naming Templates

@@ -88,6 +88,13 @@ object App : CliktCommand(name = "Plexify") {
                 "(ignored for movies); use when the season only appears as a bare folder name like '2'."
     ).int()
 
+    val episodeOffset: Int? by option(
+        "--episode-offset",
+        help = "Add N to every episode number parsed from filenames (negative values subtract). Applies to every TV " +
+                "episode in this run; combine with -s for releases split differently from TMDB, e.g. " +
+                "'-s 1 --episode-offset 12' files 'Show S2 [01]' as S01E13."
+    ).int()
+
     val yearOverride: Int? by option(
         "-y", "--year",
         help = "Override the release year parsed from filenames. Applies to every file in this run; " +
@@ -129,12 +136,13 @@ object App : CliktCommand(name = "Plexify") {
         val cache = MetadataCache()
 
         val metadataService = MetadataService(providers, template)
-        val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride, yearOverride?.toString())
+        val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride, yearOverride?.toString(), episodeOffset)
 
         echo("Plexify ${BuildConfig.VERSION} | mode: $mode | template: ${template.name} | destination: $destination")
         val overrides = listOfNotNull(
             titleOverride?.let { "title='$it'" },
             seasonOverride?.let { "season=$it" },
+            episodeOffset?.let { "episode-offset=$it" },
             yearOverride?.let { "year=$it" },
         )
         if (overrides.isNotEmpty()) {

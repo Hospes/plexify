@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.domain.service
 
+import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
@@ -47,7 +48,12 @@ class MetadataService(
 
             for (provider in activeProviders) {
                 val result = provider.season(show, season)
-                    .onFailure { error -> log("Error(${provider.id}): ${error.message}") }
+                    .onFailure { error ->
+                        // A missing season is routine (split-cour anime): the episode-group fallback
+                        // or the per-file outcome line reports it, so keep it out of the concise log.
+                        if (error is MetadataNotFoundException) debug("${provider.id}: ${error.message}")
+                        else log("Error(${provider.id}): ${error.message}")
+                    }
                 val seasonData = result.getOrNull()
                 if (seasonData != null) {
                     debug("Season $season fetched from ${provider.id}")
@@ -55,6 +61,25 @@ class MetadataService(
                 }
             }
             null
+        }
+    }
+
+    /** Alternative orderings of the show's episodes, from the first provider that has any. */
+    context(_: LoggingContext)
+    suspend fun getEpisodeGroups(show: CanonicalMedia.TvShow): List<CanonicalMedia.EpisodeGroup> {
+        return indent {
+            for (provider in resolveActiveProviders()) {
+                val groups = provider.episodeGroups(show)
+                    .onFailure { error ->
+                        if (error !is UnsupportedOperationException) log("Error(${provider.id}): ${error.message}")
+                    }
+                    .getOrNull()
+                if (!groups.isNullOrEmpty()) {
+                    debug("${groups.size} episode group(s) fetched from ${provider.id}")
+                    return@indent groups
+                }
+            }
+            emptyList()
         }
     }
 

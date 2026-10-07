@@ -6,6 +6,7 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.model.withOverrides
+import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.logging.LoggingContext
@@ -28,6 +29,7 @@ class MediaProcessor(
     private val titleOverride: String? = null,
     private val seasonOverride: Int? = null,
     private val yearOverride: String? = null,
+    private val episodeOffset: Int? = null,
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
@@ -43,6 +45,9 @@ class MediaProcessor(
     // Directories already warned about missing season numbers, to avoid repeating the
     // warning for every episode file of the same release.
     private val seasonWarnedDirs = mutableSetOf<String>()
+
+    // Show+season pairs already reported as mapped (or unmappable) through episode groups.
+    private val episodeGroupNotices = mutableSetOf<String>()
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -98,7 +103,7 @@ class MediaProcessor(
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
         debug("Processing: $source")
         val parentDirName = source.parent?.name
-        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName).withOverrides(titleOverride, seasonOverride, yearOverride)) {
+        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName).withOverrides(titleOverride, seasonOverride, yearOverride, episodeOffset)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
             is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
@@ -226,7 +231,7 @@ class MediaProcessor(
                 // Cache the failure as an empty season so the remaining files of this season
                 // don't re-query the providers and re-log the same error.
                 ?: CanonicalMedia.Season(show, season, emptyList())
-                    .also { log("Season $season of '${show.title}' is not available from providers.") }
+                    .also { debug("Season $season of '${show.title}' is not available from providers.") }
             cache.putSeason(cacheKey, seasonData)
             seasonData
         }
@@ -236,8 +241,52 @@ class MediaProcessor(
         }
 
         val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
-        if (match == null) debug("Episode E${episode} not found in S${season} data.")
-        match
+        if (match != null) return@indent match
+
+        debug("Episode E${episode} not found in S${season} data. Trying episode groups...")
+        findViaEpisodeGroups(show, season, episode)
+    }
+
+    /**
+     * Fallback for releases numbered differently from the provider, typically anime split into
+     * cours: the release's S2E01 is TMDB's S1E13. Episode groups (fetched once per show) record
+     * that split; the episode found is the provider's own, so the file gets TMDB's numbering.
+     */
+    context(_: LoggingContext)
+    private suspend fun findViaEpisodeGroups(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? = indent {
+        val showId = show.tmdbId ?: show.imdbId ?: show.title
+        val groups = cache.getEpisodeGroups(showId)
+            ?: metadataService.getEpisodeGroups(show).also { cache.putEpisodeGroups(showId, it) }
+
+        when (val resolution = EpisodeGroupMapper.resolve(groups, season, episode)) {
+            is EpisodeGroupMapper.Resolution.Found -> {
+                val mapped = resolution.episode
+                if (episodeGroupNotices.add("$showId:$season")) {
+                    status(
+                        "Season $season of '${show.title}' mapped through episode group '${resolution.group.name}' " +
+                                "(S${season.pad2()}E${episode.pad2()} → S${mapped.season.pad2()}E${mapped.episode.pad2()})"
+                    )
+                }
+                debug("Mapped S${season}E${episode} → S${mapped.season}E${mapped.episode} via '${resolution.group.name}' part '${resolution.part.name}'")
+                mapped
+            }
+
+            is EpisodeGroupMapper.Resolution.Ambiguous -> {
+                if (episodeGroupNotices.add("$showId:$season")) {
+                    val names = resolution.groups.joinToString(", ") { "'${it.name}'" }
+                    status(
+                        "Season $season of '${show.title}' is numbered differently by episode groups $names; " +
+                                "use -s/--season and --episode-offset to place it."
+                    )
+                }
+                null
+            }
+
+            EpisodeGroupMapper.Resolution.NotFound -> {
+                debug("No episode group places S${season}E${episode} (${groups.size} group(s) checked).")
+                null
+            }
+        }
     }
 
     context(ctx: LoggingContext)

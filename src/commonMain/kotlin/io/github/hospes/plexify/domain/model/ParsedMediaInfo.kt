@@ -32,9 +32,14 @@ sealed interface ParsedMediaInfo {
 
 /**
  * Applies user-provided CLI overrides on top of what was parsed from the filename.
- * A season override only makes sense for episodes and is ignored for movies.
+ * Season and episode-offset overrides only make sense for episodes and are ignored for movies.
  */
-fun ParsedMediaInfo.withOverrides(title: String?, season: Int?, year: String? = null): ParsedMediaInfo = when (this) {
+fun ParsedMediaInfo.withOverrides(
+    title: String?,
+    season: Int?,
+    year: String? = null,
+    episodeOffset: Int? = null,
+): ParsedMediaInfo = when (this) {
     is ParsedMediaInfo.Movie -> copy(
         title = title ?: this.title,
         year = year ?: this.year,
@@ -42,6 +47,7 @@ fun ParsedMediaInfo.withOverrides(title: String?, season: Int?, year: String? = 
     is ParsedMediaInfo.Episode -> copy(
         showTitle = title ?: showTitle,
         season = season ?: this.season,
+        episode = episode + (episodeOffset ?: 0),
         year = year ?: this.year,
     )
 }
