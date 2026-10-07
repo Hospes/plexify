@@ -44,10 +44,12 @@ class ExternalIdsLookupTest {
         assertEquals(1, provider.lookups)
     }
 
+    private val tvdbTemplate = NamingStrategy.Custom("{CleanTitle} ({year}) [tvdbid-{tvdbid}]/{CleanTitle}.{ext}")
+
     @Test
     fun `looks up show ids when the template uses tvdbid`() = runTest {
         val provider = FakeProvider(Result.success(breakingBadIds))
-        val service = MetadataService(listOf(provider), NamingStrategy.Jellyfin)
+        val service = MetadataService(listOf(provider), tvdbTemplate)
 
         assertEquals("81189", with(LoggingContext()) { service.getExternalIds(breakingBad) }?.tvdbId)
         assertEquals(1, provider.lookups)
@@ -56,8 +58,18 @@ class ExternalIdsLookupTest {
     @Test
     fun `skips movies when the template only uses tvdbid`() = runTest {
         val provider = FakeProvider(Result.success(ExternalIds(imdbId = "tt0133093")))
+        val service = MetadataService(listOf(provider), tvdbTemplate)
+
+        assertNull(with(LoggingContext()) { service.getExternalIds(matrix) })
+        assertEquals(0, provider.lookups)
+    }
+
+    @Test
+    fun `the jellyfin template needs no external ids`() = runTest {
+        val provider = FakeProvider(Result.success(breakingBadIds))
         val service = MetadataService(listOf(provider), NamingStrategy.Jellyfin)
 
+        assertNull(with(LoggingContext()) { service.getExternalIds(breakingBad) })
         assertNull(with(LoggingContext()) { service.getExternalIds(matrix) })
         assertEquals(0, provider.lookups)
     }
