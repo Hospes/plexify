@@ -19,7 +19,7 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 -   **Customizable Naming**: Comes with pre-configured, optimal naming templates for **Plex** and **Jellyfin**, or you can define your own powerful custom templates.
 -   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup. Existing files in the library are never overwritten unless you pass `--overwrite`.
 -   **Dry Run Mode**: Preview every rename and the final library layout with `--test` before a single file is touched.
--   **Readable Output**: One line per organized file with a final summary by default; a `--verbose` flag exposes the full pipeline (parsing, cache, providers, match scoring) for troubleshooting.
+-   **Readable Output**: One line per file showing where it goes in the library, plus a final summary; a `--verbose` flag exposes the full pipeline (parsing, cache, providers, match scoring) for troubleshooting.
 -   **Cross-Platform**: Built with Kotlin Multiplatform to run natively on **Linux** and **Windows**.
 
 ## ⚙️ How It Works
@@ -149,6 +149,26 @@ plexify [OPTIONS] <source...> <destination>
 
 > **Note:** The override options apply to *every* file in the run, so use them when pointing Plexify at a single movie or one show's season folder — not a mixed batch.
 
+### Output
+
+Plexify prints one line per file and a summary at the end. An organized file shows its target path relative to the destination, so a `--test` run lists exactly the folders and files it would create:
+
+```text
+$ plexify --test "/downloads" "/library"
+Plexify 0.3.0 | mode: HARDLINK | template: Jellyfin | destination: /library
+!!! RUNNING IN TEST MODE (DRY RUN) - NO FILES WILL BE MODIFIED !!!
+---
+Processing directory: /downloads (3 media files)
+  Matched show: Breaking Bad (2008) [tmdbid-1396]
+  ✓ Breaking.Bad.S01E01.1080p.BluRay.x264.mkv → Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad (2008) - S01E01 - Pilot - [1080p] [BluRay].mkv
+  ✓ Breaking.Bad.S01E02.1080p.BluRay.x264.mkv → Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad (2008) - S01E02 - Cat's in the Bag... - [1080p] [BluRay].mkv
+  ✓ Inception.2010.1080p.BluRay.x264.mkv → Inception (2010) [tmdbid-27205]/Inception (2010) [tmdbid-27205] - [1080p] [BluRay].mkv
+---
+Done: 3 organized, 0 skipped, 0 failed.
+```
+
+A real run prints the same lines. Files that are skipped or fail get a `=` or `✗` line with the reason, described below.
+
 ### Existing files at the target
 
 By default, Plexify never deletes or overwrites a file that is already at the computed target path, in either mode. Both cases below are counted as *skipped* in the summary, and `--test` reports them the same way.
@@ -156,7 +176,7 @@ By default, Plexify never deletes or overwrites a file that is already at the co
 -   **The target is the file itself** — the source already sits at its target (for example, when Plexify is run over an existing library), or the target is a hardlink to the source. The file is left alone: `= Movie.mkv — already in the library: <path>`.
 -   **A different file is at the target** — both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, run again with `--overwrite` (`-o`), or delete or rename the existing file yourself.
 
-With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010) (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name first and then renamed over the old file, so the old file stays if linking fails. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the first case: a file that already is its own target is always left alone.
+With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010)/Movie (2010).mkv (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name first and then renamed over the old file, so the old file stays if linking fails. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the first case: a file that already is its own target is always left alone.
 
 If a hardlink can't be created, the error from the operating system is shown, e.g. when source and destination are on different volumes (hardlinks can't cross volumes or partitions).
 

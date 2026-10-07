@@ -458,13 +458,13 @@ class MediaProcessor(
             .onSuccess { outcome ->
                 when (outcome) {
                     is OrganizeOutcome.Organized -> {
-                        status("✓ ${source.name} → ${media.describe()}")
+                        status("✓ ${source.name} → ${outcome.path.relativeTo(destination)}")
                         debug("Organized at: ${outcome.path}")
                         stats.organized++
                     }
 
                     is OrganizeOutcome.Replaced -> {
-                        status("✓ ${source.name} → ${media.describe()} (replaced existing file)")
+                        status("✓ ${source.name} → ${outcome.path.relativeTo(destination)} (replaced existing file)")
                         debug("Replaced: ${outcome.path}")
                         stats.organized++
                     }
@@ -718,3 +718,19 @@ internal fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
     }
     return cost[lhsLength]
 }
+
+/**
+ * This path relative to [root], for showing a library path without the destination prefix. Falls back to the
+ * full path when it is not under [root].
+ */
+internal fun Path.relativeTo(root: Path): String {
+    val full = toString()
+    val base = root.toString().trimEnd(*PATH_SEPARATORS)
+    if (base.isEmpty() || !full.startsWith(base)) return full
+    val rest = full.substring(base.length)
+    // "/library-old/x" is not under "/library": the root must end at a separator.
+    if (rest.isEmpty() || rest[0] !in PATH_SEPARATORS) return full
+    return rest.trimStart(*PATH_SEPARATORS).ifEmpty { full }
+}
+
+private val PATH_SEPARATORS = charArrayOf('/', '\\')
