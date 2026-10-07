@@ -52,6 +52,8 @@ class MediaProcessor(
         val yearScore: Double?,
         /** The season the searched title names, when it is that season's own title. */
         val titleSeason: TitleSeason? = null,
+        /** The searched title ends in an arc that no title of this candidate places (see [namesUnplacedArc]). */
+        val namesUnplacedArc: Boolean = false,
     )
 
     /** A season named by its own title, e.g. an anime arc: "Kimetsu no Yaiba: Hashira Geiko-hen" is season 5. */
@@ -63,6 +65,9 @@ class MediaProcessor(
 
     // The season each searched show title (keyed "title:year", as the show cache is) names, if any.
     private val titleSeasons = mutableMapOf<String, TitleSeason?>()
+
+    // Searched show titles (keyed "title:year") that end in an arc no season title places.
+    private val unplacedArcTitles = mutableSetOf<String>()
 
     // Show titles already reported as naming their season.
     private val titleSeasonNotices = mutableSetOf<String>()
@@ -196,6 +201,11 @@ class MediaProcessor(
             }
             named.season
         } ?: run {
+            if (showKey in unplacedArcTitles) {
+                status("✗ ${source.name} — '${parsedInfo.showTitle}' names an arc that matches no season title of ${candidates.first().describe()}; set the season with -s/--season")
+                stats.skipped++
+                return@indent
+            }
             if (seasonWarnedDirs.add(source.parent?.toString() ?: source.name)) {
                 status("Warning: No season number found in filenames, defaulting to Season 1 (use -s/--season to set it explicitly).")
             }
@@ -292,6 +302,7 @@ class MediaProcessor(
             val ranked = rankMatches(searchResults, title, year).filter { it.media is CanonicalMedia.TvShow }
             val best = ranked.firstOrNull()
             titleSeasons[cacheKey] = best?.titleSeason
+            if (best?.namesUnplacedArc == true) unplacedArcTitles += cacheKey
             val runnerUps = ranked.drop(1).filter { candidate ->
                 (best != null && candidate.canStandInFor(best)).also { sameShow ->
                     if (!sameShow) debug("Not a fallback for '$title': ${candidate.media.describe()} (title or year differs)")
@@ -598,7 +609,8 @@ class MediaProcessor(
             score += avgProviderConfidence / 20.0
 
             debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}$matchedVia")
-            ScoredGroup(group, score, similarity, yearScore, seasonNamedBy(group, titleScores))
+            val titleSeason = seasonNamedBy(group, titleScores)
+            ScoredGroup(group, score, similarity, yearScore, titleSeason, titleSeason == null && namesUnplacedArc(parsedTitle, group))
         }
 
         val bestGroup = scoredGroups.maxByOrNull { it.score }
@@ -628,7 +640,7 @@ class MediaProcessor(
         return@indent scoredGroups
             .filter { it.score >= MINIMUM_CONFIDENCE_SCORE }
             .sortedByDescending { it.score }
-            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason) }
+            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason, it.namesUnplacedArc) }
     }
 
     private class ScoredGroup(
@@ -637,6 +649,7 @@ class MediaProcessor(
         val similarity: Double,
         val yearScore: Double?,
         val titleSeason: TitleSeason?,
+        val namesUnplacedArc: Boolean,
     )
 
     /**
@@ -655,6 +668,19 @@ class MediaProcessor(
         val named = seasonScores.filter { it.second == best }
         val season = named.map { seasonTitles.getValue(it.first) }.distinct().singleOrNull() ?: return null
         return TitleSeason(season, named.first().first)
+    }
+
+    /**
+     * True when the searched title ends in an arc ("Yuukaku-hen", "Entertainment District Arc",
+     * "遊郭編") and the candidate has no season title that places it. Such a release is a later arc
+     * whose season the provider doesn't tag, and the season-1 default would put its episodes over
+     * season 1's. A show whose own title ends that way (Noah's Arc) is not an arc.
+     */
+    private fun namesUnplacedArc(parsedTitle: String, group: List<MediaSearchResult>): Boolean {
+        if (!ARC_SUFFIX.containsMatchIn(parsedTitle.trim())) return false
+        val seasonTitles = group.filterIsInstance<MediaSearchResult.TvShow>().flatMap { it.seasonTitles.keys }.toSet()
+        val showTitles = group.flatMap { it.allTitles }.filter { it !in seasonTitles }
+        return showTitles.none { title -> ARC_ENDINGS.any { title.normalizedTitle().endsWith(it) } }
     }
 
     /** Merges one candidate's results across providers into a golden record with all their IDs. */
@@ -735,6 +761,11 @@ internal fun yearScore(parsedYear: Int, candidateYear: Int, isShow: Boolean): Do
 }
 
 // Keep only alphanumeric chars for title comparison, so "Spider-Man" matches "Spiderman".
+// An arc at the end of a release title: romaji "-hen" (separators are spaces by then), English
+// "Arc", Japanese/Chinese 編/篇.
+private val ARC_SUFFIX = Regex("""(?:\s(?:hen|arc)|[編篇])$""", RegexOption.IGNORE_CASE)
+private val ARC_ENDINGS = listOf("hen", "arc", "編", "篇")
+
 private fun String.normalizedTitle(): String = filter { it.isLetterOrDigit() }.lowercase()
 
 /** Normalized Levenshtein similarity in [0.0, 1.0]; 1.0 means identical strings. */

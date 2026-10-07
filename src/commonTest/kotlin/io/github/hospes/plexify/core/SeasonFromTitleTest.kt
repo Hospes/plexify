@@ -4,6 +4,7 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class SeasonFromTitleTest {
 
@@ -57,6 +58,34 @@ class SeasonFromTitleTest {
         val run = runProcessor(provider(), "Kimetsu_no_Yaiba_[01]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv")
 
         assertEquals(1 to 1, run.placeOf("Kimetsu_no_Yaiba_[01]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv"))
+    }
+
+    @Test
+    fun `an arc release whose season title the provider lacks is skipped instead of going to season 1`() = runTest {
+        // TMDB without the arcs' season-tagged titles: nothing says which season Yuukaku-hen is.
+        val untagged = FakeTmdb(
+            listOf(demonSlayer.copy(alternativeTitles = listOf("Kimetsu no Yaiba", "Demon Slayer"), seasonTitles = emptyMap())),
+            seasons = mapOf("85937" to mapOf(1 to 1..26, 3 to 1..11)),
+        )
+
+        val run = runProcessor(
+            untagged,
+            "Kimetsu_no_Yaiba_-_Yuukaku-hen_[10]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv",
+            "Demon_Slayer_-_Entertainment_District_Arc_[03]_[1080p].mkv",
+        )
+
+        assertTrue(run.organizer.organized.isEmpty())
+        assertEquals(2, run.stats.skipped)
+        assertEquals(emptyList(), run.provider.seasonFetches)
+    }
+
+    @Test
+    fun `a show whose own title ends like an arc is not an arc`() = runTest {
+        val noahsArc = MediaSearchResult.TvShow(title = "Noah's Arc", year = "2005", tmdbId = "2", provider = "TMDb", matchConfidence = 100.0)
+
+        val run = runProcessor(FakeTmdb(listOf(noahsArc), seasons = mapOf("2" to mapOf(1 to 1..9))), "Noahs_Arc_[01]_[720p].mkv")
+
+        assertEquals(1 to 1, run.placeOf("Noahs_Arc_[01]_[720p].mkv"))
     }
 
     @Test
