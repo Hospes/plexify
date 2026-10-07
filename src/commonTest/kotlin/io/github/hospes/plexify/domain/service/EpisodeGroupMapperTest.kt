@@ -78,6 +78,48 @@ class EpisodeGroupMapperTest {
         assertEquals(Resolution.NotFound, EpisodeGroupMapper.resolve(listOf(arcs, absolute), season = 2, episode = 1))
     }
 
+    // TMDB seasons of 3 and 4 episodes, numbered 1-7 in one run.
+    private val absoluteNoSpecials = EpisodeGroup(
+        name = "Absolute (No Specials)",
+        type = EpisodeGroup.Type.ABSOLUTE,
+        parts = listOf(part(1, (1..3).map { ep(1, it) } + (1..4).map { ep(2, it) })),
+    )
+
+    @Test
+    fun `places an absolute number past season 1 through an absolute group`() {
+        val result = EpisodeGroupMapper.resolve(listOf(absoluteNoSpecials), season = 1, episode = 5)
+
+        assertIs<Resolution.Found>(result)
+        assertEquals(ep(2, 2), result.episode)
+    }
+
+    @Test
+    fun `absolute groups with and without specials agree`() {
+        val withSpecials = absoluteNoSpecials.copy(
+            name = "Absolute (With Specials)",
+            parts = listOf(part(1, (1..3).map { ep(1, it) } + ep(0, 1) + (1..4).map { ep(2, it) })),
+        )
+
+        val result = EpisodeGroupMapper.resolve(listOf(absoluteNoSpecials, withSpecials), season = 1, episode = 5)
+
+        assertIs<Resolution.Found>(result)
+        assertEquals(ep(2, 2), result.episode)
+    }
+
+    @Test
+    fun `absolute groups place only season 1 numbering`() {
+        assertEquals(Resolution.NotFound, EpisodeGroupMapper.resolve(listOf(absoluteNoSpecials), season = 2, episode = 5))
+    }
+
+    @Test
+    fun `season-like groups win over absolute ones`() {
+        val result = EpisodeGroupMapper.resolve(listOf(absoluteNoSpecials, tvCours), season = 1, episode = 5)
+
+        assertIs<Resolution.Found>(result)
+        assertEquals("TV Cours", result.group.name)
+        assertEquals(ep(1, 5), result.episode)
+    }
+
     @Test
     fun `agreeing groups of the same type resolve`() {
         val copy = tvCours.copy(name = "Cours (copy)")

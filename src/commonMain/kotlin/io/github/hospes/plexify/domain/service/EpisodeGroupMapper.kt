@@ -43,14 +43,36 @@ object EpisodeGroupMapper {
                 val target = part.episodes.getOrNull(episode - 1) ?: return@mapNotNull null
                 Resolution.Found(target, group, part)
             }
-        if (candidates.isEmpty()) return Resolution.NotFound
+        if (candidates.isEmpty()) return if (season == 1) resolveAbsolute(groups, episode) else Resolution.NotFound
 
         // Trust the most reliable group type that can place the episode at all; within that
         // type, groups must agree on the target episode.
         val bestType = SEASON_LIKE_TYPES.first { type -> candidates.any { it.group.type == type } }
         val tier = candidates.filter { it.group.type == bestType }
-        val targets = tier.distinctBy { it.episode.season to it.episode.episode }
-        return if (targets.size == 1) tier.first() else Resolution.Ambiguous(tier.map { it.group })
+        return agreeing(tier)
+    }
+
+    /**
+     * Season 1 running past every season-like part is how absolute numbering reads: "One Piece - 1071"
+     * has no season, so it arrives as S1E1071. Its position in an absolute ordering, specials left
+     * out, is the episode.
+     */
+    private fun resolveAbsolute(groups: List<EpisodeGroup>, episode: Int): Resolution {
+        val candidates = groups
+            .filter { it.type == EpisodeGroup.Type.ABSOLUTE }
+            .mapNotNull { group ->
+                val (part, target) = group.seasonParts()
+                    .flatMap { part -> part.episodes.map { part to it } }
+                    .filter { (_, it) -> it.season != 0 }
+                    .getOrNull(episode - 1) ?: return@mapNotNull null
+                Resolution.Found(target, group, part)
+            }
+        return if (candidates.isEmpty()) Resolution.NotFound else agreeing(candidates)
+    }
+
+    private fun agreeing(candidates: List<Resolution.Found>): Resolution {
+        val targets = candidates.distinctBy { it.episode.season to it.episode.episode }
+        return if (targets.size == 1) candidates.first() else Resolution.Ambiguous(candidates.map { it.group })
     }
 
     /**
