@@ -1,0 +1,31 @@
+# One grouped pull request per ecosystem per month. CI must pass and the PR needs an
+# approval (main – review ruleset) before it merges.
+# Commit messages follow Conventional Commits so the release notes skip them:
+# build(deps): ... for Gradle, ci(deps): ... for GitHub Actions.
+#
+# Not covered, bump by hand: the Gemini CLI version and model pinned as inputs in
+# .github/workflows/release.yml (Dependabot only reads the `uses:` line).
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      gradle:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    # "/" covers .github/workflows; the composite action pins actions of its own.
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
