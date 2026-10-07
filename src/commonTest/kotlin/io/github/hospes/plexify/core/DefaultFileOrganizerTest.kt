@@ -17,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -250,6 +251,85 @@ class DefaultFileOrganizerTest {
         assertFalse(isSameFile(original, Path(root, "missing.mkv")))
     }
 
+    @Test
+    fun `hardlinks the file a relative symlink points at`() {
+        val real = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "movie")
+        val source = symlink(Path(root, "links", real.name), "../downloads/${real.name}") ?: return
+
+        val outcome = organize(source, OperationMode.HARDLINK)
+
+        assertIs<OrganizeOutcome.Organized>(outcome)
+        assertEquals("movie", read(outcome.path))
+        assertTrue(isSameFile(real, outcome.path))
+        assertNull(resolveSymbolicLink(outcome.path), "the library got the symlink itself")
+        assertTrue(isSameFile(source, real), "the source symlink changed")
+    }
+
+    @Test
+    fun `overwrite replaces a different file with a hardlink to the file a symlink points at`() {
+        val real = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "new release")
+        val source = symlink(Path(root, "links", real.name), "../downloads/${real.name}") ?: return
+        val target = file(targetPath(), "existing copy")
+
+        val outcome = organize(source, OperationMode.HARDLINK, overwrite = true)
+
+        assertIs<OrganizeOutcome.Replaced>(outcome)
+        assertTrue(isSameFile(real, target))
+        assertNull(resolveSymbolicLink(target), "the library got the symlink itself")
+        assertEquals(listOf(target.name), PlatformFileSystem.list(target.parent!!).map { it.name })
+    }
+
+    @Test
+    fun `moves a symlink that still resolves from the library`() {
+        val real = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "movie")
+        val source = symlink(Path(root, "links", real.name), absolute(real)) ?: return
+
+        val outcome = organize(source, OperationMode.MOVE)
+
+        assertIs<OrganizeOutcome.Organized>(outcome)
+        assertNotNull(resolveSymbolicLink(outcome.path), "expected the symlink itself in the library")
+        assertTrue(isSameFile(real, outcome.path))
+        assertNull(PlatformFileSystem.kind(source))
+        assertEquals("movie", read(real))
+        assertEquals(listOf(outcome.path.name), PlatformFileSystem.list(outcome.path.parent!!).map { it.name })
+    }
+
+    @Test
+    fun `refuses to move a relative symlink that would not resolve from the library`() {
+        val real = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "movie")
+        val source = symlink(Path(root, "links", real.name), "../downloads/${real.name}") ?: return
+        val target = targetPath()
+
+        for (overwrite in listOf(false, true)) {
+            if (overwrite) file(target, "existing copy")
+
+            val error = organizer(overwrite).organize(source, library, movie, parsed, OperationMode.MOVE, isTestMode = false)
+                .exceptionOrNull()
+
+            assertTrue(error?.message?.contains("won't resolve from the library") == true, "got $error")
+            assertTrue(isSameFile(source, real), "the source symlink wasn't put back")
+            val left = PlatformFileSystem.list(target.parent!!).map { it.name }
+            if (overwrite) {
+                assertEquals("existing copy", read(target))
+                assertEquals(listOf(target.name), left)
+            } else {
+                assertEquals(emptyList(), left)
+            }
+        }
+    }
+
+    @Test
+    fun `treats a symlink to the file at the target as already in place`() {
+        val target = file(targetPath(), "movie")
+        val source = symlink(Path(root, "links", "Inception.2010.1080p.mkv"), absolute(target)) ?: return
+
+        for (mode in OperationMode.entries) {
+            assertIs<OrganizeOutcome.AlreadyInPlace>(organize(source, mode, overwrite = true), "mode $mode")
+            assertTrue(isSameFile(source, target), "mode $mode")
+            assertEquals("movie", read(target))
+        }
+    }
+
     private fun assertKeepsFileAlreadyAtTarget(mode: OperationMode) {
         val target = file(targetPath(), "movie")
 
@@ -276,6 +356,17 @@ class DefaultFileOrganizerTest {
         PlatformFileSystem.atomicMove(staging, path)
         return path
     }
+
+    /** A symlink at [link] to [target] (see [createSymbolicLink]), or null where symlinks can't be created. */
+    private fun symlink(link: Path, target: String): Path? {
+        link.parent?.let { PlatformFileSystem.createDirectories(it) }
+        if (createSymbolicLink(link, target)) return link
+        println("Skipped: this system doesn't allow creating symlinks")
+        return null
+    }
+
+    /** [path] as an absolute path. [root] is relative on Linux when TMPDIR is unset, as on the CI runners. */
+    private fun absolute(path: Path): String = SystemFileSystem.resolve(path).toString()
 
     private fun read(path: Path): String = SystemFileSystem.source(path).buffered().use { it.readString() }
 

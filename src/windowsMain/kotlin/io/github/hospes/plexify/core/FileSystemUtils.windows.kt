@@ -8,8 +8,10 @@ import platform.windows.*
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun createHardLink(source: Path, destination: Path) {
-    // CreateHardLinkW fails with ERROR_ALREADY_EXISTS rather than replacing an existing destination.
-    val errorCode = plexify_create_hard_link(win32Path(destination), win32Path(source))
+    // CreateHardLinkW fails with ERROR_ALREADY_EXISTS rather than replacing an existing destination. Given a symlink,
+    // it links the symlink itself, so the link is resolved first.
+    val existing = resolveSymbolicLink(source) ?: source
+    val errorCode = plexify_create_hard_link(win32Path(destination), win32Path(existing))
     if (errorCode != 0u) {
         val error = "${win32ErrorMessage(errorCode)} (error $errorCode)"
         throw IOException(if (errorCode == ERROR_NOT_SAME_DEVICE.toUInt()) error + CROSS_VOLUME_HINT else error)
@@ -50,6 +52,26 @@ private fun MemScope.fileInformation(path: Path): BY_HANDLE_FILE_INFORMATION? {
     } finally {
         CloseHandle(handle)
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun resolveSymbolicLink(path: Path): Path? = memScoped {
+    val win32Path = win32Path(path)
+    val tag = alloc<DWORDVar>()
+    var errorCode = plexify_get_reparse_tag(win32Path, tag.ptr)
+    if (errorCode != 0u) throw win32Error("Can't read '$path'", errorCode)
+    // Other reparse points (OneDrive placeholders, deduplicated files) are files in their own right.
+    if (tag.value != IO_REPARSE_TAG_SYMLINK) return null
+
+    val length = alloc<DWORDVar>()
+    errorCode = plexify_get_final_path_name(win32Path, 0u, null, length.ptr)
+    if (errorCode != 0u) throw win32Error("Can't resolve symlink '$path'", errorCode)
+    val buffer = allocArray<WCHARVar>(length.value.toInt())
+    errorCode = plexify_get_final_path_name(win32Path, length.value, buffer, length.ptr)
+    if (errorCode != 0u) throw win32Error("Can't resolve symlink '$path'", errorCode)
+    // win32Path adds the prefix back where it is needed.
+    val final = buffer.toKStringFromUtf16()
+    Path(if (final.startsWith("\\\\?\\UNC\\")) "\\\\" + final.removePrefix("\\\\?\\UNC\\") else final.removePrefix("\\\\?\\"))
 }
 
 actual val PlatformFileSystem: MediaFileSystem = WindowsFileSystem

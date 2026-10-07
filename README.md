@@ -173,12 +173,19 @@ A real run prints the same lines. Files that are skipped or fail get a `=` or `�
 
 By default, Plexify never deletes or overwrites a file that is already at the computed target path, in either mode. Both cases below are counted as *skipped* in the summary, and `--test` reports them the same way.
 
--   **The target is the file itself** — the source already sits at its target (for example, when Plexify is run over an existing library), or the target is a hardlink to the source. The file is left alone: `= Movie.mkv — already in the library: <path>`.
+-   **The target is the file itself** — the source already sits at its target (for example, when Plexify is run over an existing library), or the target is a hardlink to the source (or to the file a symlinked source points at). The file is left alone: `= Movie.mkv — already in the library: <path>`.
 -   **A different file is at the target** — both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, run again with `--overwrite` (`-o`), or delete or rename the existing file yourself.
 
 With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010)/Movie (2010).mkv (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name first and then renamed over the old file, so the old file stays if linking fails. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the first case: a file that already is its own target is always left alone.
 
 If a hardlink can't be created, the error from the operating system is shown, e.g. when source and destination are on different volumes (hardlinks can't cross volumes or partitions).
+
+### Symlinked sources
+
+A source file can be a symbolic link (pointing at a download in another folder or on a mount, say):
+
+-   **`HARDLINK`** — the library gets a hardlink to the file the symlink points at, not to the symlink itself, so it keeps working however the symlink was written. The symlink is left alone. That file must be on the same volume as the library.
+-   **`MOVE`** — the symlink itself is moved into the library, the way a library made of symlinks (e.g. to a cloud or debrid mount) expects; the file it points at is not touched. Plexify checks that the moved symlink still leads to the same file. A relative symlink usually doesn't from its new folder: the move is then undone and reported as failed (`symlink ... won't resolve from the library`). Use `HARDLINK` mode for those, or recreate them as absolute links.
 
 ### Examples
 

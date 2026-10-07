@@ -44,3 +44,26 @@ static inline DWORD plexify_delete_file(LPCWSTR path) {
 static inline DWORD plexify_create_hard_link(LPCWSTR link, LPCWSTR existing) {
     return CreateHardLinkW(link, existing, NULL) ? ERROR_SUCCESS : GetLastError();
 }
+
+// The reparse tag of the entry at path, without following it (IO_REPARSE_TAG_SYMLINK for a symlink), or 0 if it
+// isn't a reparse point.
+static inline DWORD plexify_get_reparse_tag(LPCWSTR path, DWORD* tag) {
+    WIN32_FIND_DATAW data;
+    HANDLE handle = FindFirstFileW(path, &data);
+    if (handle == INVALID_HANDLE_VALUE) return GetLastError();
+    FindClose(handle);
+    *tag = (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ? data.dwReserved0 : 0;
+    return ERROR_SUCCESS;
+}
+
+// The final path of the file at path, after following every symlink. Like GetFinalPathNameByHandleW, *length is the
+// size needed (including the terminator) if the buffer is too small, else the length written (without it).
+static inline DWORD plexify_get_final_path_name(LPCWSTR path, DWORD size, LPWSTR buffer, DWORD* length) {
+    HANDLE handle = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                                FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return GetLastError();
+    *length = GetFinalPathNameByHandleW(handle, buffer, size, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    DWORD error = *length == 0 ? GetLastError() : ERROR_SUCCESS;
+    CloseHandle(handle);
+    return error;
+}
