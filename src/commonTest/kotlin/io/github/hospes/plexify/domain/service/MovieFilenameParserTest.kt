@@ -167,6 +167,28 @@ class MovieFilenameParserTest {
             filename = "Inception (2010) [imdbid=tt1375666].mkv",
             expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
         ),
+
+        // --- Not episodes, despite the episode patterns ---
+        // " - 1979" is a year, not a fansub episode number
+        TestCase(
+            filename = "Alien - 1979.mkv",
+            expected = ParsedMediaInfo.Movie(title = "alien", year = "1979")
+        ),
+        // A number followed by a bracketed year is part of the title
+        TestCase(
+            filename = "Rocky - 2 (1979).mkv",
+            expected = ParsedMediaInfo.Movie(title = "rocky 2", year = "1979")
+        ),
+        // Frame size is not 1x01 numbering
+        TestCase(
+            filename = "Some.Movie.2019.1920x1080.x264.mkv",
+            expected = ParsedMediaInfo.Movie(title = "some movie", year = "2019")
+        ),
+        // A bracketed title is not a release group
+        TestCase(
+            filename = "[REC] (2007).mkv",
+            expected = ParsedMediaInfo.Movie(title = "rec", year = "2007")
+        ),
     )
 
     @Test

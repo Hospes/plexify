@@ -5,8 +5,31 @@ import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 object MediaFilenameParser {
 
     // --- Regex for TV Show Episode Extraction ---
-    // Tier 1: Captures S01E01, s01e01, S1E1, etc.
-    private val episodeRegex = """[._\-\s\[(]([Ss](\d{1,2})[Ee](\d{1,2}))(?:[._\-\s\])]|$)""".toRegex()
+    // Tier 1: Captures S01E01, s01e01, S1E1, S01E100, S2024E01, and multi-episode files: S01E01E02,
+    // S01E01-E02, S01E01-02 (group 4 holds the range suffix).
+    private val episodeRegex = """[._\-\s\[(]([Ss](\d{1,4})[Ee](\d{1,3})((?:-?[Ee]\d{1,3}|-\d{1,3})*))(?:[._\-\s\])]|$)""".toRegex()
+
+    // Tier 1b: 1x01 / 01x01, and 1x01-02 / 1x01x02 / 1x01-1x02. The episode needs two digits, so a
+    // title like "3x3 Eyes" isn't read as one, and the season must start a token ("1920x1080" doesn't).
+    private val crossEpisodeRegex =
+        """(?:^|[._\-\s\[(])((\d{1,2})[xX](\d{2,3})((?:[-xX]\d{2,3}|-\d{1,2}[xX]\d{2,3})*))(?:[._\-\s\])]|$)""".toRegex()
+
+    // The numbers in a range suffix; the last one ends the range
+    private val rangeNumberRegex = """\d+""".toRegex()
+
+    // Tier 2a: anime fansub style "[SubsPlease] Show - 01 (1080p) [ABCD1234]", "Show - 01v2", absolute
+    // "Show - 1071". A year is not an episode: neither a 19xx/20xx number ("Alien - 1979") nor a number
+    // followed by a bracketed year ("Title - 6 (2013)").
+    private val dashEpisodeRegex =
+        """\s-\s(?!(?:19|20)\d{2}(?:\D|$))(\d{1,4})(?:v\d{1,2})?(?=\s|$|[\[(])(?!\s*[\[(](?:19|20)\d{2}[\])])""".toRegex()
+
+    // A season marker closing a fansub title: "Show S2", "Show Season 2", "Show 2nd Season"
+    private val trailingSeasonRegex =
+        """\s(?:S(\d{1,2})|Season\s+(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)\s+Season)$""".toRegex(RegexOption.IGNORE_CASE)
+
+    // Release group tags leading the name, as fansubs write them: "[SubsPlease] Show - 01"
+    private val leadingGroupsRegex = """^(?:\s*\[[^\[\]]*])+""".toRegex()
+    private val leadingGroupRegex = """^\s*\[([^\[\]]+)]""".toRegex()
 
     // Tier 2: season marker in the (normalized) filename: "Season 2", or a bare "S2" token as in "Gate_S2_[01]"
     private val seasonKeywordRegex = """(?:^|\s)(?:Season\s+|S)(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
@@ -86,14 +109,16 @@ object MediaFilenameParser {
         val workingFilename = filename.substringBeforeLast('.').replace(providerIdTagRegex, " ")
         // Normalize once; all tier regexes run against this
         val normalized = workingFilename.replace('.', ' ').replace('_', ' ')
+        // A bracketed number leading the name ("[01].mkv") is an episode, not a group
+        val leadingGroup = leadingGroupRegex.find(workingFilename)?.groupValues?.get(1)?.trim()
+            ?.takeIf { tag -> tag.any { it.isLetter() } }
 
-        // --- Tier 1: Standard SxxExx ---
-        val episodeMatch = episodeRegex.find(workingFilename)
+        // --- Tier 1: Standard SxxExx, then 1x01 ---
+        val episodeMatch = episodeRegex.find(workingFilename) ?: crossEpisodeRegex.find(workingFilename)
         if (episodeMatch != null) {
-            val showPart = workingFilename.substringBefore(episodeMatch.value).trimEnd(' ', '-', '.', '_')
+            val showPart = workingFilename.substring(0, episodeMatch.range.first).trimEnd(' ', '-', '.', '_')
             val showYear = trailingYearRegex.find(showPart)
-            val showTitle = (showYear?.let { showPart.substring(0, it.range.first) } ?: showPart)
-                .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+            val showTitle = cleanShowTitle(showYear?.let { showPart.substring(0, it.range.first) } ?: showPart)
 
             // Plexify's own names: "Show (2015) - S01E13 - Episode Title - [720p] [HDTV]". The episode
             // title is free text, so read metadata only from the show part and the {version} suffix.
@@ -104,12 +129,37 @@ object MediaFilenameParser {
                 workingFilename
             }
 
+            val episode = episodeMatch.groupValues[3].toInt()
             return buildEpisode(
                 showTitle = showTitle,
                 season = episodeMatch.groupValues[2].toInt(),
-                episode = episodeMatch.groupValues[3].toInt(),
+                episode = episode,
+                lastEpisode = rangeEnd(episode, episodeMatch.groupValues[4]),
                 normalized = metadataText.replace('.', ' ').replace('_', ' '),
                 year = showYear?.groupValues?.get(1),
+                leadingGroup = leadingGroup,
+            )
+        }
+
+        // --- Tier 2a: fansub "[Group] Show - 01 (1080p) [CRC]"; season from the title, else the parent directory ---
+        // Dots stay: "Show - 12.5" is a recap special, not episode 12
+        val dashText = workingFilename.replace('_', ' ')
+        val dashMatch = dashEpisodeRegex.find(dashText)
+        if (dashMatch != null) {
+            var showPart = dashText.substring(0, dashMatch.range.first).replace(leadingGroupsRegex, "").trim()
+            val seasonInTitle = trailingSeasonRegex.find(showPart)
+            if (seasonInTitle != null) showPart = showPart.substring(0, seasonInTitle.range.first).trimEnd()
+            val showYear = trailingYearRegex.find(showPart)
+            if (showYear != null) showPart = showPart.substring(0, showYear.range.first)
+
+            return buildEpisode(
+                showTitle = cleanShowTitle(showPart),
+                season = seasonInTitle?.groupValues?.drop(1)?.first { it.isNotEmpty() }?.toInt()
+                    ?: seasonFromDir(parentDirName),
+                episode = dashMatch.groupValues[1].toInt(),
+                normalized = normalized,
+                year = showYear?.groupValues?.get(1),
+                leadingGroup = leadingGroup,
             )
         }
 
@@ -120,13 +170,12 @@ object MediaFilenameParser {
             val afterSeason = normalized.substring(seasonKeywordMatch.range.last + 1)
             val bracketEpMatch = bracketEpisodeRegex.find(afterSeason)
             if (bracketEpMatch != null) {
-                val showTitle = normalized.substring(0, seasonKeywordMatch.range.first)
-                    .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
                 return buildEpisode(
-                    showTitle = showTitle,
+                    showTitle = cleanShowTitle(normalized.substring(0, seasonKeywordMatch.range.first)),
                     season = season,
                     episode = bracketEpMatch.groupValues[1].toInt(),
                     normalized = normalized,
+                    leadingGroup = leadingGroup,
                 )
             }
         }
@@ -134,26 +183,31 @@ object MediaFilenameParser {
         // --- Tiers 3 & 4: bracket episode [NN] ---
         val bracketEpMatch = bracketEpisodeRegex.find(normalized)
         if (bracketEpMatch != null) {
-            val episode = bracketEpMatch.groupValues[1].toInt()
-            val rawTitle = normalized.substring(0, bracketEpMatch.range.first)
-            val showTitle = rawTitle.replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
-
-            // Tier 3: season from parent directory name
-            val seasonFromDir = parentDirName
-                ?.let { seasonFromDirRegex.find(it) }
-                ?.groupValues?.get(1)?.toIntOrNull()
-
             return buildEpisode(
-                showTitle = showTitle,
-                season = seasonFromDir,   // null when no parent-dir season found (Tier 4)
-                episode = episode,
+                showTitle = cleanShowTitle(normalized.substring(0, bracketEpMatch.range.first)),
+                // Tier 3: season from parent directory name; null when there is none (Tier 4)
+                season = seasonFromDir(parentDirName),
+                episode = bracketEpMatch.groupValues[1].toInt(),
                 normalized = normalized,
+                leadingGroup = leadingGroup,
             )
         }
 
         // --- MOVIE PARSING LOGIC (Fallback) ---
         return parseAsMovie(workingFilename)
     }
+
+    private fun seasonFromDir(parentDirName: String?): Int? =
+        parentDirName?.let { seasonFromDirRegex.find(it) }?.groupValues?.get(1)?.toIntOrNull()
+
+    // The end of a multi-episode range suffix ("E02", "-E02", "-02", "x02", "-1x02"); null unless it is
+    // past the first episode.
+    private fun rangeEnd(firstEpisode: Int, rangeSuffix: String): Int? =
+        rangeNumberRegex.findAll(rangeSuffix).lastOrNull()?.value?.toInt()?.takeIf { it > firstEpisode }
+
+    // Leading release group tags ("[SubsPlease] Show") are not part of the show title.
+    private fun cleanShowTitle(rawTitle: String): String =
+        rawTitle.replace(leadingGroupsRegex, " ").replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
 
     private fun parseAsMovie(filename: String): ParsedMediaInfo {
         var workingTitle = filename
@@ -226,17 +280,20 @@ object MediaFilenameParser {
         season: Int?,
         episode: Int,
         normalized: String,
+        lastEpisode: Int? = null,
         year: String? = null,
+        leadingGroup: String? = null,
     ) =
         ParsedMediaInfo.Episode(
             showTitle = showTitle.lowercase(),
             season = season,
             episode = episode,
+            lastEpisode = lastEpisode,
             year = year ?: yearRegex.find(normalized)?.value,
             resolution = resolutionRegex.find(normalized)?.value,
             quality = qualityRegex.find(normalized)?.value,
             hdr = extractHdr(normalized),
-            releaseGroup = releaseGroupRegex.find(normalized)?.value,
+            releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup,
             edition = extractEdition(normalized),
         )
 

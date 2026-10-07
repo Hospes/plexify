@@ -130,6 +130,122 @@ class EpisodeFilenameParserTest {
             filename = "Some Show (2020) - S01E03 - Part One - The Start - [1080p] [WEB-DL].mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 3, year = "2020", resolution = "1080p", quality = "WEB-DL")
         ),
+        // A multi-episode file plexify wrote
+        TestCase(
+            filename = "Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag - [720p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = "2008", resolution = "720p")
+        ),
+
+        // --- Episode numbers past 99, year-numbered seasons ---
+        TestCase(
+            filename = "One.Piece.S01E100.1080p.WEB-DL.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "one piece", season = 1, episode = 100, year = null, resolution = "1080p", quality = "WEB-DL")
+        ),
+        TestCase(
+            filename = "The.Daily.Show.S2024E01.720p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the daily show", season = 2024, episode = 1, year = null, resolution = "720p")
+        ),
+
+        // --- Multi-episode files ---
+        TestCase(
+            filename = "Breaking.Bad.S01E01E02.720p.BluRay.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = null, resolution = "720p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Breaking.Bad.S01E01-E02.720p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Breaking.Bad.S01E01-02.720p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Doctor.Who.S04E12E13E14.1080p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "doctor who", season = 4, episode = 12, lastEpisode = 14, year = null, resolution = "1080p")
+        ),
+        // A resolution right after the dash is not a range end
+        TestCase(
+            filename = "Breaking.Bad.S01E05-720p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 5, year = null, resolution = "720p")
+        ),
+        // A "range" that doesn't go forward is just the first episode
+        TestCase(
+            filename = "Breaking.Bad.S01E05-03.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 5, year = null)
+        ),
+
+        // --- 1x01 numbering ---
+        TestCase(
+            filename = "Friends.1x01.The.One.Where.Monica.Gets.a.Roommate.720p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "friends", season = 1, episode = 1, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Friends - 02x24 - The One with Barry and Mindy's Wedding.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "friends", season = 2, episode = 24, year = null)
+        ),
+        TestCase(
+            filename = "Friends.10x17-18.The.Last.One.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "friends", season = 10, episode = 17, lastEpisode = 18, year = null)
+        ),
+        TestCase(
+            filename = "Friends.10x17-10x18.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "friends", season = 10, episode = 17, lastEpisode = 18, year = null)
+        ),
+
+        // --- Anime fansub style: "[Group] Show - 01 (1080p) [CRC32]" ---
+        TestCase(
+            filename = "[SubsPlease] Sousou no Frieren - 01 (1080p) [ABCD1234].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "sousou no frieren", season = null, episode = 1, year = null, resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
+        TestCase(
+            filename = "[Erai-raws] Kaiju No. 8 - 12 [1080p][Multiple Subtitle].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "kaiju no 8", season = null, episode = 12, year = null, resolution = "1080p", releaseGroup = "Erai-raws")
+        ),
+        TestCase(
+            filename = "Sousou no Frieren - 05v2.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "sousou no frieren", season = null, episode = 5, year = null)
+        ),
+        // Absolute numbering past a season's length
+        TestCase(
+            filename = "[SubsPlease] One Piece - 1071 (1080p) [8D4B2C9A].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "one piece", season = null, episode = 1071, year = null, resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
+        TestCase(
+            filename = "[SubsPlease] Dungeon Meshi - 13 (1080p) [ABCD1234].mkv",
+            parentDirName = "Season 2",
+            expected = ParsedMediaInfo.Episode(showTitle = "dungeon meshi", season = 2, episode = 13, year = null, resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
+        // Season marker closing the title
+        TestCase(
+            filename = "[SubsPlease] Mushoku Tensei S2 - 01 (1080p) [ABCD1234].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "mushoku tensei", season = 2, episode = 1, year = null, resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
+        TestCase(
+            filename = "[Group] Spy x Family Season 2 - 03 [720p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "spy x family", season = 2, episode = 3, year = null, resolution = "720p", releaseGroup = "Group")
+        ),
+        TestCase(
+            filename = "[Group] Vinland Saga 2nd Season - 07 [1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "vinland saga", season = 2, episode = 7, year = null, resolution = "1080p", releaseGroup = "Group")
+        ),
+        TestCase(
+            filename = "[SubsPlease] Ranma 1-2 (2024) - 03 (1080p) [ABCD1234].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "ranma 1 2", season = null, episode = 3, year = "2024", resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
+        TestCase(
+            filename = "[Judas]_Mob_Psycho_100_-_04_[1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "mob psycho 100", season = null, episode = 4, year = null, resolution = "1080p", releaseGroup = "Judas")
+        ),
+        // Episode title after the number
+        TestCase(
+            filename = "Mob Psycho 100 - 04 - Idiots Only Event.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "mob psycho 100", season = null, episode = 4, year = null)
+        ),
+        // A leading group also stays out of the title in the other forms
+        TestCase(
+            filename = "[AniLibria] Gate [05] [720p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = null, episode = 5, year = null, resolution = "720p", releaseGroup = "AniLibria")
+        ),
     )
 
     // Split-cour anime: the release's S2 is TMDB's S1E13+, remapped later via episode groups,
@@ -151,6 +267,14 @@ class EpisodeFilenameParserTest {
         assertEquals("gate", secondCour.showTitle)
         assertEquals(2, secondCour.season)
         assertEquals(12, secondCour.episode)
+    }
+
+    // Filed as episode 12 it would collide with the real one; better left unmatched.
+    @Test
+    fun `a recap special numbered 12 and a half is not episode 12`() {
+        val parsed = MediaFilenameParser.parse("[SubsPlease] Sousou no Frieren - 12.5 (1080p) [ABCD1234].mkv")
+
+        assertTrue(parsed !is ParsedMediaInfo.Episode || parsed.episode != 12, "parsed as $parsed")
     }
 
     @Test

@@ -91,4 +91,40 @@ class PathFormatterTest {
             NamingStrategy.Custom("{CleanTitle} ({year})/{CleanTitle} ({year}).{ext}").renderMovie(2010),
         )
     }
+
+    // --- Multi-episode files ---
+
+    private val breakingBad = CanonicalMedia.TvShow(title = "Breaking Bad", year = 2008, tmdbId = "1396", imdbId = "tt0903747")
+    private val parsedRange = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = null, resolution = "720p")
+    private val rangeSource = Path("Breaking.Bad.S01E01E02.720p.mkv")
+
+    private fun NamingStrategy.renderEpisodeFile(media: CanonicalMedia.Episode): String =
+        formatter.formatEpisodePath(tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate, media, parsedRange, rangeSource).name
+
+    @Test
+    fun `names a single episode without a range`() {
+        val episode = CanonicalMedia.Episode(breakingBad, season = 1, episode = 1, title = "Pilot")
+
+        assertEquals("Breaking Bad (2008) - S01E01 - Pilot - [720p].mkv", NamingStrategy.Jellyfin.renderEpisodeFile(episode))
+    }
+
+    @Test
+    fun `names a multi-episode file with its range`() {
+        val episode = CanonicalMedia.Episode(breakingBad, season = 1, episode = 1, title = "Pilot & Cat's in the Bag", lastEpisode = 2)
+
+        val expected = "Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag - [720p].mkv"
+        assertEquals(expected, NamingStrategy.Jellyfin.renderEpisodeFile(episode))
+        assertEquals(expected, NamingStrategy.Plex.renderEpisodeFile(episode))
+    }
+
+    @Test
+    fun `a range name parses back to the same range`() {
+        val episode = CanonicalMedia.Episode(breakingBad, season = 1, episode = 1, title = "Pilot & Cat's in the Bag", lastEpisode = 2)
+
+        val reparsed = MediaFilenameParser.parse(NamingStrategy.Jellyfin.renderEpisodeFile(episode), "Season 01") as ParsedMediaInfo.Episode
+
+        assertEquals(1, reparsed.episode)
+        assertEquals(2, reparsed.lastEpisode)
+        assertEquals("breaking bad", reparsed.showTitle)
+    }
 }

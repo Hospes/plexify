@@ -206,6 +206,32 @@ class EpisodeFallbackTest {
     }
 
     @Test
+    fun `a multi-episode file gets the whole range and both titles`() = runTest {
+        val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6)))
+
+        val run = run(provider, "Ghosts.S01E01E02.1080p.WEB.mkv")
+
+        val episode = run.organizer.organized["Ghosts.S01E01E02.1080p.WEB.mkv"] as CanonicalMedia.Episode
+        assertEquals(1, episode.episode)
+        assertEquals(2, episode.lastEpisode)
+        assertEquals("Episode 1 & Episode 2", episode.title)
+        // The range costs no extra fetch: both episodes come from the cached season.
+        assertEquals(listOf("1:1"), run.provider.seasonFetches)
+    }
+
+    @Test
+    fun `a range running past the season is filed as its first episode`() = runTest {
+        val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6)))
+
+        val run = run(provider, "Ghosts.S01E06-E07.1080p.WEB.mkv")
+
+        val episode = run.organizer.organized["Ghosts.S01E06-E07.1080p.WEB.mkv"] as CanonicalMedia.Episode
+        assertEquals(6, episode.episode)
+        assertEquals(null, episode.lastEpisode)
+        assertEquals("Episode 6", episode.title)
+    }
+
+    @Test
     fun `a runner-up show picked by the fallback gets its external ids`() = runTest {
         val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6), "2" to mapOf(4 to 1..8)))
 

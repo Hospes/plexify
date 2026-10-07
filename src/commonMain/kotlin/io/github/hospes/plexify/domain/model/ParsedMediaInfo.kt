@@ -27,6 +27,8 @@ sealed interface ParsedMediaInfo {
         override val hdr: String? = null,
         override val releaseGroup: String? = null,
         override val edition: String? = null,
+        /** The last episode of a multi-episode file (`S01E01-E03` → 3); null for a single episode. */
+        val lastEpisode: Int? = null,
     ) : ParsedMediaInfo
 }
 
@@ -48,6 +50,7 @@ fun ParsedMediaInfo.withOverrides(
         showTitle = title ?: showTitle,
         season = season ?: this.season,
         episode = episode + (episodeOffset ?: 0),
+        lastEpisode = lastEpisode?.plus(episodeOffset ?: 0),
         year = year ?: this.year,
     )
 }

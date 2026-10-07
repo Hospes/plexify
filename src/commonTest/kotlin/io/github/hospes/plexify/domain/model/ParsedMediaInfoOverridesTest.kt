@@ -33,6 +33,16 @@ class ParsedMediaInfoOverridesTest {
     }
 
     @Test
+    fun `episode offset shifts a whole multi-episode range`() {
+        val range = episode.copy(episode = 13, lastEpisode = 14)
+
+        val result = range.withOverrides(title = null, season = 2, episodeOffset = -12) as ParsedMediaInfo.Episode
+
+        assertEquals(1, result.episode)
+        assertEquals(2, result.lastEpisode)
+    }
+
+    @Test
     fun `negative episode offset subtracts`() {
         val absolute = episode.copy(episode = 15)
 

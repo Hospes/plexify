@@ -32,6 +32,24 @@ Plexify follows a simple but effective pipeline to organize your media:
 4.  **Format**: It uses the selected naming strategy (e.g., Jellyfin) and the canonical record to construct the ideal new file and folder path.
 5.  **Organize**: It creates the necessary directories and moves or hardlinks the file to its final, clean destination.
 
+## 🔎 Filename Patterns
+
+A file is treated as a TV episode when its name matches one of these forms (checked in this order); anything else is parsed as a movie.
+
+| Form | Example | Season from |
+| ---- | ------- | ----------- |
+| `SxxEyy` (1–3 digit episode, up to 4 digit season) | `Breaking.Bad.S01E01.720p.mkv`, `One.Piece.S01E100.mkv` | the name |
+| Multi-episode `SxxEyy` | `Show.S01E01E02.mkv`, `Show.S01E01-E02.mkv`, `Show.S01E01-02.mkv` | the name |
+| `NxNN` | `Friends.1x01.mkv`, `Friends - 02x24 - Title.mkv`, `Friends.10x17-18.mkv` | the name |
+| Fansub `Show - NN` (optional `v2`, absolute numbers) | `[SubsPlease] Sousou no Frieren - 01 (1080p) [ABCD1234].mkv`, `Show - 01v2.mkv`, `[SubsPlease] One Piece - 1071 (1080p).mkv` | `S2` / `Season 2` / `2nd Season` closing the title, else the parent folder |
+| `Season N` / `SN` + `[NN]` | `Tsue_to_Tsurugi_no_Wistoria_Season_2_[01]_[HEVC].mkv`, `Gate_S2_[12].mkv` | the name |
+| `[NN]` | `Dungeon.Meshi.[13].[1080p].mkv` | the parent folder (`Season 2`, `S02`, `S2`) |
+
+-   When no season is found, Season 1 is assumed (with a warning); use `-s/--season` to set it. An episode number past the end of that season is looked up in the show's TMDB episode groups, which places split-cour releases on TMDB's numbering.
+-   A leading release group tag such as `[SubsPlease]` or `[Erai-raws]` is not part of the title; it fills `{releasegroup}`. Trailing tags like `(1080p)` and CRC checksums like `[ABCD1234]` are ignored.
+-   A multi-episode file is named with its range, `Show (2008) - S01E01-E02 - Pilot & Cat's in the Bag.mkv`, the form Plex and Jellyfin read as several episodes. When the episodes after the first aren't the next ones on TMDB (the range runs past the season, or TMDB merges them into one), the file is filed as its first episode with a warning.
+-   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media, so a library can be re-run.
+
 ## 🚀 Getting Started
 
 ### Download a release
@@ -212,7 +230,8 @@ The following placeholders can be used in your custom templates.
 | `{tvdbid}`       | The TVDb ID (if available), looked up on TMDB; TV shows only.                | `81189`                                 |
 | **TV Shows**     |                                                                              |                                         |
 | `{season}`       | The season number.                                                           | `1`                                     |
-| `{episode}`      | The episode number.                                                          | `5`                                     |
+| `{episode}`      | The episode number (the first one for a multi-episode file).                 | `5`                                     |
+| `{multiEpisode}` | `-E` and the last episode for a multi-episode file, empty otherwise.         | `-E06`                                  |
 | `{episodetitle}` | The title of the specific episode.                                           | `The Ride`                              |
 | **Parsed Info**  |                                                                              |                                         |
 | `{resolution}`   | The resolution parsed from the filename.                                     | `1080p`                                 |
@@ -225,10 +244,19 @@ The following placeholders can be used in your custom templates.
 
 -   **Padding:** You can pad numbers with leading zeros by specifying a length after a colon.
     -   `S{season:2}E{episode:2}` → `S01E05`
+    -   `S{season:2}E{episode:2}{multiEpisode}` → `S01E05-E06` for a two-episode file, `S01E05` otherwise (the built-in templates use this)
 
 -   **Conditional Blocks:** You can make parts of the template optional based on whether a placeholder has a value. Wrap the section in square brackets `[]`. The block will only be included if the placeholder inside it is available.
     -   `{CleanTitle} ({year}) [tmdbid-{tmdbid}]` → `The Matrix (1999) [tmdbid-603]`
     -   If `tmdbid` is not found, it becomes: `The Matrix (1999)`
+
+## ⚠️ Known Limitations
+
+-   **Absolute episode numbers** (`One Piece - 1071`, or `S01E1071`) are placed through the show's TMDB absolute-order episode group. A show without one needs `-s` and `--episode-offset`.
+-   **Fansub `Show - NN` names**: a number after ` - ` is read as an episode, so a movie named `Title - 2.mkv` is parsed as one (name it `Title 2 (Year).mkv`). Years are excluded: `Alien - 1979.mkv` stays a movie, and so does any `- 19xx`/`- 20xx`. Batch ranges (`Show - 01-12`), specials (`Show - OVA`, `Show - 12.5`) and episode-only names (`01.mkv`) are not recognized.
+-   **Multi-episode ranges** must be consecutive episodes of one season. Ranges across seasons (`S01E24-S02E01`) are filed as their first episode, and so is a range TMDB lists as a single episode (*Friends* "The Last One", `10x17-18`).
+-   **Leading release group tags** are dropped from episode titles only; a movie named `[Group] Movie (2020).mkv` keeps the group in its search title, since a bracket can be the title itself (`[REC] (2007).mkv`).
+-   **Year-numbered seasons** (`S2024E01`) are parsed, but match only if TMDB numbers the show's seasons by year.
 
 ## 🛠️ Dependencies
 
