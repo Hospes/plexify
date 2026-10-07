@@ -19,6 +19,8 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.engine.*
+import io.ktor.client.network.sockets.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
@@ -30,19 +32,33 @@ import io.ktor.util.*
 
 class TmdbProvider(
     private val credentials: TmdbCredentials,
+    private val timeouts: TmdbTimeouts = TmdbTimeouts(),
+    private val engineFactory: () -> HttpClientEngine = ::createHttpClientEngine,
 ) : MetadataProvider {
     override val id: String = "tmdb"
     override val supportedIds: Set<String> = setOf("tmdbid", "imdbid", "tvdbid")
 
     private val httpClient by lazy {
-        HttpClient(createHttpClientEngine()) {
+        HttpClient(engineFactory()) {
             install(ContentNegotiation) { json(nonstrict) }
 
             // TMDB rate-limits bursts with 429 (and a Retry-After header). A built-in key is
             // shared by every user of a release, so give a busy moment a few tries.
             install(HttpRequestRetry) {
                 retryIf(maxRetries = 3) { _, response -> response.status == HttpStatusCode.TooManyRequests }
+                // Fewer tries for a timeout (they share the count above): a stall usually means TMDB
+                // or the network is down, and every try costs the full timeout.
+                retryOnExceptionIf { _, cause -> cause.isTimeout() && retryCount <= timeouts.retries }
                 exponentialDelay()
+            }
+
+            // Installed after HttpRequestRetry, so each try gets its own timeouts. The curl engine sets
+            // the connect timeout on the handle (DNS included) but ignores a socket timeout; the request
+            // timeout cancels the call from Ktor's side, body download included, so it is what catches
+            // a server that stops sending.
+            install(HttpTimeout) {
+                connectTimeoutMillis = timeouts.connectMillis
+                requestTimeoutMillis = timeouts.requestMillis
             }
 
 //            install(Logging) {
@@ -66,16 +82,15 @@ class TmdbProvider(
 
     /** One cheap call before a run, so wrong or revoked credentials fail once and clearly. */
     suspend fun verifyCredentials(): Result<Unit> = tmdbCatching {
-        httpClient.get("authentication").ensureSuccess { "verifying credentials" }
+        get("authentication") { "verifying credentials" }
     }
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = tmdbCatching {
-        val response = httpClient.get("search/multi") {
+        val response = get("search/multi", {
             parameter("query", title)
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
-        }
-        response.ensureSuccess { "searching for '$title'" }
+        }) { "searching for '$title'" }
         val results = response.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
 
         // TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
@@ -120,8 +135,7 @@ class TmdbProvider(
         episode: Int
     ): Result<CanonicalMedia.Episode> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
-        val response = httpClient.get("tv/${show.tmdbId}/season/$season/episode/$episode")
-        response.ensureSuccess { "fetching S${season}E${episode} of '${show.title}'" }
+        val response = get("tv/${show.tmdbId}/season/$season/episode/$episode") { "fetching S${season}E${episode} of '${show.title}'" }
         val dto = response.body<TmdbEpisodeDto>()
 
         CanonicalMedia.Episode(
@@ -137,8 +151,7 @@ class TmdbProvider(
         season: Int,
     ): Result<CanonicalMedia.Season> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch season details." }
-        val response = httpClient.get("tv/${show.tmdbId}/season/$season")
-        response.ensureSuccess { "fetching season $season of '${show.title}'" }
+        val response = get("tv/${show.tmdbId}/season/$season") { "fetching season $season of '${show.title}'" }
         val dto = response.body<TmdbSeasonDto>()
 
         CanonicalMedia.Season(
@@ -159,8 +172,7 @@ class TmdbProvider(
         show: CanonicalMedia.TvShow,
     ): Result<List<CanonicalMedia.EpisodeGroup>> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode groups." }
-        val response = httpClient.get("tv/${show.tmdbId}/episode_groups")
-        response.ensureSuccess { "fetching episode groups of '${show.title}'" }
+        val response = get("tv/${show.tmdbId}/episode_groups") { "fetching episode groups of '${show.title}'" }
 
         // Each group's episodes take one more call, so fetch only orderings that can stand in
         // for seasons, most trusted first, plus a couple of absolute orderings for absolute-numbered
@@ -177,8 +189,7 @@ class TmdbProvider(
             .take(MAX_ABSOLUTE_GROUP_LOOKUPS)
         (seasonLike + absolute)
             .map { (summary, type) ->
-                val groupResponse = httpClient.get("tv/episode_group/${summary.id}")
-                groupResponse.ensureSuccess { "fetching episode group '${summary.name}' of '${show.title}'" }
+                val groupResponse = get("tv/episode_group/${summary.id}") { "fetching episode group '${summary.name}' of '${show.title}'" }
                 groupResponse.body<TmdbEpisodeGroupDto>().toDomainModel(show, type)
             }
     }
@@ -191,8 +202,7 @@ class TmdbProvider(
             else -> throw UnsupportedOperationException("External IDs are looked up for movies and shows only.")
         }
         requireNotNull(tmdbId) { "TMDb ID is required to fetch external IDs." }
-        val response = httpClient.get("$kind/$tmdbId/external_ids")
-        response.ensureSuccess { "fetching external IDs of '$title'" }
+        val response = get("$kind/$tmdbId/external_ids") { "fetching external IDs of '$title'" }
         val dto = response.body<TmdbExternalIdsDto>()
         ExternalIds(
             imdbId = dto.imdbId?.ifBlank { null },
@@ -208,6 +218,21 @@ class TmdbProvider(
             Result.failure(credentials.redact(e))
         }
 
+    /**
+     * GET [path] and check the status. A timeout fails with a short message naming the [action]
+     * instead of Ktor's, which spells out the whole request URL.
+     */
+    private suspend fun get(path: String, block: HttpRequestBuilder.() -> Unit = {}, action: () -> String): HttpResponse {
+        val response = try {
+            httpClient.get(path, block)
+        } catch (e: Throwable) {
+            if (e.isTimeout()) throw TmdbTimeoutException("TMDB request timed out ${action()}")
+            throw e
+        }
+        response.ensureSuccess(action)
+        return response
+    }
+
     private fun HttpResponse.ensureSuccess(action: () -> String) {
         when {
             status.isSuccess() -> Unit
@@ -219,6 +244,25 @@ class TmdbProvider(
             else -> error("HTTP ${status.value} ${action()}")
         }
     }
+}
+
+/**
+ * Limits for one TMDB call. Files are processed one after another, so without them a stalled
+ * connection would block the whole run.
+ */
+data class TmdbTimeouts(
+    val connectMillis: Long = 10_000,
+    val requestMillis: Long = 30_000,
+    /** Extra tries after a timeout, out of the three retries a call gets (HTTP 429 may use all three). */
+    val retries: Int = 1,
+)
+
+/** TMDB did not answer in time. Carries no cause, so no stack trace prints the request URL. */
+class TmdbTimeoutException(message: String) : Exception(message)
+
+// Ktor may deliver a timeout wrapped in a CancellationException.
+private fun Throwable.isTimeout(): Boolean = generateSequence(this) { it.cause }.take(8).any {
+    it is HttpRequestTimeoutException || it is ConnectTimeoutException || it is SocketTimeoutException
 }
 
 // A result whose title (or original title) already resembles the query this closely

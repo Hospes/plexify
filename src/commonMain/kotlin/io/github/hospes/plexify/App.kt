@@ -19,6 +19,7 @@ import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.tmdb.TmdbCredentials
 import io.github.hospes.plexify.data.tmdb.TmdbCredentialsRejectedException
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
+import io.github.hospes.plexify.data.tmdb.TmdbTimeoutException
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.PathFormatter
@@ -168,7 +169,7 @@ object App : CliktCommand(name = "plexify") {
      * TMDB is the only metadata source, so the run fails up front when there are no credentials
      * or TMDB rejects them, with what to do about it, instead of a miss or an HTTP 401 on every
      * file. Other failures (offline, timeouts) are left to the per-file errors, since they say
-     * nothing about the credentials.
+     * nothing about the credentials; a timeout gets a warning, since every lookup will wait as long.
      */
     private fun verifiedTmdbProvider(): TmdbProvider {
         // No user credentials and nothing built in: a build made without local.properties.
@@ -186,6 +187,7 @@ object App : CliktCommand(name = "plexify") {
             }
             throw CliktError(message)
         }
+        if (error is TmdbTimeoutException) echo("Warning: ${error.message}; TMDB may be unreachable.", err = true)
         return provider
     }
 
