@@ -33,6 +33,7 @@ class MediaProcessor(
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
     private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
+    private val MAX_FALLBACK_SHOWS = 3 // Runner-up shows tried when the best match lacks a season.
 
     class Stats {
         var organized: Int = 0
@@ -48,6 +49,14 @@ class MediaProcessor(
 
     // Show+season pairs already reported as mapped (or unmappable) through episode groups.
     private val episodeGroupNotices = mutableSetOf<String>()
+
+    // The show each release season (keyed "title:year:season") was placed in, so later files of the
+    // same season go to the same show instead of being matched again.
+    private val seasonShows = mutableMapOf<String, CanonicalMedia.TvShow>()
+
+    // Seasons that could not be fetched (network error, rate limit), as opposed to ones the provider
+    // reported as nonexistent. Only the latter is evidence that a show is the wrong match.
+    private val unavailableSeasons = mutableSetOf<String>()
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -153,17 +162,18 @@ class MediaProcessor(
         }
         debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: $season, Episode: ${parsedInfo.episode}")
 
-        // Step 1: Find the canonical show, using the cache first.
-        val canonicalShow = findOrFetchShow(parsedInfo.showTitle, parsedInfo.year)
-        if (canonicalShow == null) {
+        // Step 1: Find the candidate shows, best first, using the cache first.
+        val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year)
+        if (candidates.isEmpty()) {
             status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
             stats.skipped++
             return@indent
         }
-        debug("Found show: $canonicalShow")
+        debug("Found show: ${candidates.first()}")
 
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
-        val bestEpisodeMatch = findOrFetchEpisode(canonicalShow, season, parsedInfo.episode)
+        val seasonKey = "${parsedInfo.showTitle}:${parsedInfo.year}:$season"
+        val bestEpisodeMatch = findEpisode(candidates, seasonKey, season, parsedInfo.episode)
         if (bestEpisodeMatch == null) {
             status("✗ ${source.name} — episode S${season}E${parsedInfo.episode} not found")
             stats.skipped++
@@ -175,42 +185,83 @@ class MediaProcessor(
     }
 
     /**
-     * Helper function to get a TV show's metadata, checking the cache before fetching from providers.
+     * The shows matching a title, best first (empty when none is confident), checking the cache
+     * before searching providers. Only the best is reported; the rest back up the episode lookup.
      */
     context(_: LoggingContext)
-    private suspend fun findOrFetchShow(title: String, year: String?): CanonicalMedia.TvShow? = indent {
+    private suspend fun findOrFetchShows(title: String, year: String?): List<CanonicalMedia.TvShow> = indent {
         val cacheKey = "$title:$year"
-        val cachedShow = cache.getShow(cacheKey)
-        if (cachedShow != null) {
+        val cachedShows = cache.getShows(cacheKey)
+        if (cachedShows != null) {
             debug("Cache HIT for show: '$title'")
-            return@indent cachedShow
+            return@indent cachedShows
         }
         if (cache.isShowFailed(cacheKey)) {
             debug("Cache HIT (negative) for show: '$title'")
-            return@indent null
+            return@indent emptyList()
         }
         debug("Cache MISS for show: '$title'. Searching providers...")
 
         val searchResults = metadataService.search(title, year)
             .filterIsInstance<MediaSearchResult.TvShow>()
 
-        val canonicalShow = if (searchResults.isEmpty()) {
+        val shows = if (searchResults.isEmpty()) {
             status("No match for '$title': providers returned no results.")
-            null
+            emptyList()
         } else {
-            (findAndConsolidateBestMatch(searchResults, title, year) as? CanonicalMedia.TvShow)
-                ?.withExternalIds()
+            // Only the best match gets its external IDs now; a runner-up gets them if the
+            // episode fallback picks it (see findEpisode).
+            val ranked = rankMatches(searchResults, title, year).filterIsInstance<CanonicalMedia.TvShow>()
+            ranked.take(1).map { it.withExternalIds() } + ranked.drop(1)
         }
 
-        if (canonicalShow != null) {
-            cache.putShow(cacheKey, canonicalShow)
-            status("Matched show: ${canonicalShow.describe()}")
+        if (shows.isNotEmpty()) {
+            cache.putShows(cacheKey, shows)
+            status("Matched show: ${shows.first().describe()}")
         } else {
             // Negative cache: don't repeat the search (and its log output) for every episode file.
             cache.markShowFailed(cacheKey)
         }
 
-        return@indent canonicalShow
+        return@indent shows
+    }
+
+    /**
+     * Finds the episode in the best-matching show. When that show has no such season at all, it is
+     * not the release's show (e.g. a same-titled spin-off with one season), so the runner-up shows
+     * are tried and the first that has the exact episode is used. The show that places a season is
+     * kept for the rest of that season's files, so one season never splits across shows.
+     */
+    context(_: LoggingContext)
+    private suspend fun findEpisode(
+        candidates: List<CanonicalMedia.TvShow>,
+        seasonKey: String,
+        season: Int,
+        episode: Int,
+    ): CanonicalMedia.Episode? {
+        // A runner-up's season was fetched before its external IDs were, so its cached episodes
+        // carry the show without them: hand out the season's show as decided.
+        seasonShows[seasonKey]?.let { show -> return findOrFetchEpisode(show, season, episode)?.copy(show = show) }
+
+        val primary = candidates.first()
+        findOrFetchEpisode(primary, season, episode)?.let { match ->
+            seasonShows[seasonKey] = primary
+            return match
+        }
+
+        // The show has the season, just not this episode (or the season couldn't be fetched):
+        // a numbering quirk or an outage, not evidence of a wrong show.
+        if (!isSeasonMissing(primary, season)) return null
+
+        for (candidate in candidates.drop(1).take(MAX_FALLBACK_SHOWS)) {
+            val match = indent { findOrFetchSeason(candidate, season) }
+                .episodes.firstOrNull { it.episode == episode } ?: continue
+            val alternative = candidate.withExternalIds()
+            seasonShows[seasonKey] = alternative
+            status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
+            return match.copy(show = alternative)
+        }
+        return null
     }
 
     /**
@@ -219,23 +270,7 @@ class MediaProcessor(
      */
     context(_: LoggingContext)
     private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? = indent {
-        val showId = show.tmdbId ?: show.imdbId ?: show.title
-        val cacheKey = "$showId:$season"
-
-        val cachedSeason = cache.getSeason(cacheKey) ?: run {
-            debug("Cache MISS for season: S${season}. Fetching from providers...")
-            val seasonData = metadataService.getSeason(show, season)
-                // Cache the failure as an empty season so the remaining files of this season
-                // don't re-query the providers and re-log the same error.
-                ?: CanonicalMedia.Season(show, season, emptyList())
-                    .also { debug("Season $season of '${show.title}' is not available from providers.") }
-            cache.putSeason(cacheKey, seasonData)
-            seasonData
-        }
-
-        if (cachedSeason.episodes.isNotEmpty()) {
-            debug("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
-        }
+        val cachedSeason = findOrFetchSeason(show, season)
 
         val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
         if (match != null) return@indent match
@@ -243,6 +278,38 @@ class MediaProcessor(
         debug("Episode E${episode} not found in S${season} data. Trying episode groups...")
         findViaEpisodeGroups(show, season, episode)
     }
+
+    /** The whole season, fetched once per show and season; empty when it is missing or failed to load. */
+    context(_: LoggingContext)
+    private suspend fun findOrFetchSeason(show: CanonicalMedia.TvShow, season: Int): CanonicalMedia.Season {
+        val cacheKey = show.seasonCacheKey(season)
+
+        val cachedSeason = cache.getSeason(cacheKey) ?: run {
+            debug("Cache MISS for season: S${season}. Fetching from providers...")
+            val seasonData = metadataService.getSeason(show, season)
+                // Cache the failure as an empty season so the remaining files of this season
+                // don't re-query the providers and re-log the same error.
+                ?: CanonicalMedia.Season(show, season, emptyList()).also {
+                    unavailableSeasons += cacheKey
+                    debug("Season $season of '${show.title}' is not available from providers.")
+                }
+            cache.putSeason(cacheKey, seasonData)
+            seasonData
+        }
+
+        if (cachedSeason.episodes.isNotEmpty()) {
+            debug("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
+        }
+        return cachedSeason
+    }
+
+    /** True only when the providers reported the season as nonexistent, not when fetching it failed. */
+    private suspend fun isSeasonMissing(show: CanonicalMedia.TvShow, season: Int): Boolean {
+        val cacheKey = show.seasonCacheKey(season)
+        return cacheKey !in unavailableSeasons && cache.getSeason(cacheKey)?.episodes?.isEmpty() == true
+    }
+
+    private fun CanonicalMedia.TvShow.seasonCacheKey(season: Int): String = "${tmdbId ?: imdbId ?: title}:$season"
 
     /**
      * Fallback for releases numbered differently from the provider, typically anime split into
@@ -360,8 +427,19 @@ class MediaProcessor(
         results: List<MediaSearchResult>,
         parsedTitle: String,
         parsedYear: String?
-    ): CanonicalMedia? = indent {
-        if (results.isEmpty()) return@indent null
+    ): CanonicalMedia? = rankMatches(results, parsedTitle, parsedYear).firstOrNull()
+
+    /**
+     * Every candidate scoring at least [MINIMUM_CONFIDENCE_SCORE], best first, each consolidated
+     * across providers. Empty, with the reason reported, when none qualifies.
+     */
+    context(_: LoggingContext)
+    internal fun rankMatches(
+        results: List<MediaSearchResult>,
+        parsedTitle: String,
+        parsedYear: String?
+    ): List<CanonicalMedia> = indent {
+        if (results.isEmpty()) return@indent emptyList()
 
         debug("Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
 
@@ -443,20 +521,27 @@ class MediaProcessor(
                 else -> "none of ${results.size} provider result(s) resembled the title"
             }
             status("No match for '$parsedTitle': $reason")
-            return@indent null
+            return@indent emptyList()
         }
 
         debug("Best match selected: '${bestGroup.first.first().title}' with score ${bestGroup.second.format(2)}")
 
-        val groupItems = bestGroup.first
+        // sortedByDescending is stable, so the best stays the one maxByOrNull picks on a tie.
+        return@indent scoredGroups
+            .filter { (_, score) -> score >= MINIMUM_CONFIDENCE_SCORE }
+            .sortedByDescending { (_, score) -> score }
+            .map { (group, _) -> consolidate(group, parsedYear) }
+    }
+
+    /** Merges one candidate's results across providers into a golden record with all their IDs. */
+    private fun consolidate(groupItems: List<MediaSearchResult>, parsedYear: String?): CanonicalMedia {
         val bestItem = groupItems.firstOrNull { it.year == parsedYear } ?: groupItems.first()
 
-        // Consolidate all IDs from the winning group
         val imdbId = groupItems.firstNotNullOfOrNull { it.imdbId }
         val tmdbId = groupItems.firstNotNullOfOrNull { it.tmdbId }
         val tvdbId = groupItems.firstNotNullOfOrNull { it.tvdbId }
 
-        return@indent when (bestItem) {
+        return when (bestItem) {
             is MediaSearchResult.Movie -> CanonicalMedia.Movie(
                 title = bestItem.title,
                 year = bestItem.year?.toIntOrNull() ?: 0,
