@@ -115,7 +115,7 @@ class MediaConsolidationTest {
 
         // "Boyz (2025)" passes the title floor but premiered after the filename year, which
         // puts it below the confidence minimum.
-        assertEquals(listOf("76479", "152483"), ranked.map { (it as CanonicalMedia.TvShow).tmdbId })
+        assertEquals(listOf("76479", "152483"), ranked.map { (it.media as CanonicalMedia.TvShow).tmdbId })
     }
 
     @Test
