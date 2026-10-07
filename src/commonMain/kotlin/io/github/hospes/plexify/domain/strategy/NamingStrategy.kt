@@ -59,8 +59,8 @@ sealed interface NamingStrategy {
 
     /**
      * Naming strategy compliant with Jellyfin's recommended format.
-     * Uses TMDb IDs (our primary metadata provider). Show folders also include TVDb IDs
-     * as conditional tags so that either provider can be used for matching.
+     * Tags movies and shows with the TMDb ID only: TMDB is our metadata provider and Jellyfin's
+     * default one, so a TVDb tag adds nothing (and would cost an extra lookup per show).
      */
     object Jellyfin : NamingStrategy {
         override val name: String = "Jellyfin"
@@ -68,9 +68,7 @@ sealed interface NamingStrategy {
         override val movieFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]"
         override val movieFileTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]{version}.{ext}"
 
-        // TV show folders include both TMDb and TVDb ID tags as conditional blocks.
-        // Whichever IDs are resolved will appear; absent ones are stripped automatically.
-        override val tvShowFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}][tvdbid-{tvdbid}]"
+        override val tvShowFolderTemplate: String = "$BASE_NAME [tmdbid-{tmdbid}]"
         override val seasonFolderTemplate: String = "Season {season:2}"
         override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
 
