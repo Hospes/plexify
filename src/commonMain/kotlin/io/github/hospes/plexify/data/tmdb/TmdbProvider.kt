@@ -163,13 +163,19 @@ class TmdbProvider(
         response.ensureSuccess { "fetching episode groups of '${show.title}'" }
 
         // Each group's episodes take one more call, so fetch only orderings that can stand in
-        // for seasons (absolute and story-arc orderings are skipped), most trusted first.
+        // for seasons, most trusted first, plus a couple of absolute orderings for absolute-numbered
+        // releases ("One Piece - 1071"). Story-arc orderings are skipped.
         val seasonLikeTypes = EpisodeGroupMapper.SEASON_LIKE_TYPES
-        response.body<TmdbEpisodeGroupsDto>().results
+        val summaries = response.body<TmdbEpisodeGroupsDto>().results
             .mapNotNull { summary -> summary.type.toEpisodeGroupType()?.let { summary to it } }
+        val seasonLike = summaries
             .filter { (_, type) -> type in seasonLikeTypes }
             .sortedBy { (_, type) -> seasonLikeTypes.indexOf(type) }
             .take(MAX_EPISODE_GROUP_LOOKUPS)
+        val absolute = summaries
+            .filter { (_, type) -> type == CanonicalMedia.EpisodeGroup.Type.ABSOLUTE }
+            .take(MAX_ABSOLUTE_GROUP_LOOKUPS)
+        (seasonLike + absolute)
             .map { (summary, type) ->
                 val groupResponse = httpClient.get("tv/episode_group/${summary.id}")
                 groupResponse.ensureSuccess { "fetching episode group '${summary.name}' of '${show.title}'" }
@@ -226,6 +232,8 @@ private const val MAX_ALT_TITLES_LOOKUPS = 3
 
 // Cap extra API calls per show: popular shows can carry a dozen community-made groups.
 private const val MAX_EPISODE_GROUP_LOOKUPS = 6
+// Shows often carry an absolute order with and one without specials; both are fetched so they can agree.
+private const val MAX_ABSOLUTE_GROUP_LOOKUPS = 2
 
 // TMDB numbers the types 1..7 in this order.
 private fun Int.toEpisodeGroupType(): CanonicalMedia.EpisodeGroup.Type? =
