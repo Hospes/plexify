@@ -51,7 +51,7 @@ object App : CliktCommand(name = "plexify") {
 
     val sources: List<Path> by argument(name = "source")
         .help("The source path for the media to be managed. This can be a path to a single file, a directory, or multiple paths to various files and directories.")
-        .convert { Path(it) }.multiple()
+        .convert { Path(it) }.multiple(required = true)
 
     val destination: Path by argument(name = "destination")
         .help("The root directory where the organized library will be created.")
