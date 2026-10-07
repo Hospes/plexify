@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -8,33 +8,63 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request makes its previous run pointless. Runs on main always
+# finish, so every merged commit gets a result and seeds the caches.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
+
 jobs:
-  test:
+  # Job names are required status checks in the "main – safety" ruleset:
+  # renaming one means updating the ruleset too.
+  linux:
     name: Build & test (Linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6
-        with:
-          java-version: '21'
-          distribution: 'temurin'
+      - name: Set up build
+        id: setup
+        uses: ./.github/actions/setup-build
 
-      # Default cache behavior: writes on main (seeding the cache that release
-      # builds and PR runs restore), read-only on pull requests.
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+      # Tests are native binaries; linuxX64Test covers all commonMain logic. arm64
+      # cannot run on this runner, but linking its test binary catches link-time
+      # failures (like the Clikt duplicate symbol) before a release does.
+      - name: Run tests
+        run: ./gradlew linuxX64Test linkDebugTestLinuxArm64 --no-daemon --stacktrace
 
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
+      - name: Save Kotlin/Native toolchain
+        if: github.ref == 'refs/heads/main' && steps.setup.outputs.konan-hit != 'true'
+        uses: actions/cache/save@v6
         with:
           path: ~/.konan
-          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
+          key: ${{ steps.setup.outputs.konan-key }}
 
-      # Tests are native binaries; linuxX64Test covers all commonMain logic.
+  # Windows has its own platform code (hardlinks via Win32) and its own linker,
+  # so a Windows-only break must surface here, not after a release tag.
+  windows:
+    name: Build & test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up build
+        id: setup
+        uses: ./.github/actions/setup-build
+
       - name: Run tests
-        env:
-          GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
-        run: ./gradlew linuxX64Test --no-daemon --stacktrace
+        run: ./gradlew.bat windowsTest --no-daemon --stacktrace
+
+      - name: Save Kotlin/Native toolchain
+        if: github.ref == 'refs/heads/main' && steps.setup.outputs.konan-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.setup.outputs.konan-key }}
