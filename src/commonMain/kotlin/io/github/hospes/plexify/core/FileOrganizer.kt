@@ -31,4 +31,10 @@ sealed interface OrganizeOutcome {
 
     /** A different file already occupies [path]. Neither file was touched. */
     data class TargetExists(override val path: Path) : OrganizeOutcome
+
+    /**
+     * [claimedBy], an earlier file of this run, was organized to [path] or already was there. The first file to claim a
+     * target keeps it, overwrite or not, so neither file was touched.
+     */
+    data class TakenInThisRun(override val path: Path, val claimedBy: Path) : OrganizeOutcome
 }

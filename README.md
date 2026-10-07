@@ -247,12 +247,13 @@ Tags keep the spelling used in the filename (`BluRay` stays `BluRay`), except HD
 
 ### Existing files at the target
 
-By default, Plexify never deletes or overwrites a file that is already at the target path, in either mode. Both cases below count as *skipped* in the summary, and `--test` reports them the same way:
+By default, Plexify never deletes or overwrites a file that is already at the target path, in either mode. All three cases below count as *skipped* in the summary, and `--test` reports them the same way:
 
 -   **The target is the file itself.** The source already sits at its target (for example, when you run Plexify over an existing library), or the target is a hardlink to the source (or to the file a symlinked source points at). The file is left alone: `= Movie.mkv — already in the library: <path>`.
 -   **A different file is at the target.** Both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, run again with `--overwrite` (`-o`), or delete or rename the existing file yourself.
+-   **An earlier file of the same run has the target.** Two sources can get the same name, for example a release and its `REPACK` (`{version}` only holds resolution, source, HDR and edition). The first one processed keeps the target, and the later one is left alone: `✗ Movie.REPACK.mkv — same target as Movie.mkv earlier in this run: <path>`. This also applies to a file that was already in place. To keep the later file instead, organize it on its own in a separate run with `--overwrite`.
 
-With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010)/Movie (2010).mkv (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name (`.plexify-<8 hex digits>.tmp`) first and then renamed over the old file, so the old file stays if linking fails. If Plexify is killed between those two steps, the temporary file is left next to the old one; the next run that writes to that folder deletes it. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the first case: a file that already is its own target is always left alone.
+With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010)/Movie (2010).mkv (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name (`.plexify-<8 hex digits>.tmp`) first and then renamed over the old file, so the old file stays if linking fails. If Plexify is killed between those two steps, the temporary file is left next to the old one; the next run that writes to that folder deletes it. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the other two cases: a file that already is its own target, or one this run already placed, is always left alone.
 
 ### Symlinked sources
 
@@ -340,7 +341,7 @@ Every file goes through the same pipeline:
 4.  **Episode lookup:** For episodes, the whole season is fetched once and cached. If the episode isn't in that season, TMDB's episode groups and absolute order are tried, so releases numbered differently from TMDB still land on TMDB's episode. If the best-matching show has no such season at all, other candidates are tried, but only ones that match the release title at least as well and whose year doesn't contradict the filename. The show that places a season is used for all of that season's files.
 5.  **IDs:** If the template uses `{imdbid}` or `{tvdbid}`, those IDs are looked up on TMDB for the matched movie or show.
 6.  **Format:** The naming template is filled from the matched record (titles, year, IDs, episode title) and the filename (technical tags).
-7.  **Organize:** Folders are created and the file is hardlinked or moved into place, unless something is already at the target (see [Existing files at the target](#existing-files-at-the-target)). In `--test` mode, nothing is created, moved or linked.
+7.  **Organize:** Folders are created and the file is hardlinked or moved into place, unless something is already at the target or an earlier file of the run took it (see [Existing files at the target](#existing-files-at-the-target)). In `--test` mode, nothing is created, moved or linked.
 
 ## 🩺 Troubleshooting
 
@@ -356,6 +357,7 @@ Run with `--test --verbose` first. The log shows what was parsed from each filen
 | `Season N is not in …; matched show: …`                                     | The best-matching show didn't have this season, so another show with the same title was used. If that's the wrong one, set the year with `-y`. |
 | `target already exists: <path>`                                             | A different file is already there. Use `--overwrite` to replace it, or remove it yourself.                                   |
 | `already in the library: <path>`                                            | Nothing to do: the file already is at its target.                                                                           |
+| `same target as … earlier in this run: <path>`                              | Two files got the same name, and the first one kept it. To keep the other one instead, organize it on its own with `--overwrite`. |
 | `Hardlink failed: … (source and destination must be on the same volume/partition)` | Put the library on the same drive as the downloads.                                                                  |
 | `Can't move '…' to '…': …`                                                  | With `--mode MOVE`, the source and the library must also be on the same drive.                                              |
 | `… is a symlink to … that won't resolve from the library …`                 | A relative symlink can't be moved. Use `HARDLINK` mode, or make the symlink absolute. See [Symlinked sources](#symlinked-sources). |

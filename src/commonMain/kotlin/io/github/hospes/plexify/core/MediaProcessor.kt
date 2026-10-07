@@ -521,6 +521,11 @@ class MediaProcessor(
                         status("✗ ${source.name} — target already exists: ${outcome.path}")
                         stats.skipped++
                     }
+
+                    is OrganizeOutcome.TakenInThisRun -> {
+                        status("✗ ${source.name} — same target as ${outcome.claimedBy.name} earlier in this run: ${outcome.path}")
+                        stats.skipped++
+                    }
                 }
             }
             .onFailure { error ->

@@ -13,12 +13,18 @@ import kotlin.random.Random
 class DefaultFileOrganizer(
     private val pathFormatter: PathFormatter,
     private val namingStrategy: NamingStrategy,
-    /** Replace a different file already at the target instead of skipping it. Never applies to the source itself. */
+    /** Replace a different file already at the target instead of skipping it. Never applies to the source itself, or to a target an earlier file of this run claimed. */
     private val overwrite: Boolean = false,
 ) : FileOrganizer {
 
     /** Folders already cleared of leftover temporary files in this run. */
     private val cleanedFolders = mutableSetOf<Path>()
+
+    /**
+     * Targets that a file of this run was organized to (or, in test mode, would be) or already was at, each with that
+     * source. Nothing is written in test mode, so only this tells a dry run that a later file maps to the same target.
+     */
+    private val claimedTargets = mutableMapOf<Path, Path>()
 
     override fun organize(
         sourceFile: Path,
@@ -50,17 +56,31 @@ class DefaultFileOrganizer(
         }
         val finalPath = Path(destinationRoot, relativePath.toString())
 
+        // A target an earlier file of this run claimed is never replaced: with MOVE that file has no other name. The
+        // same file reached again (passed twice, or a hardlink of it) is in place. In test mode the claimant isn't at
+        // the target, so it is compared with the source too.
+        claimedTargets[finalPath]?.let { claimant ->
+            val sameFile = claimant == sourceFile || isSameFileOnDisk(sourceFile, finalPath) || isSameFileOnDisk(sourceFile, claimant)
+            return@runCatching if (sameFile) OrganizeOutcome.AlreadyInPlace(finalPath) else OrganizeOutcome.TakenInThisRun(finalPath, claimant)
+        }
+
         // Never replace the source itself: when plexify runs over its own library, the target can be the
         // source (or a hardlink to it), and replacing it would lose the only copy. Another file at the target
         // is replaced only when overwrite is enabled.
         val targetExists = PlatformFileSystem.kind(finalPath) != null
         if (targetExists) {
-            if (isSameFileOnDisk(sourceFile, finalPath)) return@runCatching OrganizeOutcome.AlreadyInPlace(finalPath)
+            if (isSameFileOnDisk(sourceFile, finalPath)) {
+                claimedTargets[finalPath] = sourceFile
+                return@runCatching OrganizeOutcome.AlreadyInPlace(finalPath)
+            }
             if (!overwrite) return@runCatching OrganizeOutcome.TargetExists(finalPath)
         }
         val outcome = if (targetExists) OrganizeOutcome.Replaced(finalPath) else OrganizeOutcome.Organized(finalPath)
 
-        if (isTestMode) return@runCatching outcome
+        if (isTestMode) {
+            claimedTargets[finalPath] = sourceFile
+            return@runCatching outcome
+        }
 
         // Ensure the parent directory for the destination file exists
         val parentDir = finalPath.parent
@@ -82,6 +102,8 @@ class DefaultFileOrganizer(
             OperationMode.HARDLINK -> if (targetExists) replaceWithHardLink(sourceFile, finalPath) else hardLink(sourceFile, finalPath)
         }
 
+        // Claimed only once in place: after a failure, a later file may still take the target.
+        claimedTargets[finalPath] = sourceFile
         outcome
     }
 
