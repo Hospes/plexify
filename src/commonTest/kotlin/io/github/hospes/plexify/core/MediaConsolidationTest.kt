@@ -151,4 +151,20 @@ class MediaConsolidationTest {
         assertEquals(-10.0, yearScore(parsedYear = 2021, candidateYear = 2016, isShow = false))
         assertEquals(-10.0, yearScore(parsedYear = 2021, candidateYear = 2026, isShow = false))
     }
+
+    @Test
+    fun `match without a year keeps the year missing instead of zero`() = with(LoggingContext()) {
+        val results = listOf(
+            MediaSearchResult.Movie(title = "Untitled Announced Film", year = null, tmdbId = "1", provider = "TMDb"),
+            MediaSearchResult.TvShow(title = "Untitled Announced Show", year = null, tmdbId = "2", provider = "TMDb"),
+        )
+
+        val movie = processor.findAndConsolidateBestMatch(results.take(1), "untitled announced film", null)
+        val show = processor.findAndConsolidateBestMatch(results.drop(1), "untitled announced show", null)
+
+        assertIs<CanonicalMedia.Movie>(movie)
+        assertNull(movie.year)
+        assertIs<CanonicalMedia.TvShow>(show)
+        assertNull(show.year)
+    }
 }

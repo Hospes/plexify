@@ -544,7 +544,7 @@ class MediaProcessor(
         return when (bestItem) {
             is MediaSearchResult.Movie -> CanonicalMedia.Movie(
                 title = bestItem.title,
-                year = bestItem.year?.toIntOrNull() ?: 0,
+                year = bestItem.year?.toIntOrNull(),
                 imdbId = imdbId,
                 tmdbId = tmdbId,
                 tvdbId = tvdbId
@@ -552,7 +552,7 @@ class MediaProcessor(
 
             is MediaSearchResult.TvShow -> CanonicalMedia.TvShow(
                 title = bestItem.title,
-                year = bestItem.year?.toIntOrNull() ?: 0,
+                year = bestItem.year?.toIntOrNull(),
                 imdbId = imdbId,
                 tmdbId = tmdbId,
                 tvdbId = tvdbId
@@ -563,15 +563,17 @@ class MediaProcessor(
 
 // Short human-readable labels for the concise log lines.
 private fun CanonicalMedia.describe(): String = when (this) {
-    is CanonicalMedia.Movie -> "$title ($year)"
+    is CanonicalMedia.Movie -> "$title${year.inParens()}"
     is CanonicalMedia.Episode -> "S${season.pad2()}E${episode.pad2()} - $title"
     is CanonicalMedia.TvShow -> buildString {
-        append("$title ($year)")
+        append("$title${year.inParens()}")
         tmdbId?.let { append(" [tmdbid-$it]") }
         tvdbId?.let { append(" [tvdbid-$it]") }
         imdbId?.let { append(" [imdbid-$it]") }
     }
 }
+
+private fun Int?.inParens(): String = this?.let { " ($it)" } ?: ""
 
 private fun Int.pad2(): String = toString().padStart(2, '0')
 

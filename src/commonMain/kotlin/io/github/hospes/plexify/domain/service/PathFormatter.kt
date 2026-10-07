@@ -12,6 +12,9 @@ class PathFormatter {
     // Regex to find conditional blocks like [imdbid-{imdbid}]
     private val conditionalBlockRegex = Regex("""\[([^\[\]]*?\{(\w+)}[^\[\]]*?)]""")
 
+    // Regex to find a lone placeholder in parentheses like ({year}), with the whitespace before it
+    private val parenthesizedPlaceholderRegex = Regex("""\s*\(\{(\w+)(?::\d+)?}\)""")
+
     // Regex to find and remove characters that are invalid in file/directory names
     private val invalidCharsRegex = Regex("""[<>:"/\\|?*]""")
 
@@ -51,6 +54,7 @@ class PathFormatter {
     ): String {
         val placeholders = buildPlaceholderMap(media, parsedInfo, sourceFile)
         var result = processConditionalBlocks(template, placeholders)
+        result = dropEmptyParentheses(result, placeholders)
         result = replacePlaceholders(result, placeholders)
         return result.replace(Regex("""\s{2,}"""), " ").trim()
     }
@@ -77,7 +81,7 @@ class PathFormatter {
                     mapOf(
                         "title" to media.title,
                         "cleantitle" to media.title.replace(invalidCharsRegex, ""),
-                        "year" to media.year.toString(),
+                        "year" to media.year?.toString(),
                         "imdbid" to media.imdbId,
                         "tmdbid" to media.tmdbId,
                         "tvdbid" to media.tvdbId,
@@ -90,7 +94,7 @@ class PathFormatter {
                     mapOf(
                         "title" to media.show.title,
                         "cleantitle" to media.show.title.replace(invalidCharsRegex, ""),
-                        "year" to media.show.year.toString(),
+                        "year" to media.show.year?.toString(),
                         "season" to media.season.toString(),
                         "episode" to media.episode.toString(),
                         "episodetitle" to media.title.replace(invalidCharsRegex, ""),
@@ -116,6 +120,14 @@ class PathFormatter {
             } else {
                 ""
             }
+        }
+    }
+
+    // 2b. Drop a parenthesized placeholder that has no value, so a title without a year
+    // becomes "Title [tmdbid-1]" or "Title.mkv" instead of "Title () [tmdbid-1]".
+    private fun dropEmptyParentheses(template: String, placeholders: Map<String, String?>): String {
+        return parenthesizedPlaceholderRegex.replace(template) { matchResult ->
+            if (placeholders.containsKey(matchResult.groupValues[1].lowercase())) matchResult.value else ""
         }
     }
 
