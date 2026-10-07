@@ -137,17 +137,31 @@ jobs:
       # tool not on it, and shell access is limited to read-only git commands and the
       # validator. The CLI version and the model are pinned so neither can change how
       # a release run behaves on the day a tag is pushed; Dependabot bumps the action
-      # but not these two inputs.
+      # but not these two inputs. gemini-3.8-flash already thinks at HIGH (the top
+      # level) by default; the modelConfigs override pins it, so a CLI default change
+      # cannot quietly lower it.
       - name: Generate release notes
         timeout-minutes: 10
         uses: google-github-actions/run-gemini-cli@v0.1.22
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           gemini_cli_version: 0.63.0
-          gemini_model: gemini-2.5-pro
+          gemini_model: gemini-3.8-flash
           settings: |
             {
               "privacy": { "usageStatisticsEnabled": false },
+              "modelConfigs": {
+                "customOverrides": [
+                  {
+                    "match": { "model": "gemini-3.8-flash" },
+                    "modelConfig": {
+                      "generateContentConfig": {
+                        "thinkingConfig": { "thinkingLevel": "HIGH" }
+                      }
+                    }
+                  }
+                ]
+              },
               "tools": {
                 "core": [
                   "read_file",
