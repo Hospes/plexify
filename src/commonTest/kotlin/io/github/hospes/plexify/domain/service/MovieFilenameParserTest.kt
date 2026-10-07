@@ -129,6 +129,44 @@ class MovieFilenameParserTest {
             filename = "Aliens.1986.Remastered.1080p.BluRay.mkv",
             expected = ParsedMediaInfo.Movie(title = "aliens", year = "1986", resolution = "1080p", quality = "BluRay", edition = "Remastered")
         ),
+
+        // --- Names plexify itself writes (re-running over an organized library) ---
+        // Jellyfin template: "{CleanTitle} ({year}) [tmdbid-{tmdbid}]{version}.{ext}"
+        TestCase(
+            filename = "Inception (2010) [tmdbid-27205] - [1080p] [BluRay].mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Inception (2010) [tmdbid-27205].mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+        ),
+        TestCase(
+            filename = "Blade Runner 2049 (2017) [tmdbid-335984] - [2160p] [BluRay] [HDR10].mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = "2017", resolution = "2160p", quality = "BluRay", hdr = "HDR10")
+        ),
+        // Plex template: "{CleanTitle} ({year}){version}.{ext}"
+        TestCase(
+            filename = "Inception (2010) - [1080p] [BluRay].mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        // A version suffix holding only an edition has no stop word to cut the title at
+        TestCase(
+            filename = "Blade Runner (1982) - [Final Cut].mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", edition = "Final Cut")
+        ),
+        // Other ID tag forms Plex and Jellyfin read
+        TestCase(
+            filename = "Inception (2010) {tmdb-27205}.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+        ),
+        TestCase(
+            filename = "Inception (2010) {imdb-tt1375666} - [2160p] [DV].mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "2160p", hdr = "DV")
+        ),
+        TestCase(
+            filename = "Inception (2010) [imdbid=tt1375666].mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+        ),
     )
 
     @Test

@@ -20,6 +20,15 @@ object MediaFilenameParser {
     // --- Regex for Year Extraction ---
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
     private val yearRegex = """\b(19\d{2}|20\d{2})\b""".toRegex()
+    // "Show (2015)": a parenthesized year closing the show title, as in plexify's own episode names
+    private val trailingYearRegex = """\((19\d{2}|20\d{2})\)$""".toRegex()
+
+    // --- Names plexify itself writes ---
+    // Provider-ID tags: the [tmdbid-27205] / [imdbid-tt1375666] forms our templates produce, plus the
+    // {tmdb-27205} / [tmdbid=27205] forms Plex and Jellyfin also read. Never part of the title.
+    private val providerIdTagRegex = """[\[{](?:tmdb|imdb|tvdb)(?:id)?[-=][^\]}]*[\]}]""".toRegex(RegexOption.IGNORE_CASE)
+    // The {version} suffix PathFormatter appends: " - [1080p] [BluRay] [Extended]"
+    private val versionSuffixRegex = """\s-\s(?:\[[^\[\]]+]\s*)+$""".toRegex()
 
     // --- Specific information to extract ---
     private val resolutionTags = listOf("480p", "720p", "1080p", "2160p", "4k")
@@ -73,20 +82,33 @@ object MediaFilenameParser {
 
 
     fun parse(filename: String, parentDirName: String? = null): ParsedMediaInfo {
-        val workingFilename = filename.substringBeforeLast('.')
+        val workingFilename = filename.substringBeforeLast('.').replace(providerIdTagRegex, " ")
         // Normalize once; all tier regexes run against this
         val normalized = workingFilename.replace('.', ' ').replace('_', ' ')
 
         // --- Tier 1: Standard SxxExx ---
         val episodeMatch = episodeRegex.find(workingFilename)
         if (episodeMatch != null) {
-            val showTitle = workingFilename.substringBefore(episodeMatch.value)
+            val showPart = workingFilename.substringBefore(episodeMatch.value).trimEnd(' ', '-', '.', '_')
+            val showYear = trailingYearRegex.find(showPart)
+            val showTitle = (showYear?.let { showPart.substring(0, it.range.first) } ?: showPart)
                 .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+
+            // Plexify's own names: "Show (2015) - S01E13 - Episode Title - [720p] [HDTV]". The episode
+            // title is free text, so read metadata only from the show part and the {version} suffix.
+            val afterEpisode = workingFilename.substring(episodeMatch.range.last + 1)
+            val metadataText = if (afterEpisode.trimStart().startsWith("- ")) {
+                showPart + (versionSuffixRegex.find(afterEpisode)?.value ?: "")
+            } else {
+                workingFilename
+            }
+
             return buildEpisode(
                 showTitle = showTitle,
                 season = episodeMatch.groupValues[2].toInt(),
                 episode = episodeMatch.groupValues[3].toInt(),
-                normalized = normalized,
+                normalized = metadataText.replace('.', ' ').replace('_', ' '),
+                year = showYear?.groupValues?.get(1),
             )
         }
 
@@ -149,6 +171,10 @@ object MediaFilenameParser {
         val releaseGroup = releaseGroupRegex.find(workingTitle)?.value
         val edition = extractEdition(workingTitle)
 
+        // Our own {version} suffix is metadata only; drop it so tags with no stop word (e.g. "[Final Cut]")
+        // don't end up in the title.
+        workingTitle = workingTitle.replace(versionSuffixRegex, "")
+
         // 3. Find the year using a prioritized approach.
         val yearInBracketsMatch = yearInBracketsRegex.find(workingTitle)
         if (yearInBracketsMatch != null) {
@@ -194,12 +220,18 @@ object MediaFilenameParser {
 
     // Metadata extractors must run on the normalized text: '_' is a word character, so `\b` never
     // matches between '_' and a tag like "720p" in underscore-separated names.
-    private fun buildEpisode(showTitle: String, season: Int?, episode: Int, normalized: String) =
+    private fun buildEpisode(
+        showTitle: String,
+        season: Int?,
+        episode: Int,
+        normalized: String,
+        year: String? = null,
+    ) =
         ParsedMediaInfo.Episode(
             showTitle = showTitle.lowercase(),
             season = season,
             episode = episode,
-            year = yearRegex.find(normalized)?.value,
+            year = year ?: yearRegex.find(normalized)?.value,
             resolution = resolutionRegex.find(normalized)?.value,
             quality = qualityRegex.find(normalized)?.value,
             hdr = extractHdr(normalized),
