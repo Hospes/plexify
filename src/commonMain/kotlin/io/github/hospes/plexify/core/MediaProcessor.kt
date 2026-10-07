@@ -16,7 +16,6 @@ import io.github.hospes.plexify.logging.indent
 import io.github.hospes.plexify.logging.log
 import io.github.hospes.plexify.logging.status
 import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -52,29 +51,24 @@ class MediaProcessor(
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
-        if (!SystemFileSystem.exists(source)) {
+        val kind = try {
+            PlatformFileSystem.kind(source)
+        } catch (e: Exception) {
+            log("Error: ${e.message}")
+            return
+        }
+        if (kind == null) {
             log("Error: Source path does not exist: $source")
             return
         }
 
-        val metadata = SystemFileSystem.metadataOrNull(source)
-        if (metadata == null) {
-            log("Can't get metadata for file: $source")
-            return
-        }
-
-        if (metadata.isDirectory) {
-            val mediaFiles = try {
-                SystemFileSystem.walk(source)
-                    .filter { fullPath ->
-                        val fileMetadata = SystemFileSystem.metadataOrNull(fullPath)
-                        fileMetadata?.isRegularFile == true && fullPath.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS
-                    }
-                    .toList()
-            } catch (e: Exception) {
-                log("Error listing directory contents of $source: ${e.message}")
-                return
+        if (kind == FileKind.DIRECTORY) {
+            val mediaFiles = walkFiles(source) { path, error ->
+                log("Warning: Skipping unreadable $path (${error.message})")
+                stats.skipped++
             }
+                .filter { it.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS }
+                .toList()
 
             if (mediaFiles.isEmpty()) {
                 log("No supported media files found in: $source")
@@ -88,7 +82,7 @@ class MediaProcessor(
                     debug("---") // Separator for clarity between files
                 }
             }
-        } else if (metadata.isRegularFile) {
+        } else if (kind == FileKind.REGULAR_FILE) {
             if (source.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS) {
                 processFile(source, destination, mode, isTestMode)
             } else {

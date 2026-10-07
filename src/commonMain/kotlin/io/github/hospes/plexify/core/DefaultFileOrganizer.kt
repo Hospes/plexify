@@ -50,7 +50,7 @@ class DefaultFileOrganizer(
         // Never replace the source itself: when plexify runs over its own library, the target can be the
         // source (or a hardlink to it), and replacing it would lose the only copy. Another file at the target
         // is replaced only when overwrite is enabled.
-        val targetExists = SystemFileSystem.exists(finalPath)
+        val targetExists = PlatformFileSystem.kind(finalPath) != null
         if (targetExists) {
             if (isSameFileOnDisk(sourceFile, finalPath)) return@runCatching OrganizeOutcome.AlreadyInPlace(finalPath)
             if (!overwrite) return@runCatching OrganizeOutcome.TargetExists(finalPath)
@@ -62,14 +62,14 @@ class DefaultFileOrganizer(
         // Ensure the parent directory for the destination file exists
         val parentDir = finalPath.parent
         if (parentDir != null) {
-            SystemFileSystem.createDirectories(parentDir, false)
+            PlatformFileSystem.createDirectories(parentDir)
         } else {
             throw IllegalStateException("Could not determine parent directory for $finalPath")
         }
 
         when (mode) {
             // atomicMove replaces an existing target in one step.
-            OperationMode.MOVE -> SystemFileSystem.atomicMove(sourceFile, finalPath)
+            OperationMode.MOVE -> PlatformFileSystem.atomicMove(sourceFile, finalPath)
             OperationMode.HARDLINK -> if (targetExists) replaceWithHardLink(sourceFile, finalPath) else hardLink(sourceFile, finalPath)
         }
 
@@ -93,13 +93,15 @@ class DefaultFileOrganizer(
         val temporary = Path(target.parent!!, ".plexify-${Random.nextInt().toUInt().toString(16).padStart(8, '0')}.tmp")
         hardLink(source, temporary)
         try {
-            SystemFileSystem.atomicMove(temporary, target)
+            PlatformFileSystem.atomicMove(temporary, target)
         } catch (e: Exception) {
-            SystemFileSystem.delete(temporary, mustExist = false)
+            PlatformFileSystem.delete(temporary)
             throw IOException("Replacing '$target' failed: ${e.message}", e)
         }
     }
 
+    // kotlinx-io's resolve fails on Windows paths past MAX_PATH; isSameFile also recognizes the same path.
     private fun isSameFileOnDisk(source: Path, target: Path): Boolean =
-        SystemFileSystem.resolve(source) == SystemFileSystem.resolve(target) || isSameFile(source, target)
+        runCatching { SystemFileSystem.resolve(source) == SystemFileSystem.resolve(target) }.getOrDefault(false) ||
+            isSameFile(source, target)
 }

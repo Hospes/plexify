@@ -1,0 +1,46 @@
+package = io.github.hospes.plexify.win32
+---
+#include <windows.h>
+
+// Kotlin/Native can reset the thread's last-error value on the way back from a C call, so a GetLastError() made
+// from Kotlin afterwards may report ERROR_SUCCESS. Each wrapper calls one Win32 function and reads GetLastError()
+// in C right away. They return the error code, ERROR_SUCCESS (0) on success.
+
+static inline DWORD plexify_get_full_path_name(LPCWSTR path, DWORD size, LPWSTR buffer, DWORD* length) {
+    *length = GetFullPathNameW(path, size, buffer, NULL);
+    return *length == 0 ? GetLastError() : ERROR_SUCCESS;
+}
+
+static inline DWORD plexify_get_file_attributes(LPCWSTR path, DWORD* attributes) {
+    *attributes = GetFileAttributesW(path);
+    return *attributes == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
+}
+
+static inline DWORD plexify_find_first_file(LPCWSTR pattern, WIN32_FIND_DATAW* data, HANDLE* handle) {
+    *handle = FindFirstFileW(pattern, data);
+    return *handle == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+}
+
+static inline DWORD plexify_find_next_file(HANDLE handle, WIN32_FIND_DATAW* data) {
+    return FindNextFileW(handle, data) ? ERROR_SUCCESS : GetLastError();
+}
+
+static inline DWORD plexify_create_directory(LPCWSTR path) {
+    return CreateDirectoryW(path, NULL) ? ERROR_SUCCESS : GetLastError();
+}
+
+static inline DWORD plexify_move_file_replacing(LPCWSTR source, LPCWSTR destination) {
+    return MoveFileExW(source, destination, MOVEFILE_REPLACE_EXISTING) ? ERROR_SUCCESS : GetLastError();
+}
+
+static inline DWORD plexify_remove_directory(LPCWSTR path) {
+    return RemoveDirectoryW(path) ? ERROR_SUCCESS : GetLastError();
+}
+
+static inline DWORD plexify_delete_file(LPCWSTR path) {
+    return DeleteFileW(path) ? ERROR_SUCCESS : GetLastError();
+}
+
+static inline DWORD plexify_create_hard_link(LPCWSTR link, LPCWSTR existing) {
+    return CreateHardLinkW(link, existing, NULL) ? ERROR_SUCCESS : GetLastError();
+}

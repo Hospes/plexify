@@ -17,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DefaultFileOrganizerTest {
@@ -172,6 +173,45 @@ class DefaultFileOrganizerTest {
     }
 
     @Test
+    fun `organizes between paths past the Windows length limit`() {
+        val library = Path(longDirectory("library"), "library")
+
+        for (mode in OperationMode.entries) {
+            val source = file(Path(longDirectory("source-$mode"), "Inception.2010.1080p.mkv"), "movie")
+            val target = targetPath(library)
+            assertTrue(source.toString().length > 300 && target.toString().length > 300, "paths too short: $target")
+
+            val outcome = organizer().organize(source, library, movie, parsed, mode, isTestMode = false).getOrThrow()
+
+            assertIs<OrganizeOutcome.Organized>(outcome, "mode $mode")
+            assertEquals(FileKind.REGULAR_FILE, PlatformFileSystem.kind(target), "mode $mode")
+            when (mode) {
+                OperationMode.HARDLINK -> assertTrue(isSameFile(source, target))
+                OperationMode.MOVE -> assertNull(PlatformFileSystem.kind(source))
+            }
+            assertIs<OrganizeOutcome.TargetExists>(
+                organizer().organize(file(Path(root, "other.mkv"), "other"), library, movie, parsed, mode, isTestMode = false).getOrThrow(),
+                "mode $mode",
+            )
+            deleteRecursively(library)
+        }
+    }
+
+    @Test
+    fun `overwrite replaces a target past the Windows length limit`() {
+        val library = Path(longDirectory("library"), "library")
+        val source = file(Path(root, "Inception.2010.1080p.mkv"), "new release")
+        val target = file(targetPath(library), "existing copy")
+
+        val outcome = organizer(overwrite = true)
+            .organize(source, library, movie, parsed, OperationMode.HARDLINK, isTestMode = false).getOrThrow()
+
+        assertIs<OrganizeOutcome.Replaced>(outcome)
+        assertTrue(isSameFile(source, target))
+        assertEquals(listOf(target.name), PlatformFileSystem.list(target.parent!!).map { it.name })
+    }
+
+    @Test
     fun `overwrite keeps the existing file when the hardlink fails`() {
         // Neither platform can hardlink a directory, so the link step fails after the checks pass.
         val unlinkable = Path(root, "Inception.2010.1080p.mkv").also { SystemFileSystem.createDirectories(it) }
@@ -228,18 +268,25 @@ class DefaultFileOrganizerTest {
     private fun organize(source: Path, mode: OperationMode, isTestMode: Boolean = false, overwrite: Boolean = false): OrganizeOutcome =
         organizer(overwrite).organize(source, library, movie, parsed, mode, isTestMode).getOrThrow()
 
+    /** Writes [content] to [path]. kotlinx-io can't open Windows paths past MAX_PATH, so the file is moved into place. */
     private fun file(path: Path, content: String): Path {
-        path.parent?.let { SystemFileSystem.createDirectories(it) }
-        SystemFileSystem.sink(path).buffered().use { it.writeString(content) }
+        path.parent?.let { PlatformFileSystem.createDirectories(it) }
+        val staging = Path(root, "staging.tmp")
+        SystemFileSystem.sink(staging).buffered().use { it.writeString(content) }
+        PlatformFileSystem.atomicMove(staging, path)
         return path
     }
 
     private fun read(path: Path): String = SystemFileSystem.source(path).buffered().use { it.readString() }
 
+    /** A directory under [root] deep enough that a library path inside it is well past Windows' MAX_PATH. */
+    private fun longDirectory(name: String): Path =
+        Path(root, *Array(4) { "${name}-${"x".repeat(80)}" })
+
     private fun deleteRecursively(path: Path) {
-        if (SystemFileSystem.metadataOrNull(path)?.isDirectory == true) {
-            SystemFileSystem.list(path).forEach { deleteRecursively(it) }
+        if (PlatformFileSystem.kind(path) == FileKind.DIRECTORY) {
+            PlatformFileSystem.list(path).forEach { deleteRecursively(it) }
         }
-        SystemFileSystem.delete(path, mustExist = false)
+        PlatformFileSystem.delete(path)
     }
 }
