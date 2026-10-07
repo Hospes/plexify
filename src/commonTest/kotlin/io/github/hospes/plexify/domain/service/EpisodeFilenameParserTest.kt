@@ -63,6 +63,25 @@ class EpisodeFilenameParserTest {
             filename = "Naruto.Shippuden.[420].mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "naruto shippuden", season = null, episode = 420, year = null)
         ),
+
+        // --- Underscore-separated names: '_' is a word char, so metadata must be read from normalized text ---
+        TestCase(
+            filename = "Gate_[01]_[AniLibria_Tv]_[HDTV-Rip_720p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = null, episode = 1, year = null, resolution = "720p", quality = "HDTV")
+        ),
+        TestCase(
+            filename = "Dungeon_Meshi_[13]_[1080p].mkv",
+            parentDirName = "Season 2",
+            expected = ParsedMediaInfo.Episode(showTitle = "dungeon meshi", season = 2, episode = 13, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Tsue_to_Tsurugi_no_Wistoria_Season_2_[01]_[1080p]_[HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "tsue to tsurugi no wistoria", season = 2, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "The_Boys_S03E01_2022_720p_WEB-DL_LostFilm.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = "2022", resolution = "720p", quality = "WEB-DL", releaseGroup = "LostFilm")
+        ),
     )
 
     // Split-cour anime: the release's S2 is TMDB's S1E13+, remapped later via episode groups,

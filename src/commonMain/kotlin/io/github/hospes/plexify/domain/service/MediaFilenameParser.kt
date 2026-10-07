@@ -82,16 +82,11 @@ object MediaFilenameParser {
         if (episodeMatch != null) {
             val showTitle = workingFilename.substringBefore(episodeMatch.value)
                 .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
-            return ParsedMediaInfo.Episode(
-                showTitle = showTitle.lowercase(),
+            return buildEpisode(
+                showTitle = showTitle,
                 season = episodeMatch.groupValues[2].toInt(),
                 episode = episodeMatch.groupValues[3].toInt(),
-                year = yearRegex.find(workingFilename)?.value,
-                resolution = resolutionRegex.find(workingFilename)?.value,
-                quality = qualityRegex.find(workingFilename)?.value,
-                hdr = extractHdr(normalized),
-                releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
-                edition = extractEdition(normalized),
+                normalized = normalized,
             )
         }
 
@@ -104,16 +99,11 @@ object MediaFilenameParser {
             if (bracketEpMatch != null) {
                 val showTitle = normalized.substring(0, seasonKeywordMatch.range.first)
                     .replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
-                return ParsedMediaInfo.Episode(
-                    showTitle = showTitle.lowercase(),
+                return buildEpisode(
+                    showTitle = showTitle,
                     season = season,
                     episode = bracketEpMatch.groupValues[1].toInt(),
-                    year = yearRegex.find(workingFilename)?.value,
-                    resolution = resolutionRegex.find(workingFilename)?.value,
-                    quality = qualityRegex.find(workingFilename)?.value,
-                    hdr = extractHdr(normalized),
-                    releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
-                    edition = extractEdition(normalized),
+                    normalized = normalized,
                 )
             }
         }
@@ -130,16 +120,11 @@ object MediaFilenameParser {
                 ?.let { seasonFromDirRegex.find(it) }
                 ?.groupValues?.get(1)?.toIntOrNull()
 
-            return ParsedMediaInfo.Episode(
-                showTitle = showTitle.lowercase(),
+            return buildEpisode(
+                showTitle = showTitle,
                 season = seasonFromDir,   // null when no parent-dir season found (Tier 4)
                 episode = episode,
-                year = yearRegex.find(workingFilename)?.value,
-                resolution = resolutionRegex.find(workingFilename)?.value,
-                quality = qualityRegex.find(workingFilename)?.value,
-                hdr = extractHdr(normalized),
-                releaseGroup = releaseGroupRegex.find(workingFilename)?.value,
-                edition = extractEdition(normalized),
+                normalized = normalized,
             )
         }
 
@@ -206,6 +191,21 @@ object MediaFilenameParser {
             edition = edition,
         )
     }
+
+    // Metadata extractors must run on the normalized text: '_' is a word character, so `\b` never
+    // matches between '_' and a tag like "720p" in underscore-separated names.
+    private fun buildEpisode(showTitle: String, season: Int?, episode: Int, normalized: String) =
+        ParsedMediaInfo.Episode(
+            showTitle = showTitle.lowercase(),
+            season = season,
+            episode = episode,
+            year = yearRegex.find(normalized)?.value,
+            resolution = resolutionRegex.find(normalized)?.value,
+            quality = qualityRegex.find(normalized)?.value,
+            hdr = extractHdr(normalized),
+            releaseGroup = releaseGroupRegex.find(normalized)?.value,
+            edition = extractEdition(normalized),
+        )
 
     private fun extractHdr(normalizedText: String): String? =
         hdrRegex.find(normalizedText)?.value?.let { hdrLookup[it.lowercase()] }
