@@ -111,6 +111,12 @@ jobs:
     # in a pull request, so this job holds no token that can change the repository.
     permissions:
       contents: read
+    # Headless Gemini CLI refuses to run in a folder it has not been told to trust,
+    # and in an untrusted folder it would also ignore .gemini/settings.json, which
+    # holds the tools.core allowlist below. The checkout is this repo at a tag cut
+    # from reviewed main, so trusting it is what we want.
+    env:
+      GEMINI_CLI_TRUST_WORKSPACE: "true"
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
