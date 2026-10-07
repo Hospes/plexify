@@ -70,6 +70,12 @@ object App : CliktCommand(name = "Plexify") {
         .enum<OperationMode>(ignoreCase = true)
         .default(OperationMode.HARDLINK)
 
+    val overwrite: Boolean by option(
+        "-o", "--overwrite",
+        help = "Replace a different file already at the target path instead of skipping it. " +
+                "A file that already is the target (or a hardlink to it) is never touched."
+    ).flag(default = false)
+
     val testMode: Boolean by option("--test", help = "Perform a dry run without any actual file operations.")
         .flag(default = false)
 
@@ -132,13 +138,13 @@ object App : CliktCommand(name = "Plexify") {
         checkTmdbCredentials()
         val providers = listOfNotNull(tmdbProvider, imdbProvider)
         val pathFormatter = PathFormatter()
-        val fileOrganizer = DefaultFileOrganizer(pathFormatter, template)
+        val fileOrganizer = DefaultFileOrganizer(pathFormatter, template, overwrite)
         val cache = MetadataCache()
 
         val metadataService = MetadataService(providers, template)
         val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride, yearOverride?.toString(), episodeOffset)
 
-        echo("Plexify ${BuildConfig.VERSION} | mode: $mode | template: ${template.name} | destination: $destination")
+        echo("Plexify ${BuildConfig.VERSION} | mode: $mode${if (overwrite) " (overwrite)" else ""} | template: ${template.name} | destination: $destination")
         val overrides = listOfNotNull(
             titleOverride?.let { "title='$it'" },
             seasonOverride?.let { "season=$it" },

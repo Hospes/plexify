@@ -17,7 +17,7 @@ Plexify is a powerful, cross-platform command-line tool designed to automaticall
 -   **Intelligent Consolidation**: Compares search results from all providers, scores them, and selects the best "golden record" for your media.
 -   **Manual Overrides**: Force the title, season, episode offset, or year (`-t`, `-s`, `--episode-offset`, `-y`) when a release is too cryptic to parse — the season hidden in a folder named `2`, a remake matching the wrong year, and similar cases.
 -   **Customizable Naming**: Comes with pre-configured, optimal naming templates for **Plex** and **Jellyfin**, or you can define your own powerful custom templates.
--   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup. Existing files in the library are never overwritten.
+-   **Flexible File Operations**: Choose to either **move** your files or create **hardlinks**, preserving your original files for seeding or backup. Existing files in the library are never overwritten unless you pass `--overwrite`.
 -   **Dry Run Mode**: Preview every rename and the final library layout with `--test` before a single file is touched.
 -   **Readable Output**: One line per organized file with a final summary by default; a `--verbose` flag exposes the full pipeline (parsing, cache, providers, match scoring) for troubleshooting.
 -   **Cross-Platform**: Built with Kotlin Multiplatform to run natively on **Linux** and **Windows**.
@@ -114,6 +114,7 @@ plexify [OPTIONS] <source...> <destination>
 | Option                  | Alias | Description                                                                                              | Default    |
 | ----------------------- | ----- | -------------------------------------------------------------------------------------------------------- | ---------- |
 | `--mode <MODE>`         | `-m`  | Operation mode: `MOVE` or `HARDLINK`.                                                                    | `HARDLINK` |
+| `--overwrite`           | `-o`  | Replace a different file already at the target path instead of skipping it. See [Existing files at the target](#existing-files-at-the-target). | `false`    |
 | `--test`                |       | Dry run: report what would be organized without touching any files.                                      | `false`    |
 | `--template-plex`       | `-tp` | Use the predefined naming template for Plex.                                                             | `false`    |
 | `--template-jellyfin`   | `-tj` | Use the predefined naming template for Jellyfin.                                                         | `true`     |
@@ -132,10 +133,12 @@ plexify [OPTIONS] <source...> <destination>
 
 ### Existing files at the target
 
-Plexify never deletes or overwrites a file that is already at the computed target path, in either mode. Both cases below are counted as *skipped* in the summary, and `--test` reports them the same way.
+By default, Plexify never deletes or overwrites a file that is already at the computed target path, in either mode. Both cases below are counted as *skipped* in the summary, and `--test` reports them the same way.
 
 -   **The target is the file itself** — the source already sits at its target (for example, when Plexify is run over an existing library), or the target is a hardlink to the source. The file is left alone: `= Movie.mkv — already in the library: <path>`.
--   **A different file is at the target** — both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, delete or rename the existing file and run Plexify again.
+-   **A different file is at the target** — both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, run again with `--overwrite` (`-o`), or delete or rename the existing file yourself.
+
+With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010) (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name first and then renamed over the old file, so the old file stays if linking fails. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the first case: a file that already is its own target is always left alone.
 
 If a hardlink can't be created, the error from the operating system is shown, e.g. when source and destination are on different volumes (hardlinks can't cross volumes or partitions).
 
