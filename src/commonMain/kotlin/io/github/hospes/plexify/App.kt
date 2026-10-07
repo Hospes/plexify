@@ -31,7 +31,10 @@ object App : CliktCommand(name = "Plexify") {
         .default(BuildConfig.TMDB_API_KEY)
     private val tmdbAccessToken: String by option(envvar = "TMDB_API_ACCESS_TOKEN", help = "TMDB Access Token")
         .default(BuildConfig.TMDB_API_ACCESS_TOKEN)
-    private val tmdbProvider: MetadataProvider? by lazy { tmdbApiKey.ifBlank { null }?.let { TmdbProvider(it, tmdbAccessToken) } }
+    private val tmdbProvider: MetadataProvider? by lazy {
+        if (tmdbApiKey.isBlank() && tmdbAccessToken.isBlank()) null
+        else TmdbProvider(tmdbApiKey, tmdbAccessToken.ifBlank { null })
+    }
 
     private val tvdbApiKey: String by option(help = "TVDB API key").default(BuildConfig.TVDB_API_KEY)
     private val omdbApiKey: String by option(help = "OMDB API key").default(BuildConfig.OMDB_API_KEY)
