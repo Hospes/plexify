@@ -29,6 +29,13 @@ interface MetadataProvider {
 /** The provider has no such record (HTTP 404), e.g. a season it numbers differently. Expected, not an error. */
 class MetadataNotFoundException(message: String) : Exception(message)
 
+/**
+ * The provider did not answer in time. Says nothing about whether the record exists, so a file whose
+ * search times out counts as failed, not skipped. Carries no cause, so no stack trace prints the
+ * request URL (which can contain an API key).
+ */
+class MetadataTimeoutException(message: String) : Exception(message)
+
 internal fun calculateTitleConfidence(query: String, resultTitle: String): Double {
     val distance = levenshtein(query.lowercase(), resultTitle.lowercase())
     val titleLength = max(query.length, resultTitle.length)

@@ -16,10 +16,10 @@ import com.github.ajalt.clikt.parameters.types.int
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataCache
+import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.data.tmdb.TmdbCredentials
 import io.github.hospes.plexify.data.tmdb.TmdbCredentialsRejectedException
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
-import io.github.hospes.plexify.data.tmdb.TmdbTimeoutException
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.PathFormatter
@@ -187,7 +187,7 @@ object App : CliktCommand(name = "plexify") {
             }
             throw CliktError(message)
         }
-        if (error is TmdbTimeoutException) echo("Warning: ${error.message}; TMDB may be unreachable.", err = true)
+        if (error is MetadataTimeoutException) echo("Warning: ${error.message}; TMDB may be unreachable.", err = true)
         return provider
     }
 

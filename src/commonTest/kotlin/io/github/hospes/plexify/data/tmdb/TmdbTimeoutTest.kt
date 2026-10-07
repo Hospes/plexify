@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 import io.ktor.utils.io.*
@@ -39,7 +40,7 @@ class TmdbTimeoutTest {
 
         val error = provider.search("Dune", null).exceptionOrNull()
 
-        assertIs<TmdbTimeoutException>(error)
+        assertIs<MetadataTimeoutException>(error)
         assertEquals("TMDB request timed out searching for 'Dune'", error.message)
         assertEquals(2, calls)
     }
@@ -59,7 +60,7 @@ class TmdbTimeoutTest {
 
         val error = provider.search("Dune", null).exceptionOrNull()
 
-        assertIs<TmdbTimeoutException>(error)
+        assertIs<MetadataTimeoutException>(error)
     }
 
     @Test
@@ -68,7 +69,7 @@ class TmdbTimeoutTest {
 
         val error = provider.search("Dune", null).exceptionOrNull()
 
-        assertIs<TmdbTimeoutException>(error)
+        assertIs<MetadataTimeoutException>(error)
         val printed = error.stackTraceToString()
         assertFalse("secret-key" in printed, printed)
         assertFalse("api.themoviedb.org" in printed, printed)
@@ -80,7 +81,7 @@ class TmdbTimeoutTest {
 
         val error = provider.verifyCredentials().exceptionOrNull()
 
-        assertIs<TmdbTimeoutException>(error)
+        assertIs<MetadataTimeoutException>(error)
         assertEquals("TMDB request timed out verifying credentials", error.message)
     }
 

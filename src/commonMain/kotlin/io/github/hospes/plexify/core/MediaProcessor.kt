@@ -133,6 +133,7 @@ class MediaProcessor(
         debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
         val searchResults = metadataService.search(parsedInfo.title, parsedInfo.year)
+            .getOrElse { error -> return@indent searchFailed(source, error) }
             .filterIsInstance<MediaSearchResult.Movie>()
 
         if (searchResults.isEmpty()) {
@@ -173,6 +174,7 @@ class MediaProcessor(
 
         // Step 1: Find the candidate shows, best first, using the cache first.
         val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year)
+            .getOrElse { error -> return@indent searchFailed(source, error) }
         if (candidates.isEmpty()) {
             status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
             stats.skipped++
@@ -194,6 +196,13 @@ class MediaProcessor(
 
         debug("Found episode: ${bestEpisodeMatch.describe()}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
+    }
+
+    /** The search itself failed (a provider timed out), so the file is a failure, not a miss. */
+    context(_: LoggingContext)
+    private fun searchFailed(source: Path, error: Throwable) {
+        status("✗ ${source.name} — ${error.message}")
+        stats.failed++
     }
 
     /**
@@ -235,23 +244,25 @@ class MediaProcessor(
     /**
      * The shows matching a title, best first (empty when none is confident), checking the cache
      * before searching providers. Only the best is reported; the rest, same-titled shows only
-     * (see [canStandInFor]), back up the episode lookup.
+     * (see [canStandInFor]), back up the episode lookup. A failed search is not cached, so the
+     * next file of the show searches again.
      */
     context(_: LoggingContext)
-    private suspend fun findOrFetchShows(title: String, year: String?): List<CanonicalMedia.TvShow> = indent {
+    private suspend fun findOrFetchShows(title: String, year: String?): Result<List<CanonicalMedia.TvShow>> = indent {
         val cacheKey = "$title:$year"
         val cachedShows = cache.getShows(cacheKey)
         if (cachedShows != null) {
             debug("Cache HIT for show: '$title'")
-            return@indent cachedShows
+            return@indent Result.success(cachedShows)
         }
         if (cache.isShowFailed(cacheKey)) {
             debug("Cache HIT (negative) for show: '$title'")
-            return@indent emptyList()
+            return@indent Result.success(emptyList())
         }
         debug("Cache MISS for show: '$title'. Searching providers...")
 
         val searchResults = metadataService.search(title, year)
+            .getOrElse { error -> return@indent Result.failure(error) }
             .filterIsInstance<MediaSearchResult.TvShow>()
 
         val shows = if (searchResults.isEmpty()) {
@@ -279,7 +290,7 @@ class MediaProcessor(
             cache.markShowFailed(cacheKey)
         }
 
-        return@indent shows
+        return@indent Result.success(shows)
     }
 
     /**
