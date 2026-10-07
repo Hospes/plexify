@@ -364,18 +364,10 @@ class MediaProcessor(
 
             score += similarity * 10.0
 
-            // Year scoring: Exact(+10), Adjacent(+5), Mismatch(-10)
-            if (parsedYear != null) {
-                val parsedY = parsedYear.toIntOrNull()
-                val groupY = representative.year?.toIntOrNull()
-                if (parsedY != null && groupY != null) {
-                    val diff = abs(parsedY - groupY)
-                    when (diff) {
-                        0 -> score += 10.0
-                        1 -> score += 5.0
-                        else -> score -= 10.0
-                    }
-                }
+            val parsedY = parsedYear?.toIntOrNull()
+            val groupY = representative.year?.toIntOrNull()
+            if (parsedY != null && groupY != null) {
+                score += yearScore(parsedY, groupY, isShow = representative is MediaSearchResult.TvShow)
             }
 
             score += (group.distinctBy { it.provider }.size - 1) * 2.0
@@ -464,6 +456,27 @@ private fun Double.format(digits: Int): String {
     val intPart = scaled / factor.toInt()
     val fracPart = scaled.mod(factor.toInt())
     return "$intPart.${fracPart.toString().padStart(digits, '0')}"
+}
+
+/**
+ * Year contribution to a candidate's match score.
+ *
+ * Movies: Exact(+10), Adjacent(+5), Mismatch(-10).
+ *
+ * Shows: a show's year is its first-air year, but the year in an episode filename is usually the
+ * season's air year (`The_Boys_S03E01_2022` is The Boys (2019)). A show that started before the
+ * filename year is therefore consistent with it, not a mismatch: it scores +5, slowly decaying with
+ * distance so the closest earlier show wins among same-titled ones. Only a show that started after
+ * the filename year (beyond the usual one-year release-date disagreement) is penalized.
+ */
+internal fun yearScore(parsedYear: Int, candidateYear: Int, isShow: Boolean): Double {
+    val diff = parsedYear - candidateYear
+    return when {
+        diff == 0 -> 10.0
+        abs(diff) == 1 -> 5.0
+        isShow && diff > 1 -> max(1.0, 5.0 - (diff - 1) * 0.1)
+        else -> -10.0
+    }
 }
 
 /** Normalized Levenshtein similarity in [0.0, 1.0]; 1.0 means identical strings. */
