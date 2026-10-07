@@ -330,6 +330,22 @@ class DefaultFileOrganizerTest {
         }
     }
 
+    @Test
+    fun `removes temporary files left in a folder before writing to it`() {
+        val source = file(Path(root, "Inception.2010.1080p.mkv"), "movie")
+        val target = targetPath()
+        val folder = target.parent!!
+        // What an interrupted overwrite leaves behind: a hardlink to a source under a temporary name.
+        Path(folder, ".plexify-0123abcd.tmp").also { PlatformFileSystem.createDirectories(folder); createHardLink(source, it) }
+        val kept = listOf(".plexify-notes.tmp", "notes.tmp", ".plexify-0123abcd.mkv").map { file(Path(folder, it), "keep") }
+
+        organize(source, OperationMode.HARDLINK, isTestMode = true)
+        assertEquals(kept.size + 1, PlatformFileSystem.list(folder).size, "test mode touched the folder")
+
+        assertIs<OrganizeOutcome.Organized>(organize(source, OperationMode.HARDLINK))
+        assertEquals((kept + target).map { it.name }.toSet(), PlatformFileSystem.list(folder).map { it.name }.toSet())
+    }
+
     private fun assertKeepsFileAlreadyAtTarget(mode: OperationMode) {
         val target = file(targetPath(), "movie")
 
