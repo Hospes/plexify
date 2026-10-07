@@ -307,6 +307,12 @@ class MediaProcessor(
                         stats.organized++
                     }
 
+                    is OrganizeOutcome.Replaced -> {
+                        status("✓ ${source.name} → ${media.describe()} (replaced existing file)")
+                        debug("Replaced: ${outcome.path}")
+                        stats.organized++
+                    }
+
                     is OrganizeOutcome.AlreadyInPlace -> {
                         status("= ${source.name} — already in the library: ${outcome.path}")
                         stats.skipped++

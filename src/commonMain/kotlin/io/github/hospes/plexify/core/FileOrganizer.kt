@@ -26,6 +26,9 @@ sealed interface OrganizeOutcome {
     /** [path] already is the source file: the source sits at its target, or the target is a hardlink to it. Nothing was touched. */
     data class AlreadyInPlace(override val path: Path) : OrganizeOutcome
 
+    /** A different file already occupied [path] and was replaced by the source (only with overwrite enabled). */
+    data class Replaced(override val path: Path) : OrganizeOutcome
+
     /** A different file already occupies [path]. Neither file was touched. */
     data class TargetExists(override val path: Path) : OrganizeOutcome
 }
