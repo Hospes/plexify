@@ -1,6 +1,8 @@
 package io.github.hospes.plexify
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.convert
@@ -16,6 +18,8 @@ import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.imdb.ImdbProvider
+import io.github.hospes.plexify.data.tmdb.TmdbCredentials
+import io.github.hospes.plexify.data.tmdb.TmdbCredentialsRejectedException
 import io.github.hospes.plexify.data.tmdb.TmdbProvider
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.service.MetadataService
@@ -27,14 +31,25 @@ import kotlinx.io.files.Path
 
 object App : CliktCommand(name = "Plexify") {
 
-    private val tmdbApiKey: String by option(envvar = "TMDB_API_KEY", help = "TMDB API key")
-        .default(BuildConfig.TMDB_API_KEY)
-    private val tmdbAccessToken: String by option(envvar = "TMDB_API_ACCESS_TOKEN", help = "TMDB Access Token")
-        .default(BuildConfig.TMDB_API_ACCESS_TOKEN)
-    private val tmdbProvider: MetadataProvider? by lazy {
-        if (tmdbApiKey.isBlank() && tmdbAccessToken.isBlank()) null
-        else TmdbProvider(tmdbApiKey, tmdbAccessToken.ifBlank { null })
+    // Your own TMDB credentials (flag or environment) take precedence; release binaries
+    // fall back to a key built in at release time, shared by every user.
+    private val tmdbApiKey: String? by option(
+        envvar = "TMDB_API_KEY",
+        help = "Your TMDB API key (v3). Overrides the built-in key. Env: TMDB_API_KEY",
+    )
+    private val tmdbAccessToken: String? by option(
+        envvar = "TMDB_API_ACCESS_TOKEN",
+        help = "Your TMDB API Read Access Token. Overrides the built-in key; preferred over --tmdb-api-key. Env: TMDB_API_ACCESS_TOKEN",
+    )
+    private val tmdbCredentials: TmdbCredentials? by lazy {
+        TmdbCredentials.resolve(
+            userApiKey = tmdbApiKey,
+            userAccessToken = tmdbAccessToken,
+            builtInApiKey = BuildConfig.TMDB_API_KEY,
+            builtInAccessToken = BuildConfig.TMDB_API_ACCESS_TOKEN,
+        )
     }
+    private val tmdbProvider: TmdbProvider? by lazy { tmdbCredentials?.let { TmdbProvider(it) } }
 
     private val tvdbApiKey: String by option(help = "TVDB API key").default(BuildConfig.TVDB_API_KEY)
     private val omdbApiKey: String by option(help = "OMDB API key").default(BuildConfig.OMDB_API_KEY)
@@ -96,11 +111,18 @@ object App : CliktCommand(name = "Plexify") {
 
 
     init {
-        versionOption(version = BuildConfig.VERSION, names = setOf("-v", "--version"))
+        versionOption(
+            version = BuildConfig.VERSION,
+            names = setOf("-v", "--version"),
+            message = { "Plexify version $it\n$TMDB_ATTRIBUTION" },
+        )
     }
+
+    override fun helpEpilog(context: Context): String = TMDB_ATTRIBUTION
 
 
     override fun run() {
+        checkTmdbCredentials()
         val providers = listOfNotNull(tmdbProvider, imdbProvider)
         val pathFormatter = PathFormatter()
         val fileOrganizer = DefaultFileOrganizer(pathFormatter, template)
@@ -136,7 +158,43 @@ object App : CliktCommand(name = "Plexify") {
         val stats = processor.stats
         echo("Done: ${stats.organized} organized, ${stats.skipped} skipped, ${stats.failed} failed.")
     }
+
+    /**
+     * Fails the run up front when TMDB rejects the credentials, with what to do about it,
+     * instead of an HTTP 401 on every file. Other failures (offline, timeouts) are left to
+     * the per-file errors, since they say nothing about the credentials.
+     */
+    private fun checkTmdbCredentials() {
+        val provider = tmdbProvider
+        if (provider == null) {
+            echo("No TMDB credentials: searching IMDb only. $HOW_TO_SET_TMDB_KEY", err = true)
+            return
+        }
+        val error = runBlocking { provider.verifyCredentials() }.exceptionOrNull()
+        if (error is TmdbCredentialsRejectedException) {
+            val message = when (error.source) {
+                TmdbCredentials.Source.USER ->
+                    "TMDB rejected your credentials (HTTP 401). Check --tmdb-access-token / TMDB_API_ACCESS_TOKEN " +
+                            "and --tmdb-api-key / TMDB_API_KEY" +
+                            if (hasBuiltInTmdbKey) ", or unset them to use the built-in key." else "."
+
+                TmdbCredentials.Source.BUILT_IN ->
+                    "TMDB rejected the built-in API key (HTTP 401); it may have been revoked. $HOW_TO_SET_TMDB_KEY"
+            }
+            throw CliktError(message)
+        }
+    }
+
+    private val hasBuiltInTmdbKey: Boolean
+        get() = BuildConfig.TMDB_API_KEY.isNotBlank() || BuildConfig.TMDB_API_ACCESS_TOKEN.isNotBlank()
 }
+
+/** Required by the TMDB API terms of use, section 3. */
+const val TMDB_ATTRIBUTION = "This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB."
+
+private const val HOW_TO_SET_TMDB_KEY =
+    "Get a free key at https://www.themoviedb.org/settings/api and set TMDB_API_ACCESS_TOKEN " +
+            "(or pass --tmdb-access-token)."
 
 fun commonMain(args: Array<String>) = App
     //.subcommands(ExtraCommands, AnotherExtraCommands)

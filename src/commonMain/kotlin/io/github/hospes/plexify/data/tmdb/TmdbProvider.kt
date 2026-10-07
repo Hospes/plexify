@@ -14,18 +14,16 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
-import io.ktor.client.plugins.auth.*
-import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.*
 
 class TmdbProvider(
-    private val apiKey: String,
-    private val accessToken: String? = null,
+    private val credentials: TmdbCredentials,
 ) : MetadataProvider {
     override val id: String = "tmdb"
     override val supportedIds: Set<String> = setOf("tmdbid")
@@ -34,10 +32,11 @@ class TmdbProvider(
         HttpClient(createHttpClientEngine()) {
             install(ContentNegotiation) { json(nonstrict) }
 
-            install(Auth) {
-                bearer {
-                    loadTokens { accessToken?.let { BearerTokens(accessToken = it, refreshToken = null) } }
-                }
+            // TMDB rate-limits bursts with 429 (and a Retry-After header). A built-in key is
+            // shared by every user of a release, so give a busy moment a few tries.
+            install(HttpRequestRetry) {
+                retryIf(maxRetries = 3) { _, response -> response.status == HttpStatusCode.TooManyRequests }
+                exponentialDelay()
             }
 
 //            install(Logging) {
@@ -45,16 +44,24 @@ class TmdbProvider(
 //                level = LogLevel.ALL
 //            }
 
+            // The read access token goes in the header up front; the v3 API key only when
+            // there is no token. Either one alone authenticates every v3 endpoint.
             defaultRequest {
                 url {
                     takeFrom("https://api.themoviedb.org/3/")
-                    if (accessToken == null) parameters.append("api_key", apiKey)
+                    if (credentials.accessToken == null) credentials.apiKey?.let { parameters.append("api_key", it) }
                 }
+                credentials.accessToken?.let { headers.append(HttpHeaders.Authorization, "Bearer $it") }
                 headers.appendIfNameAbsent(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             }
         }
     }
 
+
+    /** One cheap call before a run, so wrong or revoked credentials fail once and clearly. */
+    suspend fun verifyCredentials(): Result<Unit> = Result.runCatching {
+        httpClient.get("authentication").ensureSuccess { "verifying credentials" }
+    }
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.runCatching {
         val response = httpClient.get("search/multi") {
@@ -62,7 +69,7 @@ class TmdbProvider(
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
         }
-        require(response.status.isSuccess()) { "HTTP ${response.status.value} searching for '$title'" }
+        response.ensureSuccess { "searching for '$title'" }
         val results = response.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
 
         // TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
@@ -108,7 +115,7 @@ class TmdbProvider(
     ): Result<CanonicalMedia.Episode> = Result.runCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
         val response = httpClient.get("tv/${show.tmdbId}/season/$season/episode/$episode")
-        require(response.status.isSuccess()) { "HTTP ${response.status.value} fetching S${season}E${episode} of '${show.title}'" }
+        response.ensureSuccess { "fetching S${season}E${episode} of '${show.title}'" }
         val dto = response.body<TmdbEpisodeDto>()
 
         CanonicalMedia.Episode(
@@ -125,7 +132,7 @@ class TmdbProvider(
     ): Result<CanonicalMedia.Season> = Result.runCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch season details." }
         val response = httpClient.get("tv/${show.tmdbId}/season/$season")
-        require(response.status.isSuccess()) { "HTTP ${response.status.value} fetching season $season of '${show.title}'" }
+        response.ensureSuccess { "fetching season $season of '${show.title}'" }
         val dto = response.body<TmdbSeasonDto>()
 
         CanonicalMedia.Season(
@@ -140,6 +147,17 @@ class TmdbProvider(
                 )
             },
         )
+    }
+
+    private fun HttpResponse.ensureSuccess(action: () -> String) {
+        when {
+            status.isSuccess() -> Unit
+            status == HttpStatusCode.Unauthorized -> throw TmdbCredentialsRejectedException(credentials.source)
+            status == HttpStatusCode.TooManyRequests && credentials.source == TmdbCredentials.Source.BUILT_IN ->
+                error("TMDB rate limit reached (HTTP 429) ${action()}. The built-in key is shared by all Plexify users; set your own with TMDB_API_ACCESS_TOKEN (see README).")
+
+            else -> error("HTTP ${status.value} ${action()}")
+        }
     }
 }
 
