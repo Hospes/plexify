@@ -346,6 +346,77 @@ class DefaultFileOrganizerTest {
         assertEquals((kept + target).map { it.name }.toSet(), PlatformFileSystem.list(folder).map { it.name }.toSet())
     }
 
+    @Test
+    fun `skips a second file for a target claimed earlier in the run`() {
+        for (mode in OperationMode.entries) for (overwrite in listOf(false, true)) {
+            val label = "mode $mode, overwrite $overwrite"
+            val first = file(Path(root, "Inception.2010.1080p.mkv"), "first")
+            val second = file(Path(root, "Inception.2010.REPACK.1080p.mkv"), "second")
+            val target = targetPath()
+
+            val dryRun = organizeInOneRun(listOf(first, second), mode, isTestMode = true, overwrite = overwrite)
+            assertNull(PlatformFileSystem.kind(library), "test mode wrote files, $label")
+            val run = organizeInOneRun(listOf(first, second), mode, isTestMode = false, overwrite = overwrite)
+
+            assertEquals(listOf(OrganizeOutcome.Organized(target), OrganizeOutcome.TakenInThisRun(target, first)), run, label)
+            assertEquals(run, dryRun, "test mode disagrees with a real run, $label")
+            assertEquals("first", read(target), label)
+            assertEquals("second", read(second), label)
+            deleteRecursively(library)
+            if (mode == OperationMode.HARDLINK) PlatformFileSystem.delete(first)
+            PlatformFileSystem.delete(second)
+        }
+    }
+
+    @Test
+    fun `overwrite keeps a file already in place earlier in the run`() {
+        for (mode in OperationMode.entries) for (isTestMode in listOf(true, false)) {
+            val label = "mode $mode, test mode $isTestMode"
+            val inPlace = file(targetPath(), "in library")
+            val other = file(Path(root, "Inception.2010.REPACK.1080p.mkv"), "other")
+
+            val outcomes = organizeInOneRun(listOf(inPlace, other), mode, isTestMode, overwrite = true)
+
+            assertEquals(listOf(OrganizeOutcome.AlreadyInPlace(inPlace), OrganizeOutcome.TakenInThisRun(inPlace, inPlace)), outcomes, label)
+            assertEquals("in library", read(inPlace), label)
+            assertEquals("other", read(other), label)
+            deleteRecursively(library)
+            PlatformFileSystem.delete(other)
+        }
+    }
+
+    @Test
+    fun `treats the same file reached twice in a run as already in place`() {
+        for (mode in OperationMode.entries) for (isTestMode in listOf(true, false)) {
+            val label = "mode $mode, test mode $isTestMode"
+            val source = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "movie")
+            val twin = Path(root, "seeding", source.name).also { PlatformFileSystem.createDirectories(it.parent!!); createHardLink(source, it) }
+            val target = targetPath()
+
+            val outcomes = organizeInOneRun(listOf(source, source, twin), mode, isTestMode, overwrite = true)
+
+            val expected = listOf(OrganizeOutcome.Organized(target), OrganizeOutcome.AlreadyInPlace(target), OrganizeOutcome.AlreadyInPlace(target))
+            assertEquals(expected, outcomes, label)
+            if (!isTestMode) assertTrue(isSameFile(twin, target), label)
+            deleteRecursively(root)
+            SystemFileSystem.createDirectories(root)
+        }
+    }
+
+    @Test
+    fun `a file that failed to organize does not claim its target`() {
+        // Neither platform can hardlink a directory, so the link step fails after the checks pass.
+        val unlinkable = Path(root, "Inception.2010.1080p.mkv").also { SystemFileSystem.createDirectories(it) }
+        val source = file(Path(root, "Inception.2010.REPACK.1080p.mkv"), "movie")
+        val organizer = organizer()
+
+        assertTrue(organizer.organize(unlinkable, library, movie, parsed, OperationMode.HARDLINK, isTestMode = false).isFailure)
+        val outcome = organizer.organize(source, library, movie, parsed, OperationMode.HARDLINK, isTestMode = false).getOrThrow()
+
+        assertIs<OrganizeOutcome.Organized>(outcome)
+        assertTrue(isSameFile(source, outcome.path))
+    }
+
     private fun assertKeepsFileAlreadyAtTarget(mode: OperationMode) {
         val target = file(targetPath(), "movie")
 
@@ -363,6 +434,12 @@ class DefaultFileOrganizerTest {
 
     private fun organize(source: Path, mode: OperationMode, isTestMode: Boolean = false, overwrite: Boolean = false): OrganizeOutcome =
         organizer(overwrite).organize(source, library, movie, parsed, mode, isTestMode).getOrThrow()
+
+    /** Organizes [sources] in order with one organizer, as one run of plexify does. */
+    private fun organizeInOneRun(sources: List<Path>, mode: OperationMode, isTestMode: Boolean, overwrite: Boolean): List<OrganizeOutcome> {
+        val organizer = organizer(overwrite)
+        return sources.map { organizer.organize(it, library, movie, parsed, mode, isTestMode).getOrThrow() }
+    }
 
     /** Writes [content] to [path]. kotlinx-io can't open Windows paths past MAX_PATH, so the file is moved into place. */
     private fun file(path: Path, content: String): Path {
