@@ -16,10 +16,6 @@
       "Bash(gh run view *)",
       "Bash(gh run list *)",
       "Bash(gh release view *)"
-    ],
-    "deny": [
-      "Read(**/local.properties)",
-      "Edit(**/local.properties)"
     ]
   }
 }
