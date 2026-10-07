@@ -19,6 +19,10 @@ interface MetadataProvider {
 
     suspend fun episodeGroups(show: CanonicalMedia.TvShow): Result<List<CanonicalMedia.EpisodeGroup>> =
         Result.failure(UnsupportedOperationException("episodeGroups() not supported by provider '$id'"))
+
+    /** IMDb ID of a matched movie or show; null when the provider knows of none. */
+    suspend fun imdbId(media: CanonicalMedia): Result<String?> =
+        Result.failure(UnsupportedOperationException("imdbId() not supported by provider '$id'"))
 }
 
 /** The provider has no such record (HTTP 404), e.g. a season it numbers differently. Expected, not an error. */

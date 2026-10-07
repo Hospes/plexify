@@ -128,8 +128,9 @@ class MediaProcessor(
             return@indent
         }
 
-        val canonicalMovie = findAndConsolidateBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
-                as? CanonicalMedia.Movie
+        val canonicalMovie = (findAndConsolidateBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
+                as? CanonicalMedia.Movie)
+            ?.let { movie -> movie.copy(imdbId = movie.imdbId ?: findImdbId(movie, movie.tmdbId)) }
 
         if (canonicalMovie == null) {
             status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
@@ -202,7 +203,8 @@ class MediaProcessor(
             status("No match for '$title': providers returned no results.")
             null
         } else {
-            findAndConsolidateBestMatch(searchResults, title, year) as? CanonicalMedia.TvShow
+            (findAndConsolidateBestMatch(searchResults, title, year) as? CanonicalMedia.TvShow)
+                ?.let { show -> show.copy(imdbId = show.imdbId ?: findImdbId(show, show.tmdbId)) }
         }
 
         if (canonicalShow != null) {
@@ -287,6 +289,18 @@ class MediaProcessor(
                 null
             }
         }
+    }
+
+    /**
+     * The winning match's IMDb ID, which search results don't carry. Looked up once per TMDB
+     * record and run (the service skips it when the template doesn't use `{imdbid}`), so a
+     * season of episodes or several versions of a movie cost one call.
+     */
+    context(_: LoggingContext)
+    private suspend fun findImdbId(media: CanonicalMedia, tmdbId: String?): String? {
+        if (tmdbId == null) return null
+        val kind = if (media is CanonicalMedia.Movie) "movie" else "tv"
+        return cache.getOrPutImdbId("$kind:$tmdbId") { metadataService.getImdbId(media) }
     }
 
     context(ctx: LoggingContext)

@@ -83,6 +83,33 @@ class MetadataService(
         }
     }
 
+    /**
+     * IMDb ID of a matched movie or show, from the first provider that supplies one. Null without
+     * a lookup when the naming template has no `{imdbid}`, so the extra call is only made when used.
+     */
+    context(_: LoggingContext)
+    suspend fun getImdbId(media: CanonicalMedia): String? {
+        if (IMDB_ID !in namingStrategy.requiredMetadataFields()) return null
+        return indent {
+            for (provider in resolveActiveProviders().filter { IMDB_ID in it.supportedIds }) {
+                val imdbId = provider.imdbId(media)
+                    .onFailure { error ->
+                        when (error) {
+                            is UnsupportedOperationException -> Unit
+                            is MetadataNotFoundException -> debug("${provider.id}: ${error.message}")
+                            else -> log("Error(${provider.id}): ${error.message}")
+                        }
+                    }
+                    .getOrNull()
+                if (imdbId != null) {
+                    debug("IMDb ID $imdbId fetched from ${provider.id}")
+                    return@indent imdbId
+                }
+            }
+            null
+        }
+    }
+
     context(_: LoggingContext)
     private fun resolveActiveProviders(): List<MetadataProvider> {
         val requiredFields = namingStrategy.requiredMetadataFields()
@@ -108,3 +135,6 @@ class MetadataService(
         return selectedProviders
     }
 }
+
+// Template placeholder (lowercased, as requiredMetadataFields() reports it) for the IMDb ID.
+private const val IMDB_ID = "imdbid"
