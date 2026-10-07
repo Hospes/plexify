@@ -39,13 +39,6 @@ buildConfig {
             ?: localProperties["TVDB_API_KEY"]?.toString() ?: ""
         },
     )
-    buildConfigField<String>(
-        name = "OMDB_API_KEY",
-        value = provider<String> {
-            System.getenv("OMDB_API_KEY") ?: providers.gradleProperty("OMDB_API_KEY").orNull
-            ?: localProperties["OMDB_API_KEY"]?.toString() ?: ""
-        },
-    )
 
     buildConfigField<String>(name = "VERSION", value = provider { version.toString() })
 }
