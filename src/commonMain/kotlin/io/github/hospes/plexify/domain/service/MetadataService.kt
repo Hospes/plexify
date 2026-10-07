@@ -88,10 +88,9 @@ class MetadataService(
         val requiredFields = namingStrategy.requiredMetadataFields()
         val selectedProviders = mutableListOf<MetadataProvider>()
 
-        // 1. Primary Provider: Prefer TMDB, then IMDb. 
+        // 1. Primary Provider: Prefer TMDB.
         // We always need at least one provider to perform the initial search.
         val primary = providers.firstOrNull { it.id == "tmdb" }
-            ?: providers.firstOrNull { it.id == "imdb" }
             ?: providers.firstOrNull()
             ?: return emptyList()
 
