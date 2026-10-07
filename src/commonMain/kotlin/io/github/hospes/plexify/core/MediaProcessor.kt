@@ -299,10 +299,24 @@ class MediaProcessor(
         isTestMode: Boolean,
     ) = run {
         fileOrganizer.organize(source, destination, media, parsedInfo, mode, isTestMode)
-            .onSuccess { newPath ->
-                status("✓ ${source.name} → ${media.describe()}")
-                debug("Organized at: $newPath")
-                stats.organized++
+            .onSuccess { outcome ->
+                when (outcome) {
+                    is OrganizeOutcome.Organized -> {
+                        status("✓ ${source.name} → ${media.describe()}")
+                        debug("Organized at: ${outcome.path}")
+                        stats.organized++
+                    }
+
+                    is OrganizeOutcome.AlreadyInPlace -> {
+                        status("= ${source.name} — already in the library: ${outcome.path}")
+                        stats.skipped++
+                    }
+
+                    is OrganizeOutcome.TargetExists -> {
+                        status("✗ ${source.name} — target already exists: ${outcome.path}")
+                        stats.skipped++
+                    }
+                }
             }
             .onFailure { error ->
                 status("✗ ${source.name} — ${error.message}")

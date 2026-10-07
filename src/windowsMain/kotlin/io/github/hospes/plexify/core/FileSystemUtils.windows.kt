@@ -1,27 +1,14 @@
 package io.github.hospes.plexify.core
 
 import kotlinx.cinterop.*
+import kotlinx.io.IOException
 import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 import platform.windows.*
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun createHardLink(source: Path, destination: Path) {
-    // Check if the destination file already exists.
-    if (SystemFileSystem.exists(destination)) {
-        println("  -> Destination '$destination' already exists. Deleting it to create a new hardlink.")
-        try {
-            // If it exists, delete it.
-            SystemFileSystem.delete(destination)
-        } catch (e: Exception) {
-            // Provide a more specific error if deletion fails (e.g., due to permissions).
-            throw Exception("Failed to delete existing file at '$destination' before creating hardlink.", e)
-        }
-    }
-
     memScoped {
-        // Now these functions (CreateHardLinkW, GetLastError, etc.) will be resolved
-        // because they are imported from the 'winfileapi' package.
+        // CreateHardLinkW fails with ERROR_ALREADY_EXISTS rather than replacing an existing destination.
         val result = CreateHardLinkW(destination.toString(), source.toString(), null)
         if (result == 0) { // If the function fails, the return value is zero.
             val errorCode = GetLastError()
@@ -35,10 +22,42 @@ actual fun createHardLink(source: Path, destination: Path) {
                 0u,
                 null
             )
-            val errorMessage = messageBuffer.value?.toKString() ?: "Unknown error"
+            val errorMessage = messageBuffer.value?.toKString()?.trim() ?: "Unknown error"
             // Don't forget to free the buffer allocated by FormatMessageW
             LocalFree(messageBuffer.value)
-            throw Exception("Failed to create hardlink from '$source' to '$destination'. Error ($errorCode): $errorMessage")
+            val error = "$errorMessage (error $errorCode)"
+            throw IOException(if (errorCode == ERROR_NOT_SAME_DEVICE.toUInt()) error + CROSS_VOLUME_HINT else error)
         }
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun isSameFile(first: Path, second: Path): Boolean = memScoped {
+    val firstInfo = fileInformation(first) ?: return false
+    val secondInfo = fileInformation(second) ?: return false
+    firstInfo.dwVolumeSerialNumber == secondInfo.dwVolumeSerialNumber &&
+        firstInfo.nFileIndexHigh == secondInfo.nFileIndexHigh &&
+        firstInfo.nFileIndexLow == secondInfo.nFileIndexLow
+}
+
+/** Volume serial and file index identify a file across all of its hardlinks. Null if [path] can't be opened. */
+@OptIn(ExperimentalForeignApi::class)
+private fun MemScope.fileInformation(path: Path): BY_HANDLE_FILE_INFORMATION? {
+    // No access rights are needed to query file information; backup semantics also allows opening directories.
+    val handle = CreateFileW(
+        path.toString(),
+        0u,
+        (FILE_SHARE_READ or FILE_SHARE_WRITE or FILE_SHARE_DELETE).toUInt(),
+        null,
+        OPEN_EXISTING.toUInt(),
+        FILE_FLAG_BACKUP_SEMANTICS.toUInt(),
+        null,
+    )
+    if (handle == INVALID_HANDLE_VALUE) return null
+    try {
+        val info = alloc<BY_HANDLE_FILE_INFORMATION>()
+        return if (GetFileInformationByHandle(handle, info.ptr) != 0) info else null
+    } finally {
+        CloseHandle(handle)
     }
 }

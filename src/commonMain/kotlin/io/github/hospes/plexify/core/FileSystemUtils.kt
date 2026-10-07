@@ -10,11 +10,23 @@ import kotlinx.io.files.Path
  * It allows creating a file entry ([destination]) that points to the same underlying data as the [source] file,
  * without duplicating the data on disk.
  *
+ * It never replaces an existing file: if [destination] already exists, the call fails.
+ *
  * @param source The existing file path to link from.
  * @param destination The new path where the hard link should be created.
- * @throws kotlinx.io.IOException If the link cannot be created (e.g., cross-filesystem link, permissions, or platform limitations).
+ * @throws kotlinx.io.IOException If the link cannot be created (e.g., destination exists, cross-filesystem link,
+ *         permissions, or platform limitations). The message is the platform's own error description.
  */
 expect fun createHardLink(source: Path, destination: Path)
+
+/**
+ * Returns true when [first] and [second] are the same file on disk: the same path, or two hardlinks to the same data
+ * (same device and inode on Linux, same volume and file index on Windows). Returns false if either path can't be read.
+ */
+expect fun isSameFile(first: Path, second: Path): Boolean
+
+/** Appended to the platform error when a hardlink fails because source and destination are on different volumes. */
+internal const val CROSS_VOLUME_HINT = " (source and destination must be on the same volume/partition)"
 
 /**
  * Recursively walks the file system from the given [root] path, yielding all regular files found.
