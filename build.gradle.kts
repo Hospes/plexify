@@ -21,28 +21,28 @@ buildConfig {
     buildConfigField<String>(
         name = "TMDB_API_KEY",
         value = provider<String> {
-            System.getenv("TMDB_API_KEY") ?: properties["TMDB_API_KEY"]?.toString()
+            System.getenv("TMDB_API_KEY") ?: providers.gradleProperty("TMDB_API_KEY").orNull
             ?: localProperties["TMDB_API_KEY"]?.toString() ?: ""
         },
     )
     buildConfigField<String>(
         name = "TMDB_API_ACCESS_TOKEN",
         value = provider {
-            System.getenv("TMDB_API_ACCESS_TOKEN") ?: properties["TMDB_API_ACCESS_TOKEN"]?.toString()
+            System.getenv("TMDB_API_ACCESS_TOKEN") ?: providers.gradleProperty("TMDB_API_ACCESS_TOKEN").orNull
             ?: localProperties["TMDB_API_ACCESS_TOKEN"]?.toString() ?: ""
         },
     )
     buildConfigField<String>(
         name = "TVDB_API_KEY",
         value = provider<String> {
-            System.getenv("TVDB_API_KEY") ?: properties["TVDB_API_KEY"]?.toString()
+            System.getenv("TVDB_API_KEY") ?: providers.gradleProperty("TVDB_API_KEY").orNull
             ?: localProperties["TVDB_API_KEY"]?.toString() ?: ""
         },
     )
     buildConfigField<String>(
         name = "OMDB_API_KEY",
         value = provider<String> {
-            System.getenv("OMDB_API_KEY") ?: properties["OMDB_API_KEY"]?.toString()
+            System.getenv("OMDB_API_KEY") ?: providers.gradleProperty("OMDB_API_KEY").orNull
             ?: localProperties["OMDB_API_KEY"]?.toString() ?: ""
         },
     )
@@ -64,7 +64,7 @@ kotlin {
         // Applies to all binaries including the test executable.
         target.binaries.all {
             disableNativeCache(
-                version = DisableCacheInKotlinVersion.`2_4_0`,
+                version = DisableCacheInKotlinVersion.`2_4_20`,
                 reason = "Clikt duplicate symbol at link time with the native compilation cache",
                 issueUrl = URI("https://github.com/ajalt/clikt/issues/598"),
             )
