@@ -69,7 +69,7 @@ jobs:
 
       # The version is baked in from `git describe`; a binary that does not report
       # exactly this tag was built from the wrong commit or without the tag. Only the
-      # first line: the TMDB attribution notice follows it.
+      # first line is compared.
       - name: Check the binary reports the tag version
         if: matrix.runnable
         shell: bash

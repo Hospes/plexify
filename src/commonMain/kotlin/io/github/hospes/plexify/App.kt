@@ -120,7 +120,7 @@ object App : CliktCommand(name = "plexify") {
         versionOption(
             version = BuildConfig.VERSION,
             names = setOf("-v", "--version"),
-            message = { "Plexify version $it\n$TMDB_ATTRIBUTION" },
+            message = { "Plexify version $it" },
         )
     }
 
