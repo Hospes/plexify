@@ -41,5 +41,7 @@ sealed interface MediaSearchResult {
         override val matchConfidence: Double = 0.0,
         override val originalTitle: String? = null,
         override val alternativeTitles: List<String> = emptyList(),
+        /** Alternative titles naming one season (e.g. an anime arc's own title), by season number. */
+        val seasonTitles: Map<String, Int> = emptyMap(),
     ) : MediaSearchResult
 }
