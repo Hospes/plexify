@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 
 /**
@@ -28,34 +27,70 @@ expect fun isSameFile(first: Path, second: Path): Boolean
 /** Appended to the platform error when a hardlink fails because source and destination are on different volumes. */
 internal const val CROSS_VOLUME_HINT = " (source and destination must be on the same volume/partition)"
 
-/**
- * Recursively walks the file system from the given [root] path, yielding all regular files found.
- *
- * This extension function traverses directories recursively and returns a [Sequence] of [Path]s
- * representing regular files. Directories themselves are not yielded, only traversed to find files.
- *
- * Usage in contexts like [MediaProcessor] involves iterating this sequence to find and process specific file types
- * (e.g., media files) within a source directory structure.
- *
- * @param root The starting path for the traversal. Can be a file or a directory.
- * @return A [Sequence] of [Path] objects representing all regular files found under [root].
- *         If [root] does not exist, an empty sequence is returned.
- *         Permission errors during directory listing are silently ignored.
- */
-fun FileSystem.walk(root: Path): Sequence<Path> = sequence {
-    if (!exists(root)) return@sequence
-    val metadata = metadataOrNull(root) ?: return@sequence
+/** What a path points at. */
+enum class FileKind { REGULAR_FILE, DIRECTORY, OTHER }
 
-    if (metadata.isRegularFile) {
-        yield(root)
-    } else if (metadata.isDirectory) {
-        try {
-            list(root).forEach { childName ->
-                val childPath = Path(root, childName.name)
-                yieldAll(walk(childPath))
+/**
+ * File operations on the user's media paths: the source tree and the library. Use [PlatformFileSystem].
+ *
+ * On Windows, kotlinx-io's [kotlinx.io.files.SystemFileSystem] goes through the ANSI C runtime (`stat`, `opendir`,
+ * `mkdir`, `MoveFileExA`), which fails on paths of MAX_PATH (260 characters) or longer. The Windows implementation
+ * uses the wide-character Win32 API with `\\?\` paths instead, which has no such limit. On Linux it delegates to
+ * kotlinx-io.
+ */
+interface MediaFileSystem {
+    /**
+     * Returns what is at [path] (following symlinks), or null if nothing is.
+     *
+     * @throws kotlinx.io.IOException If [path] can't be examined, e.g. a parent directory isn't readable.
+     */
+    fun kind(path: Path): FileKind?
+
+    /**
+     * Returns the entries of [directory], without `.` and `..`.
+     *
+     * @throws kotlinx.io.IOException If [directory] can't be listed.
+     */
+    fun list(directory: Path): List<Path>
+
+    /** Creates [path] and any missing parent directories. Does nothing if [path] already is a directory. */
+    fun createDirectories(path: Path)
+
+    /** Renames [source] to [destination] in one step, replacing a file already at [destination]. */
+    fun atomicMove(source: Path, destination: Path)
+
+    /** Deletes the file or empty directory at [path]. Does nothing if nothing is there. */
+    fun delete(path: Path)
+}
+
+expect val PlatformFileSystem: MediaFileSystem
+
+/**
+ * Recursively walks the file system from [root], yielding every regular file under it ([root] itself if it is one).
+ *
+ * Directories are not yielded, only traversed. A missing [root] yields nothing. A path that can't be examined,
+ * or a directory that can't be listed, is passed to [onUnreadable] with the error and skipped, so the caller can
+ * report it instead of losing it silently.
+ */
+fun walkFiles(root: Path, onUnreadable: (Path, Exception) -> Unit = { _, _ -> }): Sequence<Path> = sequence {
+    val kind = try {
+        PlatformFileSystem.kind(root)
+    } catch (e: Exception) {
+        onUnreadable(root, e)
+        return@sequence
+    }
+
+    when (kind) {
+        FileKind.REGULAR_FILE -> yield(root)
+        FileKind.DIRECTORY -> {
+            val children = try {
+                PlatformFileSystem.list(root)
+            } catch (e: Exception) {
+                onUnreadable(root, e)
+                return@sequence
             }
-        } catch (e: Exception) {
-            // Handle permission errors silently or log them
+            children.forEach { yieldAll(walkFiles(it, onUnreadable)) }
         }
+        FileKind.OTHER, null -> Unit
     }
 }

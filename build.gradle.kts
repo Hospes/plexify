@@ -57,6 +57,8 @@ kotlin {
         }
     }
     mingwX64("windows") {
+        // Win32 wrappers that read GetLastError() in C, see src/nativeInterop/cinterop/win32.def.
+        compilations.getByName("main").cinterops.create("win32")
         binaries {
             executable {
                 entryPoint = "io.github.hospes.plexify.main"

@@ -109,6 +109,7 @@ The processing pipeline (README "How It Works"): **Parse → Search → Consolid
 Only these are platform-specific; everything else must stay in `commonMain`:
 - `core/FileSystemUtils.kt` — `expect fun createHardLink(...)` (Win32 API on Windows, POSIX `link` on Linux; never replaces an existing destination) and `expect fun isSameFile(...)` (file identity: volume serial + file index on Windows, device + inode on Linux)
 - `data/HttpClientFactory.kt` — Ktor engine selection (curl on both, but per-target setup)
+- `core/FileSystemUtils.kt` — `expect val PlatformFileSystem` (`kind`/`list`/`createDirectories`/`atomicMove`/`delete`). Use it, not kotlinx-io's `SystemFileSystem`, for anything touching the source tree or the library: kotlinx-io on mingw goes through the ANSI C runtime and fails on paths of 260+ characters (MAX_PATH). The Windows actual calls the wide Win32 API with `\\?\` paths through C wrappers in [src/nativeInterop/cinterop/win32.def](src/nativeInterop/cinterop/win32.def), because a `GetLastError()` made from Kotlin can come back as 0 after the runtime resets it.
 
 ### Kotlin language features in use
 
