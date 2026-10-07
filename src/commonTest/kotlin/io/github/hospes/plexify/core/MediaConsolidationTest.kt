@@ -84,4 +84,60 @@ class MediaConsolidationTest {
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("The Kingdoms of Ruin", match.title)
     }
+
+    // TMDB results for "The Boys" as seen live: the spin-off only resembles the query through
+    // its "The Boys: Diabolical" alias, but premiered in 2022, the year of the main show's S03.
+    private val theBoysResults = listOf(
+        MediaSearchResult.TvShow(title = "The Boys", year = "2019", tmdbId = "76479", provider = "TMDb", matchConfidence = 100.0),
+        MediaSearchResult.TvShow(
+            title = "The Boys Presents: Diabolical",
+            year = "2022",
+            tmdbId = "152483",
+            provider = "TMDb",
+            matchConfidence = 40.0,
+            alternativeTitles = listOf("The Boys: Diabolical", "Diabolical"),
+        ),
+    )
+
+    @Test
+    fun `episode year after the show premiere still matches the show`() = with(LoggingContext()) {
+        val match = processor.findAndConsolidateBestMatch(theBoysResults, "The Boys", "2022")
+
+        assertIs<CanonicalMedia.TvShow>(match)
+        assertEquals("76479", match.tmdbId)
+    }
+
+    @Test
+    fun `show premiering in the filename year beats an older show of the same title`() = with(LoggingContext()) {
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "Doctor Who", year = "1963", tmdbId = "121", provider = "TMDb", matchConfidence = 100.0),
+            MediaSearchResult.TvShow(title = "Doctor Who", year = "2005", tmdbId = "57243", provider = "TMDb", matchConfidence = 100.0),
+        )
+
+        val match = processor.findAndConsolidateBestMatch(results, "Doctor Who", "2005")
+
+        assertIs<CanonicalMedia.TvShow>(match)
+        assertEquals("57243", match.tmdbId)
+    }
+
+    @Test
+    fun `show year scoring treats the filename year as on or after the premiere`() {
+        assertEquals(10.0, yearScore(parsedYear = 2022, candidateYear = 2022, isShow = true))
+        assertEquals(5.0, yearScore(parsedYear = 2022, candidateYear = 2021, isShow = true))
+        assertEquals(4.8, yearScore(parsedYear = 2022, candidateYear = 2019, isShow = true), absoluteTolerance = 1e-9)
+        assertEquals(1.0, yearScore(parsedYear = 2022, candidateYear = 1963, isShow = true))
+        // Started a year later: the usual release-date disagreement, as for movies.
+        assertEquals(5.0, yearScore(parsedYear = 2022, candidateYear = 2023, isShow = true))
+        // A show cannot air an episode years before it premiered.
+        assertEquals(-10.0, yearScore(parsedYear = 2022, candidateYear = 2025, isShow = true))
+    }
+
+    @Test
+    fun `movie year scoring is unchanged`() {
+        assertEquals(10.0, yearScore(parsedYear = 2021, candidateYear = 2021, isShow = false))
+        assertEquals(5.0, yearScore(parsedYear = 2021, candidateYear = 2020, isShow = false))
+        assertEquals(5.0, yearScore(parsedYear = 2021, candidateYear = 2022, isShow = false))
+        assertEquals(-10.0, yearScore(parsedYear = 2021, candidateYear = 2016, isShow = false))
+        assertEquals(-10.0, yearScore(parsedYear = 2021, candidateYear = 2026, isShow = false))
+    }
 }
