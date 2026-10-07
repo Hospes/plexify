@@ -108,6 +108,17 @@ class MediaConsolidationTest {
     }
 
     @Test
+    fun `ranks every confident candidate best first`() = with(LoggingContext()) {
+        val unrelated = MediaSearchResult.TvShow(title = "Boyz", year = "2025", tmdbId = "9", provider = "TMDb", matchConfidence = 50.0)
+
+        val ranked = processor.rankMatches(theBoysResults + unrelated, "The Boys", "2022")
+
+        // "Boyz (2025)" passes the title floor but premiered after the filename year, which
+        // puts it below the confidence minimum.
+        assertEquals(listOf("76479", "152483"), ranked.map { (it as CanonicalMedia.TvShow).tmdbId })
+    }
+
+    @Test
     fun `show premiering in the filename year beats an older show of the same title`() = with(LoggingContext()) {
         val results = listOf(
             MediaSearchResult.TvShow(title = "Doctor Who", year = "1963", tmdbId = "121", provider = "TMDb", matchConfidence = 100.0),

@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.withLock
  * This is particularly useful for processing multiple episodes of the same TV show.
  */
 class MetadataCache {
-    private val showCache = mutableMapOf<String, CanonicalMedia.TvShow>()
+    private val showCache = mutableMapOf<String, List<CanonicalMedia.TvShow>>()
     private val failedShowKeys = mutableSetOf<String>()
     private val seasonCache = mutableMapOf<String, CanonicalMedia.Season>()
     private val episodeGroupCache = mutableMapOf<String, List<CanonicalMedia.EpisodeGroup>>()
@@ -21,9 +21,10 @@ class MetadataCache {
     private val episodeGroupMutex = Mutex()
     private val externalIdsMutex = Mutex()
 
-    suspend fun getShow(key: String): CanonicalMedia.TvShow? = showMutex.withLock { showCache[key] }
+    /** The shows matching a search, best first; the runner-ups back the episode lookup up. */
+    suspend fun getShows(key: String): List<CanonicalMedia.TvShow>? = showMutex.withLock { showCache[key] }
 
-    suspend fun putShow(key: String, show: CanonicalMedia.TvShow) = showMutex.withLock { showCache[key] = show }
+    suspend fun putShows(key: String, shows: List<CanonicalMedia.TvShow>) = showMutex.withLock { showCache[key] = shows }
 
     /** Negative cache: remembers show lookups that found no confident match, so they aren't retried. */
     suspend fun isShowFailed(key: String): Boolean = showMutex.withLock { key in failedShowKeys }
