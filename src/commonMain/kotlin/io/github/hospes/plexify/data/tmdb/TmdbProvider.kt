@@ -113,14 +113,19 @@ class TmdbProvider(
             is MediaSearchResult.Movie -> "movie/${result.tmdbId}/alternative_titles"
             is MediaSearchResult.TvShow -> "tv/${result.tmdbId}/alternative_titles"
         }
-        val altTitles = runCatching {
-            httpClient.get(endpoint).body<TmdbAlternativeTitlesDto>().all.map { it.title }
-        }.getOrDefault(emptyList())
-        if (altTitles.isEmpty()) return result
+        val dto = runCatching {
+            httpClient.get(endpoint).body<TmdbAlternativeTitlesDto>()
+        }.getOrNull()
+        val altTitles = dto?.all.orEmpty().map { it.title }
+        if (dto == null || altTitles.isEmpty()) return result
 
         return when (result) {
             is MediaSearchResult.Movie -> result.copy(alternativeTitles = altTitles)
-            is MediaSearchResult.TvShow -> result.copy(alternativeTitles = altTitles)
+            is MediaSearchResult.TvShow -> result.copy(
+                alternativeTitles = altTitles,
+                // The show's own titles name it as a whole, whatever season a tag gives them.
+                seasonTitles = dto.seasonTitles() - setOfNotNull(result.title, result.originalTitle),
+            )
         }.let { enriched ->
             val confidence = enriched.allTitles.maxOf { calculateTitleConfidence(queryTitle, it) }
             when (enriched) {

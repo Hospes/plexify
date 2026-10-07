@@ -50,11 +50,22 @@ class MediaProcessor(
         val titleSimilarity: Double,
         /** The [yearScore] it got, or null when the filename or the candidate has no year. */
         val yearScore: Double?,
+        /** The season the searched title names, when it is that season's own title. */
+        val titleSeason: TitleSeason? = null,
     )
+
+    /** A season named by its own title, e.g. an anime arc: "Kimetsu no Yaiba: Hashira Geiko-hen" is season 5. */
+    internal data class TitleSeason(val season: Int, val title: String)
 
     // Directories already warned about missing season numbers, to avoid repeating the
     // warning for every episode file of the same release.
     private val seasonWarnedDirs = mutableSetOf<String>()
+
+    // The season each searched show title (keyed "title:year", as the show cache is) names, if any.
+    private val titleSeasons = mutableMapOf<String, TitleSeason?>()
+
+    // Show titles already reported as naming their season.
+    private val titleSeasonNotices = mutableSetOf<String>()
 
     // Show+season pairs already reported as mapped (or unmappable) through episode groups.
     private val episodeGroupNotices = mutableSetOf<String>()
@@ -164,13 +175,7 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo.Episode,
         isTestMode: Boolean,
     ) = indent {
-        val season = parsedInfo.season ?: run {
-            if (seasonWarnedDirs.add(source.parent?.toString() ?: source.name)) {
-                status("Warning: No season number found in filenames, defaulting to Season 1 (use -s/--season to set it explicitly).")
-            }
-            1
-        }
-        debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: $season, Episode: ${parsedInfo.episode}")
+        debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
 
         // Step 1: Find the candidate shows, best first, using the cache first.
         val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year)
@@ -181,6 +186,21 @@ class MediaProcessor(
             return@indent
         }
         debug("Found show: ${candidates.first()}")
+
+        // A release named after one season's own title (an anime arc, numbered from 1 with no
+        // season in the filenames) is that season, not season 1.
+        val showKey = "${parsedInfo.showTitle}:${parsedInfo.year}"
+        val season = parsedInfo.season ?: titleSeasons[showKey]?.let { named ->
+            if (titleSeasonNotices.add(showKey)) {
+                status("No season number in filenames; '${named.title}' is Season ${named.season} of ${candidates.first().describe()}")
+            }
+            named.season
+        } ?: run {
+            if (seasonWarnedDirs.add(source.parent?.toString() ?: source.name)) {
+                status("Warning: No season number found in filenames, defaulting to Season 1 (use -s/--season to set it explicitly).")
+            }
+            1
+        }
 
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
         val seasonKey = "${parsedInfo.showTitle}:${parsedInfo.year}:$season"
@@ -271,6 +291,7 @@ class MediaProcessor(
         } else {
             val ranked = rankMatches(searchResults, title, year).filter { it.media is CanonicalMedia.TvShow }
             val best = ranked.firstOrNull()
+            titleSeasons[cacheKey] = best?.titleSeason
             val runnerUps = ranked.drop(1).filter { candidate ->
                 (best != null && candidate.canStandInFor(best)).also { sameShow ->
                     if (!sameShow) debug("Not a fallback for '$title': ${candidate.media.describe()} (title or year differs)")
@@ -548,9 +569,9 @@ class MediaProcessor(
             // Score against every title the group is known by (display, original-language and
             // alternative titles), so a release named with a romaji or localized alias still
             // matches its canonical record.
-            val (bestTitle, similarity) = group.flatMap { it.allTitles }.distinct()
+            val titleScores = group.flatMap { it.allTitles }.distinct()
                 .map { candidateTitle -> candidateTitle to titleSimilarity(normalizedParsedTitle, candidateTitle.normalizedTitle()) }
-                .maxBy { (_, similarity) -> similarity }
+            val (bestTitle, similarity) = titleScores.maxBy { (_, similarity) -> similarity }
             val matchedVia = if (bestTitle != representative.title) " (matched via '${bestTitle}')" else ""
 
             var score = 0.0
@@ -577,7 +598,7 @@ class MediaProcessor(
             score += avgProviderConfidence / 20.0
 
             debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}$matchedVia")
-            ScoredGroup(group, score, similarity, yearScore)
+            ScoredGroup(group, score, similarity, yearScore, seasonNamedBy(group, titleScores))
         }
 
         val bestGroup = scoredGroups.maxByOrNull { it.score }
@@ -607,7 +628,7 @@ class MediaProcessor(
         return@indent scoredGroups
             .filter { it.score >= MINIMUM_CONFIDENCE_SCORE }
             .sortedByDescending { it.score }
-            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore) }
+            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason) }
     }
 
     private class ScoredGroup(
@@ -615,7 +636,26 @@ class MediaProcessor(
         val score: Double,
         val similarity: Double,
         val yearScore: Double?,
+        val titleSeason: TitleSeason?,
     )
+
+    /**
+     * The season the searched title names: when it resembles one season's own title (see
+     * [MediaSearchResult.TvShow.seasonTitles]) more than any title of the whole show. A
+     * release named after the show itself, or equally after two seasons, names none.
+     */
+    private fun seasonNamedBy(group: List<MediaSearchResult>, titleScores: List<Pair<String, Double>>): TitleSeason? {
+        val seasonTitles = group.filterIsInstance<MediaSearchResult.TvShow>()
+            .flatMap { it.seasonTitles.entries }
+            .associate { it.key to it.value }
+        val (seasonScores, showScores) = titleScores.partition { (title, _) -> title in seasonTitles }
+        val best = seasonScores.maxOfOrNull { it.second } ?: return null
+        if (best <= (showScores.maxOfOrNull { it.second } ?: 0.0)) return null
+
+        val named = seasonScores.filter { it.second == best }
+        val season = named.map { seasonTitles.getValue(it.first) }.distinct().singleOrNull() ?: return null
+        return TitleSeason(season, named.first().first)
+    }
 
     /** Merges one candidate's results across providers into a golden record with all their IDs. */
     private fun consolidate(groupItems: List<MediaSearchResult>, parsedYear: String?): CanonicalMedia {
