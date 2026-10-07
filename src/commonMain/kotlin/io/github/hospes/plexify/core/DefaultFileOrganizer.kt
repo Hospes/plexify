@@ -17,6 +17,9 @@ class DefaultFileOrganizer(
     private val overwrite: Boolean = false,
 ) : FileOrganizer {
 
+    /** Folders already cleared of leftover temporary files in this run. */
+    private val cleanedFolders = mutableSetOf<Path>()
+
     override fun organize(
         sourceFile: Path,
         destinationRoot: Path,
@@ -66,6 +69,7 @@ class DefaultFileOrganizer(
         } else {
             throw IllegalStateException("Could not determine parent directory for $finalPath")
         }
+        if (cleanedFolders.add(parentDir)) deleteLeftoverTemporaryFiles(parentDir)
 
         when (mode) {
             // atomicMove replaces an existing target in one step.
@@ -129,6 +133,20 @@ class DefaultFileOrganizer(
     }
 
     /**
+     * Deletes temporary files left in [folder] by a run that was killed between creating one and renaming it into
+     * place: a hardlink to a source file (only that name is removed) or a symlink being moved. Files are organized one
+     * at a time and each operation removes its own temporary file, so any found here are leftovers. (A second plexify
+     * process writing to the same folder at that moment would lose its temporary file, and its replacement would fail
+     * with the old file kept.) Failures are ignored: the file is tried again on the next run.
+     */
+    private fun deleteLeftoverTemporaryFiles(folder: Path) {
+        val entries = runCatching { PlatformFileSystem.list(folder) }.getOrDefault(emptyList())
+        entries.filter { TEMPORARY_NAME.matches(it.name) }.forEach { entry ->
+            runCatching { if (PlatformFileSystem.kind(entry) != FileKind.DIRECTORY) PlatformFileSystem.delete(entry) }
+        }
+    }
+
+    /**
      * A temporary name next to [target]. It is short and fixed-length, so it can't push the path past a length limit
      * (Windows MAX_PATH) that the target itself fits in. It has no video extension, so a media server scanning the
      * library doesn't take it for a video.
@@ -140,4 +158,9 @@ class DefaultFileOrganizer(
     private fun isSameFileOnDisk(source: Path, target: Path): Boolean =
         runCatching { SystemFileSystem.resolve(source) == SystemFileSystem.resolve(target) }.getOrDefault(false) ||
             isSameFile(source, target)
+
+    private companion object {
+        /** Names from [temporaryPath], and nothing else a user might keep in the library. */
+        val TEMPORARY_NAME = Regex("""\.plexify-[0-9a-f]{8}\.tmp""")
+    }
 }
