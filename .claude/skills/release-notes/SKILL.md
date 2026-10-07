@@ -37,7 +37,7 @@ Lead with the log (Conventional Commit subjects are structured signal), use `--s
 
 ## STEP 2 — Classification by commit type
 
-Commits follow **Conventional Commits** (`<type>(<scope>)?: <summary>`, scopes: `parser`, `metadata`, `naming`, `cli`, `core`, `cache`, `build`, `ci`):
+Commits follow **Conventional Commits** (`<type>(<scope>)?: <summary>`, scopes: `parser`, `metadata`, `naming`, `cli`, `core`, `cache`, `build`, `ci`, `deps`):
 
 | Type | Category |
 |---|---|
@@ -45,8 +45,8 @@ Commits follow **Conventional Commits** (`<type>(<scope>)?: <summary>`, scopes: 
 | `fix` | 🐛 Bug Fixes |
 | `perf` | ⚡ Performance |
 | `!` after type/scope, or `BREAKING CHANGE:` footer | ⚠️ Breaking Changes (listed **first**, in addition to its normal category) |
-| `refactor` | Excluded — unless the diff shows a user-visible change, then reclassify as fix/enhancement |
-| `docs`, `test`, `build`, `ci`, `chore` | Excluded from release notes |
+| `refactor` | Excluded — unless the diff shows a user-visible change, then reclassify it as a bug fix or new feature |
+| `docs`, `test`, `build`, `ci`, `chore` (incl. `build(deps)` / `ci(deps)` dependency bumps) | Excluded from release notes |
 
 Platform notes: the code is cross-platform from a single codebase, so changes are **not** tagged per platform. Only if a change touches solely `windowsMain`/`mingwX64` or `linuxMain`/`linuxX64` source sets (or one platform's packaging), prefix that bullet with `[Windows]` or `[Linux]`.
 
@@ -64,7 +64,7 @@ Audience: users who install from GitHub — assume CLI-literate. In chat, wrap t
 
 **File mode (CI):** write the Markdown itself to the given file — no wrapping fence, no `# v…` title (the workflow sets the release title to the tag), no commentary. The file starts with `### Summary` and ends with the Full Changelog line. Then run `./scripts/validate-release-notes.sh <file> <from> <to>` and fix what it reports until it exits 0.
 
-1. **Title:** `# v{{version}}` (chat only; omitted in file mode)
+1. **Title:** `# {{version}}` — the bare tag, no `v` prefix, as tags and release titles are (chat only; omitted in file mode)
 2. **`### Summary`** — 2–4 sentences on what this release brings and why it matters. Non-technical, no commit-speak.
 3. **Categories** (omit empty ones), in order: ⚠️ Breaking Changes · ✨ New Features · ⚡ Performance · 🐛 Bug Fixes. Highest user impact first within each.
 4. **Bullets:** readable impact statements. New CLI flags shown as code (`` `-y/--year` ``) with a one-line example where it helps. Reference commits sparingly — only for changes a user might want to inspect.
@@ -75,7 +75,7 @@ Audience: users who install from GitHub — assume CLI-literate. In chat, wrap t
 Audience: forum/Reddit/chat readers who may never have heard of Plexify. English only, **no markdown** (no `#`, `**`, backticks — plain text that survives any forum).
 
 - **Length:** 80–150 words.
-- **Structure:** one opener line `Plexify v{{version}} is out — <one-phrase hook>.`; a one-sentence reminder of what Plexify is (organizes movie/TV files into a clean Plex/Jellyfin library structure); 3–6 short lines starting with `- ` covering the highlights in user language; one closing line with the release link: `https://github.com/Hospes/plexify/releases/tag/<version>`.
+- **Structure:** one opener line `Plexify {{version}} is out — <one-phrase hook>.`; a one-sentence reminder of what Plexify is (organizes movie/TV files into a clean Plex/Jellyfin library structure); 3–6 short lines starting with `- ` covering the highlights in user language; one closing line with the release link: `https://github.com/Hospes/plexify/releases/tag/<version>`.
 - **Tone:** friendly and factual, no marketing superlatives. Flags may be mentioned by name (e.g. "new --year option") since the audience is CLI users.
 - Skip breaking-change migration detail — just flag it exists and point to the release page.
 
