@@ -289,13 +289,20 @@ object MediaFilenameParser {
             season = season,
             episode = episode,
             lastEpisode = lastEpisode,
-            year = year ?: yearRegex.find(normalized)?.value,
+            year = year ?: episodeYear(normalized, showTitle),
             resolution = resolutionRegex.find(normalized)?.value,
             quality = qualityRegex.find(normalized)?.value,
             hdr = extractHdr(normalized),
             releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup,
             edition = extractEdition(normalized),
         )
+
+    // The first year outside the show's own title: "1923.S01E01" has none (the show premiered in 2022),
+    // "The.Boys.S03E01.2022" has 2022.
+    private fun episodeYear(normalized: String, showTitle: String): String? {
+        val titleWords = showTitle.split(' ').toSet()
+        return yearRegex.findAll(normalized).map { it.value }.firstOrNull { it !in titleWords }
+    }
 
     private fun extractHdr(normalizedText: String): String? =
         hdrRegex.find(normalizedText)?.value?.let { hdrLookup[it.lowercase()] }
