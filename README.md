@@ -212,7 +212,7 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 | `NxNN`                                                   | `Friends.1x01.mkv`, `Friends - 02x24 - Title.mkv`, `Friends.10x17-18.mkv` | the name        |
 | Fansub `Show - NN` (optional `v2`, absolute numbers)     | `[SubsPlease] Sousou no Frieren - 01 (1080p) [ABCD1234].mkv`, `Show - 01v2.mkv`, `[SubsPlease] One Piece - 1071 (1080p).mkv` | `S2` / `Season 2` / `2nd Season` closing the title, else the parent folder |
 | `Season N` / `SN` + `[NN]`                               | `Tsue_to_Tsurugi_no_Wistoria_Season_2_[01]_[HEVC].mkv`, `Gate_S2_[12].mkv` | the name       |
-| `[NN]`                                                   | `Dungeon.Meshi.[13].[1080p].mkv`                                        | the parent folder (`Season 2`, `S02`, `S2`) |
+| `[NN]` (square brackets only)                            | `Dungeon.Meshi.[13].[1080p].mkv`                                        | the parent folder (`Season 2`, `S02`, `S2`) |
 
 -   A name that starts with the episode (`S01E01 - Pilot.mkv`) has no show title; set it with `-t`.
 -   When no season is found, Season 1 is assumed (with a warning); use `-s` to set it. Two exceptions, both looked up on TMDB:
@@ -378,7 +378,7 @@ Run with `--test --verbose` first. The log shows what was parsed from each filen
 ### Known limitations
 
 -   **Absolute episode numbers** (`One Piece - 1071`, or `S01E1071`) are placed through the show's TMDB absolute-order episode group. A show without one needs `-s` and `--episode-offset`.
--   **Fansub `Show - NN` names**: a number after ` - ` is read as an episode, so a movie named `Title - 2.mkv` is parsed as one (name it `Title 2 (Year).mkv`). Years are excluded: `Alien - 1979.mkv` stays a movie, and so does any `- 19xx`/`- 20xx`. Batch ranges (`Show - 01-12`), specials (`Show - OVA`, `Show - 12.5`) and episode-only names (`01.mkv`) are not recognized.
+-   **Fansub `Show - NN` names**: a number after ` - ` is read as an episode, so a movie named `Title - 2.mkv` is parsed as one (name it `Title 2 (Year).mkv`). Years are excluded: `Alien - 1979.mkv` stays a movie, and so does any `- 19xx`/`- 20xx`, or a number with a bracketed year after it (`Star Wars - 4 - A New Hope (1977).mkv`). Batch ranges (`Show - 01-12`), specials (`Show - OVA`, `Show - 12.5`) and episode-only names (`01.mkv`) are not recognized.
 -   **Multi-episode ranges** must be consecutive episodes of one season. Ranges across seasons (`S01E24-S02E01`) are filed as their first episode, and so is a range TMDB lists as a single episode (*Friends* "The Last One", `10x17-18`).
 -   **Release groups**: scene suffixes (`-YTS`) aren't read as release groups.
 -   **Year-numbered seasons** (`S2024E01`) are parsed, but match only if TMDB numbers the show's seasons by year.
