@@ -24,9 +24,10 @@ object MediaFilenameParser {
 
     // Tier 2a: anime fansub style "[SubsPlease] Show - 01 (1080p) [ABCD1234]", "Show - 01v2", absolute
     // "Show - 1071". A year is not an episode: neither a 19xx/20xx number ("Alien - 1979") nor a number
-    // followed by a bracketed year ("Title - 6 (2013)").
+    // with a bracketed year after it, which makes the name a movie's ("Title - 6 (2013)", "Star Wars - 4 - A
+    // New Hope (1977)").
     private val dashEpisodeRegex =
-        """\s-\s(?!(?:19|20)\d{2}(?:\D|$))(\d{1,4})(?:v\d{1,2})?(?=\s|$|[\[(])(?!\s*[\[(](?:19|20)\d{2}[\])])""".toRegex()
+        """\s-\s(?!(?:19|20)\d{2}(?:\D|$))(\d{1,4})(?:v\d{1,2})?(?=\s|$|[\[(])(?!.*[\[(](?:19|20)\d{2}[\])])""".toRegex()
 
     // A season marker closing a fansub title: "Show S2", "Show Season 2", "Show 2nd Season"
     private val trailingSeasonRegex =
@@ -40,8 +41,10 @@ object MediaFilenameParser {
     private val seasonKeywordRegex = """(?:^|\s)(?:Season\s+|S)(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
 
     // Tiers 2-4: [NN] bracket episode — 1-3 digits only (avoids matching [1080p] which contains letters).
-    // AniLibria marks a season's last episode "[26_END]", which reads "[26 END]" once normalized.
-    private val bracketEpisodeRegex = """[\[(](\d{1,3})(?:\s+END)?[\])]""".toRegex(RegexOption.IGNORE_CASE)
+    // AniLibria marks a season's last episode "[26_END]", which reads "[26 END]" once normalized. Square
+    // brackets only: a number in parentheses is a title's ("(500) Days of Summer") or the " (1)" a browser
+    // adds to a second download of the same name.
+    private val bracketEpisodeRegex = """\[(\d{1,3})(?:\s+END)?]""".toRegex(RegexOption.IGNORE_CASE)
 
     // Tier 3: Season number from parent directory name ("Season 2", "S02", "S2")
     private val seasonFromDirRegex = """(?:Season|S)\s*(\d{1,2})(?:\b|${'$'})""".toRegex(RegexOption.IGNORE_CASE)

@@ -218,6 +218,22 @@ class MovieFilenameParserTest {
             filename = "[REC] (2007).mkv",
             expected = ParsedMediaInfo.Movie(title = "rec", year = "2007")
         ),
+        // A number in parentheses is not a bracket-numbered episode
+        TestCase(
+            filename = "(500) Days of Summer (2009).mkv",
+            expected = ParsedMediaInfo.Movie(title = "500 days of summer", year = "2009")
+        ),
+        // The " (1)" a browser adds to a second download of the same name
+        TestCase(
+            filename = "Inception (2010) (1).mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+        ),
+        // A number between dashes is not a fansub episode when a bracketed year follows
+        TestCase(
+            filename = "Star Wars - 4 - A New Hope (1977).mkv",
+            expected = ParsedMediaInfo.Movie(title = "star wars 4 a new hope", year = "1977")
+        ),
+
         // --- The title ends at a bracketed year ---
         // Plex's edition tag
         TestCase(
