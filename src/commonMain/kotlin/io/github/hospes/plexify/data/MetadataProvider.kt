@@ -12,6 +12,13 @@ interface MetadataProvider {
 
     suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>>
 
+    /**
+     * Movies titled like [title] with a release in [year]: a narrower second search for when [search]
+     * misses the film, e.g. a remake whose namesakes fill the first page. A provider whose [search]
+     * already filters by year returns nothing.
+     */
+    suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = Result.success(emptyList())
+
     suspend fun episode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode> =
         Result.failure(UnsupportedOperationException("episode() not supported by provider '$id'"))
 
