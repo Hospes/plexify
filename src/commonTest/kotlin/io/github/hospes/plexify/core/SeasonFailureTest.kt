@@ -4,6 +4,8 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class SeasonFailureTest {
 
@@ -27,9 +29,11 @@ class SeasonFailureTest {
 
         val run = runProcessor(provider, "Ghosts.S04E01.1080p.WEB.mkv", "Ghosts.S04E02.1080p.WEB.mkv")
 
-        // Files come in directory order, which only Windows keeps alphabetical: either one may be first.
+        // Files are processed in name order: E01 gets the failed fetch, E02 the one that loads.
         assertEquals(1, run.stats.failed)
         assertEquals(1, run.stats.organized)
+        assertNull(run.episodeOf("Ghosts.S04E01.1080p.WEB.mkv"))
+        assertNotNull(run.episodeOf("Ghosts.S04E02.1080p.WEB.mkv"))
         assertEquals(listOf("1:4", "1:4"), run.provider.seasonFetches)
     }
 

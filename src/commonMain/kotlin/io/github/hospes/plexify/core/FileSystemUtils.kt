@@ -80,13 +80,22 @@ expect val PlatformFileSystem: MediaFileSystem
 /**
  * Recursively walks the file system from [root], yielding every regular file under it ([root] itself if it is one).
  *
+ * Each directory's entries are visited in [FileNameOrder], descending into a subdirectory where its name sorts, so
+ * the order is the same on every platform and file system. The file system's own order is not: `readdir` on ext4 is
+ * hash order, and FAT32/exFAT list entries in the order they were written. Which file comes first decides which of
+ * two files with the same target keeps it, and which show a season is placed in.
+ *
  * Directories are not yielded, only traversed. A missing [root] yields nothing. A path that can't be examined,
  * or a directory that can't be listed, is passed to [onUnreadable] with the error and skipped, so the caller can
  * report it instead of losing it silently.
  */
-fun walkFiles(root: Path, onUnreadable: (Path, Exception) -> Unit = { _, _ -> }): Sequence<Path> = sequence {
+fun walkFiles(
+    root: Path,
+    fileSystem: MediaFileSystem = PlatformFileSystem,
+    onUnreadable: (Path, Exception) -> Unit = { _, _ -> },
+): Sequence<Path> = sequence {
     val kind = try {
-        PlatformFileSystem.kind(root)
+        fileSystem.kind(root)
     } catch (e: Exception) {
         onUnreadable(root, e)
         return@sequence
@@ -96,13 +105,53 @@ fun walkFiles(root: Path, onUnreadable: (Path, Exception) -> Unit = { _, _ -> })
         FileKind.REGULAR_FILE -> yield(root)
         FileKind.DIRECTORY -> {
             val children = try {
-                PlatformFileSystem.list(root)
+                fileSystem.list(root)
             } catch (e: Exception) {
                 onUnreadable(root, e)
                 return@sequence
             }
-            children.forEach { yieldAll(walkFiles(it, onUnreadable)) }
+            children.sortedWith(compareBy(FileNameOrder) { it.name })
+                .forEach { yieldAll(walkFiles(it, fileSystem, onUnreadable)) }
         }
         FileKind.OTHER, null -> Unit
     }
+}
+
+/**
+ * The order of names in a directory: ignoring case, with runs of digits compared by value (`E2` before `E10`), the way
+ * Windows Explorer and most file managers sort. Names that differ only in case or in leading zeros (`E02`, `E2`) are
+ * put in plain string order, so no two different names are equal.
+ */
+internal val FileNameOrder: Comparator<String> = Comparator { a, b ->
+    compareNatural(a, b).takeIf { it != 0 } ?: a.compareTo(b)
+}
+
+private fun compareNatural(a: String, b: String): Int {
+    var i = 0
+    var j = 0
+    while (i < a.length && j < b.length) {
+        if (a[i] in '0'..'9' && b[j] in '0'..'9') {
+            val endA = a.digitRunEnd(i)
+            val endB = b.digitRunEnd(j)
+            val numberA = a.substring(i, endA).trimStart('0')
+            val numberB = b.substring(j, endB).trimStart('0')
+            // Without leading zeros, a longer number is a larger one; same length compares digit by digit.
+            val byValue = compareValuesBy(numberA, numberB, { it.length }, { it })
+            if (byValue != 0) return byValue
+            i = endA
+            j = endB
+        } else {
+            val byChar = a[i].lowercaseChar().compareTo(b[j].lowercaseChar())
+            if (byChar != 0) return byChar
+            i++
+            j++
+        }
+    }
+    return (a.length - i).compareTo(b.length - j)
+}
+
+private fun String.digitRunEnd(start: Int): Int {
+    var end = start
+    while (end < length && this[end] in '0'..'9') end++
+    return end
 }

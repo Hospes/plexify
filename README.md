@@ -251,7 +251,7 @@ By default, Plexify never deletes or overwrites a file that is already at the ta
 
 -   **The target is the file itself.** The source already sits at its target (for example, when you run Plexify over an existing library), or the target is a hardlink to the source (or to the file a symlinked source points at). The file is left alone: `= Movie.mkv — already in the library: <path>`.
 -   **A different file is at the target.** Both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, run again with `--overwrite` (`-o`), or delete or rename the existing file yourself.
--   **An earlier file of the same run has the target.** Two sources can get the same name, for example a release and its `REPACK` (`{version}` only holds resolution, source, HDR and edition). The first one processed keeps the target, and the later one is left alone: `✗ Movie.REPACK.mkv — same target as Movie.mkv earlier in this run: <path>`. This also applies to a file that was already in place. To keep the later file instead, organize it on its own in a separate run with `--overwrite`.
+-   **An earlier file of the same run has the target.** Two sources can get the same name, for example a release and its `REPACK` (`{version}` only holds resolution, source, HDR and edition). The first one processed keeps the target, and the later one is left alone: `✗ Movie.REPACK.mkv — same target as Movie.mkv earlier in this run: <path>`. Files are processed in name order (see *How It Works* below), so of two files in one folder, the one whose name sorts first wins, on every platform and file system. This also applies to a file that was already in place. To keep the later file instead, organize it on its own in a separate run with `--overwrite`.
 
 With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010)/Movie (2010).mkv (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name (`.plexify-<8 hex digits>.tmp`) first and then renamed over the old file, so the old file stays if linking fails. If Plexify is killed between those two steps, the temporary file is left next to the old one; the next run that writes to that folder deletes it. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the other two cases: a file that already is its own target, or one this run already placed, is always left alone.
 
@@ -332,6 +332,8 @@ Because `{version}` brings its own leading ` - `, put it directly after the prec
 -   Repeated spaces are collapsed, and leading and trailing spaces are trimmed.
 
 ## ⚙️ How It Works
+
+Plexify goes through the source folder one file at a time, in name order: each folder's entries are sorted ignoring case, with numbers compared by value (`E2` before `E10`), and a subfolder is entered where its name sorts. The order is the same on Linux and Windows and on every file system, so a rerun processes the same files in the same order. It matters when files compete: for the same target (the first one keeps it), and for a season's show (the first file of a season places it).
 
 Every file goes through the same pipeline:
 
