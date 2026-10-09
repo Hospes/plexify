@@ -300,19 +300,17 @@ class EpisodeFilenameParserTest {
 
     @Test
     fun `parses list of episodes correctly`() {
-        episodes.forEach { (filename, parentDirName, expected) ->
+        // Every failing name at once, not only the first
+        val failures = episodes.mapNotNull { (filename, parentDirName, expected) ->
             val actual = MediaFilenameParser.parse(filename, parentDirName)
-
-            assertTrue(
-                actual = (actual == expected),
-                message = """
+            if (actual == expected) null else """
             Test failed for filename: '$filename'
             -------------------------------------------------
             Expected: $expected
             Actual:   $actual
             -------------------------------------------------
             """.trimIndent()
-            )
         }
+        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
     }
 }
