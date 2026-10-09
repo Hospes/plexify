@@ -118,7 +118,7 @@ class EpisodeFilenameParserTest {
         ),
         TestCase(
             filename = "Space.1999.S01E01.Breakaway.mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "space 1999", season = 1, episode = 1, year = null)
+            expected = ParsedMediaInfo.Episode(showTitle = "space", season = 1, episode = 1, year = "1999", bareShowYear = true)
         ),
         TestCase(
             filename = "[Group] 1923 - 01 [1080p].mkv",
@@ -170,6 +170,16 @@ class EpisodeFilenameParserTest {
         TestCase(
             filename = "Some Show (2020) - S02E05 - The Final Cut.mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 2, episode = 5, year = "2020")
+        ),
+
+        // --- A bare year closing a scene show name is the show's year ---
+        TestCase(
+            filename = "Doctor.Who.2005.S01E01.Rose.1080p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "doctor who", season = 1, episode = 1, year = "2005", resolution = "1080p", bareShowYear = true)
+        ),
+        TestCase(
+            filename = "The.Flash.2014.S01E01.720p.HDTV.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the flash", season = 1, episode = 1, year = "2014", resolution = "720p", quality = "HDTV", bareShowYear = true)
         ),
 
         // --- SxxEyy variants ---

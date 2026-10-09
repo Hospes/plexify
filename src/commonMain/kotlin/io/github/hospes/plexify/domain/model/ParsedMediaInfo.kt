@@ -29,6 +29,11 @@ sealed interface ParsedMediaInfo {
         override val edition: String? = null,
         /** The last episode of a multi-episode file (`S01E01-E03` → 3); null for a single episode. */
         val lastEpisode: Int? = null,
+        /**
+         * [year] closed the show name without brackets ("Doctor.Who.2005.S01E01"), so it may belong to the
+         * title instead ("Space.1999.S01E01" is *Space: 1999*).
+         */
+        val bareShowYear: Boolean = false,
     ) : ParsedMediaInfo
 }
 

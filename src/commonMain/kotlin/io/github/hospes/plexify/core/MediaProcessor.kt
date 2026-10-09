@@ -241,7 +241,7 @@ class MediaProcessor(
         debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
 
         // Step 1: Find the candidate shows, best first, using the cache first.
-        val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year)
+        val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year, parsedInfo.bareShowYear)
             .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (candidates.isEmpty()) {
             status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
@@ -345,7 +345,11 @@ class MediaProcessor(
      * next file of the show searches again.
      */
     context(_: LoggingContext)
-    private suspend fun findOrFetchShows(title: String, year: String?): Result<List<CanonicalMedia.TvShow>> = indent {
+    private suspend fun findOrFetchShows(
+        title: String,
+        year: String?,
+        bareYear: Boolean,
+    ): Result<List<CanonicalMedia.TvShow>> = indent {
         val cacheKey = "$title:$year"
         val cachedShows = cache.getShows(cacheKey)
         if (cachedShows != null) {
@@ -358,15 +362,13 @@ class MediaProcessor(
         }
         debug("Cache MISS for show: '$title'. Searching providers...")
 
-        val searchResults = metadataService.search(title, year)
+        val (searchResults, ranked) = lookUpShows(title, year, bareYear)
             .getOrElse { error -> return@indent Result.failure(error) }
-            .filterIsInstance<MediaSearchResult.TvShow>()
 
         val shows = if (searchResults.isEmpty()) {
             status("No match for '$title': providers returned no results.")
             emptyList()
         } else {
-            val ranked = rankMatches(searchResults, title, year).filter { it.media is CanonicalMedia.TvShow }
             val best = ranked.firstOrNull()
             titleSeasons[cacheKey] = best?.titleSeason
             if (best?.namesUnplacedArc == true) unplacedArcTitles += cacheKey
@@ -390,6 +392,50 @@ class MediaProcessor(
         }
 
         return@indent Result.success(shows)
+    }
+
+    /**
+     * Every show result found for [title] and [year], with the ranked candidates. A [bareYear] closed the
+     * show name without brackets, so unless the user set the title or the year, it may belong to the title:
+     * when no show from that year matches, the name is also searched with the year as part of the title
+     * ("Space.1999.S01E01" is *Space: 1999*), and that match wins if it scores higher.
+     */
+    context(_: LoggingContext)
+    private suspend fun lookUpShows(
+        title: String,
+        year: String?,
+        bareYear: Boolean,
+    ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
+        val found = metadataService.search(title, year)
+            .getOrElse { return Result.failure(it) }
+            .filterIsInstance<MediaSearchResult.TvShow>()
+        val titleYear = year?.takeIf { bareYear && titleOverride == null && yearOverride == null }
+        val ranking = rankMatches(found, title, year, reportMiss = titleYear == null).filter { it.media is CanonicalMedia.TvShow }
+        if (titleYear == null || (ranking.firstOrNull()?.media as? CanonicalMedia.TvShow)?.year?.toString() == titleYear) {
+            return Result.success(found to ranking)
+        }
+
+        val joinedTitle = "$title $titleYear"
+        debug("No show from $titleYear matched; trying '$joinedTitle' as the whole title")
+        val joined = metadataService.search(joinedTitle, null).fold(
+            onSuccess = { it.filterIsInstance<MediaSearchResult.TvShow>() },
+            onFailure = { error ->
+                // With no candidate yet, the failed search decides the file.
+                if (ranking.isEmpty()) return Result.failure(error)
+                debug("Search failed: ${error.message}")
+                emptyList()
+            },
+        )
+        // Only a show whose title has the year: the reading has no year to rule out other shows.
+        val joinedRanking = rankMatches(joined, joinedTitle, null, reportMiss = false)
+            .filter { (it.media as? CanonicalMedia.TvShow)?.title?.contains(titleYear) == true }
+        val joinedScore = joinedRanking.firstOrNull()?.score
+        if (joinedScore != null && joinedScore > (ranking.firstOrNull()?.score ?: 0.0)) {
+            debug("'$joinedTitle' matches better (${joinedScore.format(2)})")
+            return Result.success(found + joined to joinedRanking)
+        }
+        if (ranking.isEmpty()) rankMatches(found, title, year) // reports why nothing matched
+        return Result.success(found + joined to ranking)
     }
 
     /**

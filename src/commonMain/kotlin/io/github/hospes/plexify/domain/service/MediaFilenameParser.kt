@@ -51,6 +51,8 @@ object MediaFilenameParser {
     private val yearRegex = """\b(19\d{2}|20\d{2})\b""".toRegex()
     // "Show (2015)": a parenthesized year closing the show title, as in plexify's own episode names
     private val trailingYearRegex = """\((19\d{2}|20\d{2})\)$""".toRegex()
+    // "Doctor.Who.2005": a bare year closing a scene show name, unless it is all of it ("1923")
+    private val trailingBareYearRegex = """[._\s](19\d{2}|20\d{2})$""".toRegex()
 
     // The latest year a release can carry: next year's films already circulate as festival copies and
     // screeners. A later one is a title word, as in "Blade.Runner.2049.1080p".
@@ -127,7 +129,11 @@ object MediaFilenameParser {
         val episodeMatch = episodeRegex.find(workingFilename) ?: crossEpisodeRegex.find(workingFilename)
         if (episodeMatch != null) {
             val showPart = workingFilename.substring(0, episodeMatch.range.first).trimEnd(' ', '-', '.', '_')
-            val showYear = trailingYearRegex.find(showPart)
+            val bracketedYear = trailingYearRegex.find(showPart)
+            val bareYear = if (bracketedYear != null) null else trailingBareYearRegex.find(showPart)?.takeIf {
+                it.groupValues[1].isReleaseYear() && cleanShowTitle(showPart.substring(0, it.range.first)).isNotEmpty()
+            }
+            val showYear = bracketedYear ?: bareYear
             val showTitle = cleanShowTitle(showYear?.let { showPart.substring(0, it.range.first) } ?: showPart)
 
             // Plexify's own names: "Show (2015) - S01E13 - Episode Title - [720p] [HDTV]". The episode
@@ -150,6 +156,7 @@ object MediaFilenameParser {
                 normalized = metadataText.replace('.', ' ').replace('_', ' '),
                 editionText = editionText.replace('.', ' ').replace('_', ' '),
                 year = showYear?.groupValues?.get(1),
+                bareShowYear = bareYear != null,
                 leadingGroup = leadingGroup,
             )
         }
@@ -298,6 +305,7 @@ object MediaFilenameParser {
         editionText: String = normalized,
         lastEpisode: Int? = null,
         year: String? = null,
+        bareShowYear: Boolean = false,
         leadingGroup: String? = null,
     ) =
         ParsedMediaInfo.Episode(
@@ -311,6 +319,7 @@ object MediaFilenameParser {
             hdr = extractHdr(normalized),
             releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup,
             edition = extractEdition(editionText),
+            bareShowYear = bareShowYear,
         )
 
     // The first year outside the show's own title: "1923.S01E01" has none (the show premiered in 2022),
