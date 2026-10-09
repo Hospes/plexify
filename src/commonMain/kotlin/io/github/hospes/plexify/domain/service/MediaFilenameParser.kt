@@ -1,6 +1,9 @@
 package io.github.hospes.plexify.domain.service
 
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 object MediaFilenameParser {
 
@@ -46,6 +49,11 @@ object MediaFilenameParser {
     private val yearRegex = """\b(19\d{2}|20\d{2})\b""".toRegex()
     // "Show (2015)": a parenthesized year closing the show title, as in plexify's own episode names
     private val trailingYearRegex = """\((19\d{2}|20\d{2})\)$""".toRegex()
+
+    // The latest year a release can carry: next year's films already circulate as festival copies and
+    // screeners. A later one is a title word, as in "Blade.Runner.2049.1080p".
+    private val latestReleaseYear = Clock.System.now().toLocalDateTime(TimeZone.UTC).year + 1
+    private fun String.isReleaseYear(): Boolean = toInt() <= latestReleaseYear
 
     // --- Names plexify itself writes ---
     // Provider-ID tags: the [tmdbid-27205] / [imdbid-tt1375666] forms our templates produce, plus the
@@ -231,7 +239,7 @@ object MediaFilenameParser {
         workingTitle = workingTitle.replace(versionSuffixRegex, "")
 
         // 3. Find the year using a prioritized approach.
-        val yearInBracketsMatch = yearInBracketsRegex.find(workingTitle)
+        val yearInBracketsMatch = yearInBracketsRegex.findAll(workingTitle).firstOrNull { it.groupValues[1].isReleaseYear() }
         if (yearInBracketsMatch != null) {
             // Priority 1: Year in brackets or parentheses is most reliable.
             year = yearInBracketsMatch.groupValues[1] // groupValues[1] is the captured year number
@@ -239,10 +247,12 @@ object MediaFilenameParser {
             workingTitle = workingTitle.replace(yearInBracketsMatch.value, " ")
         } else {
             // Priority 2 (Fallback): Find all potential years and assume the *last* one is the release year.
-            // This helps with titles like "2001 A Space Odyssey 1968".
-            val yearMatches = yearRegex.findAll(workingTitle).toList()
-            if (yearMatches.isNotEmpty()) {
-                val lastYearMatch = yearMatches.last()
+            // This helps with titles like "2001 A Space Odyssey 1968". A year with no title before it is
+            // the title ("1917.1080p"), and so is one no release can have yet.
+            val lastYearMatch = yearRegex.findAll(workingTitle).lastOrNull { match ->
+                match.value.isReleaseYear() && workingTitle.take(match.range.first).any { it.isLetterOrDigit() }
+            }
+            if (lastYearMatch != null) {
                 year = lastYearMatch.value
                 // Cut the string at the position of the last year found. This is our primary title delimiter.
                 workingTitle = workingTitle.take(lastYearMatch.range.first)
@@ -301,7 +311,7 @@ object MediaFilenameParser {
     // "The.Boys.S03E01.2022" has 2022.
     private fun episodeYear(normalized: String, showTitle: String): String? {
         val titleWords = showTitle.split(' ').toSet()
-        return yearRegex.findAll(normalized).map { it.value }.firstOrNull { it !in titleWords }
+        return yearRegex.findAll(normalized).map { it.value }.firstOrNull { it !in titleWords && it.isReleaseYear() }
     }
 
     private fun extractHdr(normalizedText: String): String? =

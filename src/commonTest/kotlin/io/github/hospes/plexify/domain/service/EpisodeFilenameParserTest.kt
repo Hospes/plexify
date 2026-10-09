@@ -113,6 +113,10 @@ class EpisodeFilenameParserTest {
             expected = ParsedMediaInfo.Episode(showTitle = "1923", season = 1, episode = 1, year = "2022", resolution = "1080p")
         ),
         TestCase(
+            filename = "Blade.Runner.2099.S01E01.2049.1080p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "blade runner 2099", season = 1, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
             filename = "Space.1999.S01E01.Breakaway.mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "space 1999", season = 1, episode = 1, year = null)
         ),
