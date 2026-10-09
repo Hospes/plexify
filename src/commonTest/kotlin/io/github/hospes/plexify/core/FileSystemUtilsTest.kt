@@ -60,6 +60,47 @@ class FileSystemUtilsTest {
     }
 
     @Test
+    fun `walkFiles visits each directory in name order whatever order it is listed in`() {
+        // Listed the way FAT32 or ext4 might: write order or hash order, not by name.
+        val fileSystem = ListedFileSystem(
+            "show" to listOf("Show.S01E10.mkv", "Season 2", "Show.S01E02.mkv", "extras", "show.S01E01.mkv"),
+            "show/Season 2" to listOf("Show.S02E01.mkv", "Show.S02E01.REPACK.mkv"),
+            "show/extras" to listOf("b.mkv", "A.mkv"),
+        )
+
+        val found = walkFiles(Path("show"), fileSystem).map { it.toString().replace('\\', '/') }.toList()
+
+        assertEquals(
+            listOf(
+                "show/extras/A.mkv",
+                "show/extras/b.mkv",
+                "show/Season 2/Show.S02E01.mkv",
+                "show/Season 2/Show.S02E01.REPACK.mkv",
+                "show/show.S01E01.mkv",
+                "show/Show.S01E02.mkv",
+                "show/Show.S01E10.mkv",
+            ),
+            found,
+        )
+    }
+
+    @Test
+    fun `FileNameOrder ignores case and compares numbers by value`() {
+        val sorted = listOf("Show - 10.mkv", "show - 2.mkv", "Show - 02.mkv", "Show - 1.mkv", "Show.mkv", "Show - 9B.mkv", "Show - 9a.mkv")
+            .sortedWith(FileNameOrder)
+
+        // "Show - 02" and "show - 2" are equal but for case and padding, and fall back to plain string order.
+        assertEquals(listOf("Show - 1.mkv", "Show - 02.mkv", "show - 2.mkv", "Show - 9a.mkv", "Show - 9B.mkv", "Show - 10.mkv", "Show.mkv"), sorted)
+    }
+
+    @Test
+    fun `FileNameOrder puts a release before its tagged versions`() {
+        val sorted = listOf("Movie.2010.REPACK.mkv", "Movie.2010.mkv", "Movie.2010.PROPER.mkv").sortedWith(FileNameOrder)
+
+        assertEquals(listOf("Movie.2010.mkv", "Movie.2010.PROPER.mkv", "Movie.2010.REPACK.mkv"), sorted)
+    }
+
+    @Test
     fun `resolveSymbolicLink follows a chain of links`() {
         val real = file(Path(root, "real.mkv"))
         val first = Path(root, "first.mkv")
@@ -110,6 +151,19 @@ class FileSystemUtilsTest {
         SystemFileSystem.sink(staging).buffered().use { it.writeString("") }
         PlatformFileSystem.atomicMove(staging, path)
         return path
+    }
+
+    /** Directories (by `/`-separated path) listing their entries in the given order; any other path is a file. */
+    private class ListedFileSystem(vararg directories: Pair<String, List<String>>) : MediaFileSystem {
+        private val directories = directories.toMap()
+
+        override fun kind(path: Path) = if (key(path) in directories) FileKind.DIRECTORY else FileKind.REGULAR_FILE
+        override fun list(directory: Path) = directories.getValue(key(directory)).map { Path(directory, it) }
+        override fun createDirectories(path: Path) = throw UnsupportedOperationException()
+        override fun atomicMove(source: Path, destination: Path) = throw UnsupportedOperationException()
+        override fun delete(path: Path) = throw UnsupportedOperationException()
+
+        private fun key(path: Path) = path.toString().replace('\\', '/')
     }
 
     private fun deleteRecursively(path: Path) {
