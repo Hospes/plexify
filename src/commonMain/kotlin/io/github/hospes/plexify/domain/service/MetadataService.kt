@@ -26,7 +26,18 @@ class MetadataService(
      * reports it. Other provider errors are logged and count as no results.
      */
     context(_: LoggingContext)
-    suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = coroutineScope {
+    suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> =
+        searchAll { search(title, year) }
+
+    /** Movies with a release in [year], from every active provider; fails as [search] does. */
+    context(_: LoggingContext)
+    suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> =
+        searchAll { searchMovies(title, year) }
+
+    context(_: LoggingContext)
+    private suspend fun searchAll(
+        query: suspend MetadataProvider.() -> Result<List<MediaSearchResult>>,
+    ): Result<List<MediaSearchResult>> = coroutineScope {
         indent {
             val activeProviders = resolveActiveProviders()
             if (activeProviders.isEmpty()) {
@@ -34,7 +45,7 @@ class MetadataService(
                 return@coroutineScope Result.success(emptyList())
             }
 
-            val outcomes = activeProviders.map { provider -> async { provider to provider.search(title, year) } }.awaitAll()
+            val outcomes = activeProviders.map { provider -> async { provider to provider.query() } }.awaitAll()
             val results = outcomes.flatMap { (_, outcome) -> outcome.getOrDefault(emptyList()) }
             val timeout = outcomes.firstNotNullOfOrNull { (_, outcome) -> outcome.exceptionOrNull() as? MetadataTimeoutException }
             if (results.isEmpty() && timeout != null) return@coroutineScope Result.failure(timeout)

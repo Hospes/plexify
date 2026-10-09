@@ -17,18 +17,30 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.files.SystemTemporaryDirectory
 import kotlin.random.Random
 
-/** Seasons by show ID, each listing its episode numbers; anything else is a 404. IMDb IDs are "tt" + show ID. */
+/**
+ * Seasons by show ID, each listing its episode numbers; anything else is a 404. IMDb IDs are "tt" + TMDB ID.
+ * [moviesByYear] answers the search with a year, empty for any other year; [yearSearchFailure] fails it.
+ */
 internal class FakeTmdb(
     private val results: List<MediaSearchResult>,
-    private val seasons: Map<String, Map<Int, IntRange>>,
+    private val seasons: Map<String, Map<Int, IntRange>> = emptyMap(),
     private val failingSeasons: Set<String> = emptySet(),
+    private val moviesByYear: Map<String, List<MediaSearchResult>> = emptyMap(),
+    private val yearSearchFailure: Throwable? = null,
 ) : MetadataProvider {
     override val id = "tmdb"
     override val supportedIds = setOf("tmdbid", "imdbid", "tvdbid")
     val seasonFetches = mutableListOf<String>()
     val externalIdLookups = mutableListOf<String>()
+    val yearSearches = mutableListOf<String>()
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.success(results)
+
+    override suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> {
+        yearSearches += year
+        yearSearchFailure?.let { return Result.failure(it) }
+        return Result.success(moviesByYear[year].orEmpty())
+    }
 
     override suspend fun season(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> {
         val key = "${show.tmdbId}:$season"
@@ -43,7 +55,11 @@ internal class FakeTmdb(
         Result.success(emptyList())
 
     override suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> {
-        val tmdbId = (media as CanonicalMedia.TvShow).tmdbId!!
+        val tmdbId = when (media) {
+            is CanonicalMedia.Movie -> media.tmdbId
+            is CanonicalMedia.TvShow -> media.tmdbId
+            else -> null
+        }!!
         externalIdLookups += tmdbId
         return Result.success(ExternalIds(imdbId = "tt$tmdbId"))
     }
@@ -67,6 +83,8 @@ internal class RecordingOrganizer : FileOrganizer {
 
 internal class ProcessorRun(val provider: FakeTmdb, val organizer: RecordingOrganizer, val stats: MediaProcessor.Stats) {
     fun showOf(fileName: String): String? = episodeOf(fileName)?.show?.tmdbId
+
+    fun movieOf(fileName: String): String? = (organizer.organized[fileName] as? CanonicalMedia.Movie)?.tmdbId
 
     fun episodeOf(fileName: String): CanonicalMedia.Episode? = organizer.organized[fileName] as? CanonicalMedia.Episode
 }

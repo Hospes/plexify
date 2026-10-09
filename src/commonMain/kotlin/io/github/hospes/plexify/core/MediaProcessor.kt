@@ -148,19 +148,40 @@ class MediaProcessor(
     ) = indent {
         debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
-        val searchResults = metadataService.search(parsedInfo.title, parsedInfo.year)
+        val title = parsedInfo.title
+        val year = parsedInfo.year
+        val searchResults = metadataService.search(title, year)
             .getOrElse { error -> return@indent searchFailed(source, error) }
             .filterIsInstance<MediaSearchResult.Movie>()
 
-        if (searchResults.isEmpty()) {
-            status("✗ ${source.name} — no metadata found for '${parsedInfo.title}'")
+        // The general search returns one page and ignores the year, so for a remade title the film
+        // from the filename year may not be on it. Unless the best match is from that year, search
+        // again with the year and rank both result sets together.
+        val firstRanking = rankMatches(searchResults, title, year, reportMiss = year == null)
+        val bestIsFromYear = (firstRanking.firstOrNull()?.media as? CanonicalMedia.Movie)?.year?.toString() == year
+        val (results, ranking) = if (year == null || bestIsFromYear) {
+            searchResults to firstRanking
+        } else {
+            debug("No match from $year among the first results; searching again with the year")
+            val byYear = metadataService.searchMovies(title, year)
+                .getOrElse { error ->
+                    // With no candidate from the first search, the failed one decides the file.
+                    if (firstRanking.isEmpty()) return@indent searchFailed(source, error)
+                    debug("Search with the year failed: ${error.message}")
+                    emptyList()
+                }
+                .filterIsInstance<MediaSearchResult.Movie>()
+            val merged = (searchResults + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
+            merged to rankMatches(merged, title, year)
+        }
+
+        if (results.isEmpty()) {
+            status("✗ ${source.name} — no metadata found for '$title'")
             stats.skipped++
             return@indent
         }
 
-        val canonicalMovie = (findAndConsolidateBestMatch(searchResults, parsedInfo.title, parsedInfo.year)
-                as? CanonicalMedia.Movie)
-            ?.withExternalIds()
+        val canonicalMovie = (ranking.firstOrNull()?.media as? CanonicalMedia.Movie)?.withExternalIds()
 
         if (canonicalMovie == null) {
             status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
@@ -539,14 +560,15 @@ class MediaProcessor(
 
     /**
      * Every candidate scoring at least [MINIMUM_CONFIDENCE_SCORE], best first, each consolidated
-     * across providers, with its title similarity and year score. Empty, with the reason reported,
-     * when none qualifies.
+     * across providers, with its title similarity and year score. Empty when none qualifies, with
+     * the reason reported unless [reportMiss] is false (a ranking that a second search may redo).
      */
     context(_: LoggingContext)
     internal fun rankMatches(
         results: List<MediaSearchResult>,
         parsedTitle: String,
-        parsedYear: String?
+        parsedYear: String?,
+        reportMiss: Boolean = true,
     ): List<RankedMatch> = indent {
         if (results.isEmpty()) return@indent emptyList()
 
@@ -635,7 +657,7 @@ class MediaProcessor(
 
                 else -> "none of ${results.size} provider result(s) resembled the title"
             }
-            status("No match for '$parsedTitle': $reason")
+            if (reportMiss) status("No match for '$parsedTitle': $reason") else debug("No match yet: $reason")
             return@indent emptyList()
         }
 

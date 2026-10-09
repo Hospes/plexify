@@ -12,6 +12,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbExternalIdsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbMovieSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.domain.model.CanonicalMedia
@@ -92,13 +93,29 @@ class TmdbProvider(
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
         }) { "searching for '$title'" }
-        val results = response.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }
+        response.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }.withAlternativeTitles(title)
+    }
 
-        // TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
-        // carries the localized and original titles. For results that don't resemble the query by
-        // either of those, pull the alternative titles so downstream scoring can see the alias.
+    override suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = tmdbCatching {
+        // `year` matches a release in any country, not only the primary one, so a film whose TMDB
+        // date is its premiere is still found by the year of a later release.
+        val response = get("search/movie", {
+            parameter("query", title)
+            parameter("year", year)
+            parameter("include_adult", true)
+            parameter("page", 1)
+        }) { "searching for '$title' ($year)" }
+        response.body<TmdbMovieSearchResponseDto>().items.map { it.toDomainModel(title) }.withAlternativeTitles(title)
+    }
+
+    /**
+     * TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
+     * carries the localized and original titles. For results that don't resemble the query by
+     * either of those, pull the alternative titles so downstream scoring can see the alias.
+     */
+    private suspend fun List<MediaSearchResult>.withAlternativeTitles(title: String): List<MediaSearchResult> {
         var lookups = 0
-        results.map { result ->
+        return map { result ->
             if (result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
                 result
             } else {
@@ -308,20 +325,22 @@ private fun TmdbEpisodeGroupDto.toDomainModel(
     },
 )
 
+private fun TmdbMediaItemDto.Movie.toDomainModel(queryTitle: String) = MediaSearchResult.Movie(
+    title = title,
+    //year = releaseDate?.year?.toString(),
+    year = releaseDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
+    tmdbId = id,
+    provider = "TMDb",
+    matchConfidence = maxOf(
+        calculateTitleConfidence(queryTitle, title),
+        calculateTitleConfidence(queryTitle, originalTitle),
+    ),
+    originalTitle = originalTitle,
+)
+
 private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResult? {
     return when (this) {
-        is TmdbMediaItemDto.Movie -> MediaSearchResult.Movie(
-            title = title,
-            //year = releaseDate?.year?.toString(),
-            year = releaseDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
-            tmdbId = id,
-            provider = "TMDb",
-            matchConfidence = maxOf(
-                calculateTitleConfidence(queryTitle, title),
-                calculateTitleConfidence(queryTitle, originalTitle),
-            ),
-            originalTitle = originalTitle,
-        )
+        is TmdbMediaItemDto.Movie -> toDomainModel(queryTitle)
 
         is TmdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
             title = title,
