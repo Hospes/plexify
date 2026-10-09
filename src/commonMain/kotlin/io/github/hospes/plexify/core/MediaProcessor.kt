@@ -249,7 +249,7 @@ class MediaProcessor(
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
     }
 
-    /** The search itself failed (a provider timed out), so the file is a failure, not a miss. */
+    /** The search itself failed (timeout, HTTP or network error), so the file is a failure, not a miss. */
     context(_: LoggingContext)
     private fun searchFailed(source: Path, error: Throwable) {
         status("✗ ${source.name} — ${error.message}")

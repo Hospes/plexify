@@ -362,6 +362,7 @@ Run with `--test --verbose` first. The log shows what was parsed from each filen
 | `Can't move '…' to '…': …`                                                  | With `--mode MOVE`, the source and the library must also be on the same drive.                                              |
 | `… is a symlink to … that won't resolve from the library …`                 | A relative symlink can't be moved. Use `HARDLINK` mode, or make the symlink absolute. See [Symlinked sources](#symlinked-sources). |
 | `TMDB request timed out …` / `Warning: … TMDB may be unreachable.`          | TMDB didn't answer in time. Check your connection (and proxy) and run again; files that timed out count as failed.          |
+| `HTTP 5xx …` or another network error on a file                             | The TMDB search failed, which says nothing about the title. Run again later; those files count as failed.                   |
 | `TMDB rejected the built-in API key (HTTP 401)`                             | The shared key was revoked. [Use your own key](#3-recommended-use-your-own-tmdb-key).                                       |
 | `TMDB rejected your credentials (HTTP 401)`                                 | Check `TMDB_API_ACCESS_TOKEN` / `TMDB_API_KEY` (or the matching flags).                                                     |
 | `TMDB rate limit reached (HTTP 429)`                                        | The shared key is busy. [Use your own key](#3-recommended-use-your-own-tmdb-key).                                            |

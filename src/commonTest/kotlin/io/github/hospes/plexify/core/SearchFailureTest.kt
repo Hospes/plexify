@@ -19,7 +19,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class SearchTimeoutTest {
+class SearchFailureTest {
 
     private class FakeTmdb(private val search: () -> Result<List<MediaSearchResult>>) : MetadataProvider {
         override val id = "tmdb"
@@ -44,6 +44,7 @@ class SearchTimeoutTest {
     }
 
     private val timedOut = { Result.failure<List<MediaSearchResult>>(MetadataTimeoutException("TMDB request timed out searching")) }
+    private val serverError = { Result.failure<List<MediaSearchResult>>(IllegalStateException("HTTP 503 searching for 'Ghosts'")) }
 
     /** Processes empty files with these names, from a fresh temporary directory, with a fresh processor. */
     private suspend fun run(provider: FakeTmdb, vararg fileNames: String): MediaProcessor.Stats {
@@ -84,6 +85,26 @@ class SearchTimeoutTest {
         assertEquals(2, stats.failed)
         assertEquals(0, stats.skipped)
         // A timeout says nothing about the show, so it is not cached as a miss.
+        assertEquals(2, provider.searches)
+    }
+
+    @Test
+    fun `a movie whose search fails with an HTTP error counts as failed`() = runTest {
+        val stats = run(FakeTmdb(serverError), "Dune.Part.Two.2024.1080p.WEB-DL.mkv")
+
+        assertEquals(1, stats.failed)
+        assertEquals(0, stats.skipped)
+    }
+
+    @Test
+    fun `episodes whose show search fails with an HTTP error count as failed and search again`() = runTest {
+        val provider = FakeTmdb(serverError)
+
+        val stats = run(provider, "Ghosts.S04E01.1080p.WEB.mkv", "Ghosts.S04E02.1080p.WEB.mkv")
+
+        assertEquals(2, stats.failed)
+        assertEquals(0, stats.skipped)
+        // A failed search says nothing about the show, so it is not cached as a miss.
         assertEquals(2, provider.searches)
     }
 
