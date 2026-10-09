@@ -61,41 +61,33 @@ class MetadataService(
 
     /**
      * The season from the first provider that has it. A season the providers report as nonexistent
-     * (HTTP 404) comes back empty; null means it could not be fetched (network error, rate limit),
-     * which says nothing about whether the show has that season.
+     * (HTTP 404) comes back empty. Fails when it could not be fetched (timeout, rate limit, network
+     * error), which says nothing about whether the show has that season; the caller reports the error.
      */
     context(_: LoggingContext)
-    suspend fun getSeason(show: CanonicalMedia.TvShow, season: Int): CanonicalMedia.Season? {
-        return indent {
-            val activeProviders = resolveActiveProviders()
-            if (activeProviders.isEmpty()) {
-                log("No active metadata providers available.")
-                return@indent null
-            }
-
-            var notFound = false
-            var failed = false
-            for (provider in activeProviders) {
-                val result = provider.season(show, season)
-                    .onFailure { error ->
-                        // A missing season is routine (split-cour anime): the episode-group fallback
-                        // or the per-file outcome line reports it, so keep it out of the concise log.
-                        if (error is MetadataNotFoundException) {
-                            notFound = true
-                            debug("${provider.id}: ${error.message}")
-                        } else {
-                            if (error !is UnsupportedOperationException) failed = true
-                            log("Error(${provider.id}): ${error.message}")
-                        }
-                    }
-                val seasonData = result.getOrNull()
-                if (seasonData != null) {
+    suspend fun getSeason(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> = indent {
+        var notFound = false
+        var failure: Throwable? = null
+        for (provider in resolveActiveProviders()) {
+            provider.season(show, season)
+                .onSuccess { seasonData ->
                     debug("Season $season fetched from ${provider.id}")
-                    return@indent seasonData
+                    return@indent Result.success(seasonData)
                 }
-            }
-            if (notFound && !failed) CanonicalMedia.Season(show, season, emptyList()) else null
+                .onFailure { error ->
+                    // A missing season is routine (split-cour anime): the episode-group fallback or the
+                    // per-file outcome line reports it, as the caller does a failed fetch.
+                    debug("${provider.id}: ${error.message}")
+                    when (error) {
+                        is MetadataNotFoundException -> notFound = true
+                        is UnsupportedOperationException -> Unit
+                        else -> if (failure == null) failure = error
+                    }
+                }
         }
+        failure?.let { return@indent Result.failure(it) }
+        if (notFound) Result.success(CanonicalMedia.Season(show, season, emptyList()))
+        else Result.failure(IllegalStateException("No metadata provider can fetch seasons."))
     }
 
     /** Alternative orderings of the show's episodes, from the first provider that has any. */

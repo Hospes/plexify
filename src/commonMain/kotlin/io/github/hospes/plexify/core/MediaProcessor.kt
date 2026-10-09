@@ -81,10 +81,6 @@ class MediaProcessor(
     // same season go to the same show instead of being matched again.
     private val seasonShows = mutableMapOf<String, CanonicalMedia.TvShow>()
 
-    // Seasons that could not be fetched (network error, rate limit), as opposed to ones the provider
-    // reported as nonexistent. Only the latter is evidence that a show is the wrong match.
-    private val unavailableSeasons = mutableSetOf<String>()
-
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
         val kind = try {
@@ -152,7 +148,7 @@ class MediaProcessor(
 
         val title = parsedInfo.title
         val (results, ranking) = lookUpMovie(title, parsedInfo.year)
-            .getOrElse { error -> return@indent searchFailed(source, error) }
+            .getOrElse { error -> return@indent lookupFailed(source, error) }
 
         if (results.isEmpty()) {
             status("✗ ${source.name} — no metadata found for '$title'")
@@ -246,7 +242,7 @@ class MediaProcessor(
 
         // Step 1: Find the candidate shows, best first, using the cache first.
         val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year)
-            .getOrElse { error -> return@indent searchFailed(source, error) }
+            .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (candidates.isEmpty()) {
             status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
             stats.skipped++
@@ -277,22 +273,29 @@ class MediaProcessor(
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
         val seasonKey = "${parsedInfo.showTitle}:${parsedInfo.year}:$season"
         val firstEpisodeMatch = findEpisode(candidates, seasonKey, season, parsedInfo.episode)
+            .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (firstEpisodeMatch == null) {
             status("✗ ${source.name} — episode S${season}E${parsedInfo.episode} not found")
             stats.skipped++
             return@indent
         }
         val bestEpisodeMatch = parsedInfo.lastEpisode
-            ?.let { last -> extendToRange(firstEpisodeMatch, candidates, seasonKey, season, parsedInfo.episode, last, source.name) }
+            ?.let { last ->
+                extendToRange(firstEpisodeMatch, candidates, seasonKey, season, parsedInfo.episode, last, source.name)
+                    .getOrElse { error -> return@indent lookupFailed(source, error) }
+            }
             ?: firstEpisodeMatch
 
         debug("Found episode: ${bestEpisodeMatch.describe()}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
     }
 
-    /** The search itself failed (timeout, HTTP or network error), so the file is a failure, not a miss. */
+    /**
+     * The lookup itself failed (a search or a season fetch timed out, or hit an HTTP or network error),
+     * so the file is a failure, not a miss.
+     */
     context(_: LoggingContext)
-    private fun searchFailed(source: Path, error: Throwable) {
+    private fun lookupFailed(source: Path, error: Throwable) {
         status("✗ ${source.name} — ${error.message}")
         stats.failed++
     }
@@ -301,7 +304,7 @@ class MediaProcessor(
      * Extends the first episode of a multi-episode file ("S01E01-E03") to its whole range. Every other
      * episode is looked up like the first (same show, cached season, episode groups); the range is kept
      * only when they land on consecutive episodes of one provider season, else the file is filed as its
-     * first episode.
+     * first episode. Fails as [findEpisode] does.
      */
     context(_: LoggingContext)
     private suspend fun extendToRange(
@@ -312,10 +315,10 @@ class MediaProcessor(
         firstEpisode: Int,
         lastEpisode: Int,
         fileName: String,
-    ): CanonicalMedia.Episode {
+    ): Result<CanonicalMedia.Episode> {
         val episodes = mutableListOf(first)
         for (episode in (firstEpisode + 1)..lastEpisode) {
-            val match = findEpisode(candidates, seasonKey, season, episode)
+            val match = findEpisode(candidates, seasonKey, season, episode).getOrElse { return Result.failure(it) }
             val previous = episodes.last()
             if (match == null || match.season != previous.season || match.episode != previous.episode + 1) {
                 status(
@@ -323,13 +326,15 @@ class MediaProcessor(
                             "S${previous.season.pad2()}E${previous.episode.pad2()} in '${first.show.title}'; " +
                             "filing it as S${first.season.pad2()}E${first.episode.pad2()} only."
                 )
-                return first
+                return Result.success(first)
             }
             episodes += match
         }
-        return first.copy(
-            lastEpisode = episodes.last().episode,
-            title = episodes.map { it.title }.distinct().joinToString(" & "),
+        return Result.success(
+            first.copy(
+                lastEpisode = episodes.last().episode,
+                title = episodes.map { it.title }.distinct().joinToString(" & "),
+            )
         )
     }
 
@@ -391,7 +396,8 @@ class MediaProcessor(
      * Finds the episode in the best-matching show. When that show has no such season at all, it is
      * not the release's show (e.g. a same-titled spin-off with one season), so the same-titled
      * runner-up shows are tried and the first that has the exact episode is used. The show that places a season is
-     * kept for the rest of that season's files, so one season never splits across shows.
+     * kept for the rest of that season's files, so one season never splits across shows. Fails when a
+     * season could not be loaded: that says nothing about the episode, so the file is a failure, not a miss.
      */
     context(_: LoggingContext)
     private suspend fun findEpisode(
@@ -399,30 +405,32 @@ class MediaProcessor(
         seasonKey: String,
         season: Int,
         episode: Int,
-    ): CanonicalMedia.Episode? {
+    ): Result<CanonicalMedia.Episode?> {
         // A runner-up's season was fetched before its external IDs were, so its cached episodes
         // carry the show without them: hand out the season's show as decided.
-        seasonShows[seasonKey]?.let { show -> return findOrFetchEpisode(show, season, episode)?.copy(show = show) }
+        seasonShows[seasonKey]?.let { show -> return findOrFetchEpisode(show, season, episode).map { it?.copy(show = show) } }
 
         val primary = candidates.first()
-        findOrFetchEpisode(primary, season, episode)?.let { match ->
+        val primaryMatch = findOrFetchEpisode(primary, season, episode).getOrElse { return Result.failure(it) }
+        if (primaryMatch != null) {
             seasonShows[seasonKey] = primary
-            return match
+            return Result.success(primaryMatch)
         }
 
-        // The show has the season, just not this episode (or the season couldn't be fetched):
-        // a numbering quirk or an outage, not evidence of a wrong show.
-        if (!isSeasonMissing(primary, season)) return null
+        // The show has the season, just not this episode: a numbering quirk, not evidence of a wrong show.
+        if (!isSeasonMissing(primary, season)) return Result.success(null)
 
         for (candidate in candidates.drop(1).take(MAX_FALLBACK_SHOWS)) {
-            val match = indent { findOrFetchSeason(candidate, season) }
-                .episodes.firstOrNull { it.episode == episode } ?: continue
+            // A runner-up whose season fails to load fails the file: whether it has the season is
+            // unknown, and taking the next one could file the season under the wrong show.
+            val candidateSeason = indent { findOrFetchSeason(candidate, season) }.getOrElse { return Result.failure(it) }
+            val match = candidateSeason.episodes.firstOrNull { it.episode == episode } ?: continue
             val alternative = candidate.withExternalIds()
             seasonShows[seasonKey] = alternative
             status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
-            return match.copy(show = alternative)
+            return Result.success(match.copy(show = alternative))
         }
-        return null
+        return Result.success(null)
     }
 
     /**
@@ -430,45 +438,38 @@ class MediaProcessor(
      * Subsequent episodes from the same season are served from cache.
      */
     context(_: LoggingContext)
-    private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): CanonicalMedia.Episode? = indent {
-        val cachedSeason = findOrFetchSeason(show, season)
+    private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode?> = indent {
+        val cachedSeason = findOrFetchSeason(show, season).getOrElse { return@indent Result.failure(it) }
 
         val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
-        if (match != null) return@indent match
+        if (match != null) return@indent Result.success(match)
 
         debug("Episode E${episode} not found in S${season} data. Trying episode groups...")
-        findViaEpisodeGroups(show, season, episode)
+        Result.success(findViaEpisodeGroups(show, season, episode))
     }
 
-    /** The whole season, fetched once per show and season; empty when it is missing or failed to load. */
+    /**
+     * The whole season, fetched once per show and season; empty when the providers report it as
+     * nonexistent. A failed fetch is not cached, so the next file of the season tries again.
+     */
     context(_: LoggingContext)
-    private suspend fun findOrFetchSeason(show: CanonicalMedia.TvShow, season: Int): CanonicalMedia.Season {
+    private suspend fun findOrFetchSeason(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> {
         val cacheKey = show.seasonCacheKey(season)
 
-        val cachedSeason = cache.getSeason(cacheKey) ?: run {
-            debug("Cache MISS for season: S${season}. Fetching from providers...")
-            val seasonData = metadataService.getSeason(show, season)
-                // Cache the failure as an empty season so the remaining files of this season
-                // don't re-query the providers and re-log the same error.
-                ?: CanonicalMedia.Season(show, season, emptyList()).also {
-                    unavailableSeasons += cacheKey
-                    debug("Season $season of '${show.title}' is not available from providers.")
-                }
-            cache.putSeason(cacheKey, seasonData)
-            seasonData
+        cache.getSeason(cacheKey)?.let { cachedSeason ->
+            if (cachedSeason.episodes.isNotEmpty()) {
+                debug("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
+            }
+            return Result.success(cachedSeason)
         }
 
-        if (cachedSeason.episodes.isNotEmpty()) {
-            debug("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
-        }
-        return cachedSeason
+        debug("Cache MISS for season: S${season}. Fetching from providers...")
+        return metadataService.getSeason(show, season).onSuccess { cache.putSeason(cacheKey, it) }
     }
 
-    /** True only when the providers reported the season as nonexistent, not when fetching it failed. */
-    private suspend fun isSeasonMissing(show: CanonicalMedia.TvShow, season: Int): Boolean {
-        val cacheKey = show.seasonCacheKey(season)
-        return cacheKey !in unavailableSeasons && cache.getSeason(cacheKey)?.episodes?.isEmpty() == true
-    }
+    /** True when the providers reported the season as nonexistent (a failed fetch is not cached). */
+    private suspend fun isSeasonMissing(show: CanonicalMedia.TvShow, season: Int): Boolean =
+        cache.getSeason(show.seasonCacheKey(season))?.episodes?.isEmpty() == true
 
     /**
      * Whether this runner-up may take a season the best match lacks: only a show named as the

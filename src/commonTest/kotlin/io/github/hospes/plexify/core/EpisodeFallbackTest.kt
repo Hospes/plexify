@@ -50,7 +50,23 @@ class EpisodeFallbackTest {
         val run = runProcessor(provider, "Ghosts.S04E01.1080p.WEB.mkv")
 
         assertTrue(run.organizer.organized.isEmpty())
+        assertEquals(1, run.stats.failed)
         assertEquals(listOf("1:4"), run.provider.seasonFetches)
+    }
+
+    @Test
+    fun `fails the file when the runner-up's season fails to load`() = runTest {
+        val provider = FakeTmdb(
+            searchResults,
+            seasons = mapOf("1" to mapOf(1 to 1..6), "2" to mapOf(4 to 1..8)),
+            failingSeasons = setOf("2:4"),
+        )
+
+        val run = runProcessor(provider, "Ghosts.S04E01.1080p.WEB.mkv")
+
+        assertTrue(run.organizer.organized.isEmpty())
+        assertEquals(1, run.stats.failed)
+        assertEquals(0, run.stats.skipped)
     }
 
     @Test

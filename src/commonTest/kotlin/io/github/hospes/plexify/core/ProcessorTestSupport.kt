@@ -19,6 +19,7 @@ import kotlin.random.Random
 
 /**
  * Seasons by show ID, each listing its episode numbers; anything else is a 404. IMDb IDs are "tt" + TMDB ID.
+ * Fetching one of [failingSeasons] ("showId:season") fails the first [seasonFailures] times, then loads it.
  * [moviesByYear] answers the search with a year, empty for any other year; [yearSearchFailure] fails it.
  * [resultsByTitle] answers the general search for those titles instead of [results].
  */
@@ -26,6 +27,7 @@ internal class FakeTmdb(
     private val results: List<MediaSearchResult>,
     private val seasons: Map<String, Map<Int, IntRange>> = emptyMap(),
     private val failingSeasons: Set<String> = emptySet(),
+    private val seasonFailures: Int = Int.MAX_VALUE,
     private val moviesByYear: Map<String, List<MediaSearchResult>> = emptyMap(),
     private val yearSearchFailure: Throwable? = null,
     private val resultsByTitle: Map<String, List<MediaSearchResult>> = emptyMap(),
@@ -51,7 +53,7 @@ internal class FakeTmdb(
     override suspend fun season(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> {
         val key = "${show.tmdbId}:$season"
         seasonFetches += key
-        if (key in failingSeasons) return Result.failure(IllegalStateException("TMDB rate limit reached (HTTP 429)"))
+        if (key in failingSeasons && seasonFetches.count { it == key } <= seasonFailures) return Result.failure(IllegalStateException("TMDB rate limit reached (HTTP 429)"))
         val episodes = seasons[show.tmdbId]?.get(season)
             ?: return Result.failure(MetadataNotFoundException("HTTP 404 fetching season $season"))
         return Result.success(CanonicalMedia.Season(show, season, episodes.map { CanonicalMedia.Episode(show, season, it, "Episode $it") }))
