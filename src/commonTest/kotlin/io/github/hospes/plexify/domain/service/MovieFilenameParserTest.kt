@@ -218,6 +218,50 @@ class MovieFilenameParserTest {
             filename = "[REC] (2007).mkv",
             expected = ParsedMediaInfo.Movie(title = "rec", year = "2007")
         ),
+        // --- The title ends at a bracketed year ---
+        // Plex's edition tag
+        TestCase(
+            filename = "Blade Runner (1982) {edition-Final Cut}.mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", edition = "Final Cut")
+        ),
+        TestCase(
+            filename = "Blade Runner {edition-Final Cut}.mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = null, edition = "Final Cut")
+        ),
+        TestCase(
+            filename = "Avatar (2009) Extended Collector's Edition.mkv",
+            expected = ParsedMediaInfo.Movie(title = "avatar", year = "2009", edition = "Extended")
+        ),
+        // A year leading the name has no title before it to end
+        TestCase(
+            filename = "(2019) Parasite 1080p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "parasite", year = "2019", resolution = "1080p")
+        ),
+
+        // --- A leading release group is not part of the title, unless it is the title ---
+        TestCase(
+            filename = "[Judas] Suzume (2022) [BD 1080p].mkv",
+            expected = ParsedMediaInfo.Movie(title = "suzume", year = "2022", resolution = "1080p", releaseGroup = "Judas")
+        ),
+
+        // --- A title word that is also a release tag, before the year ---
+        TestCase(
+            filename = "Internal.Affairs.1990.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "internal affairs", year = "1990", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "The.Proper.Way.2019.PROPER.1080p.WEB-DL.mkv",
+            expected = ParsedMediaInfo.Movie(title = "the proper way", year = "2019", resolution = "1080p", quality = "WEB-DL")
+        ),
+        // A year after the release tags is not the release year
+        TestCase(
+            filename = "The.Matrix.1999.1080p.BluRay.x264-2020.mkv",
+            expected = ParsedMediaInfo.Movie(title = "the matrix", year = "1999", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Atmos (2021) 2160p Atmos.mkv",
+            expected = ParsedMediaInfo.Movie(title = "atmos", year = "2021", resolution = "2160p")
+        ),
     )
 
     @Test
