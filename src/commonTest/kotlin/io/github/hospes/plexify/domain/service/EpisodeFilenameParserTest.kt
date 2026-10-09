@@ -103,6 +103,23 @@ class EpisodeFilenameParserTest {
             filename = "The_Boys_S03E01_2022_720p_WEB-DL_LostFilm.mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = "2022", resolution = "720p", quality = "WEB-DL", releaseGroup = "LostFilm")
         ),
+        // A year in the show's own title is not the episode's year: "1923" premiered in 2022
+        TestCase(
+            filename = "1923.S01E01.1080p.WEB.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "1923", season = 1, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "1923.S01E01.2022.1080p.WEB.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "1923", season = 1, episode = 1, year = "2022", resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Space.1999.S01E01.Breakaway.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "space 1999", season = 1, episode = 1, year = null)
+        ),
+        TestCase(
+            filename = "[Group] 1923 - 01 [1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "1923", season = null, episode = 1, year = null, resolution = "1080p", releaseGroup = "Group")
+        ),
 
         // --- Names plexify itself writes: "{CleanTitle} ({year}) - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
         // (same episode template for Plex and Jellyfin) ---
