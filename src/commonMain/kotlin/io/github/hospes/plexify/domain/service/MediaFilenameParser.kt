@@ -8,14 +8,16 @@ import kotlin.time.Clock
 object MediaFilenameParser {
 
     // --- Regex for TV Show Episode Extraction ---
-    // Tier 1: Captures S01E01, s01e01, S1E1, S01E100, S2024E01, and multi-episode files: S01E01E02,
-    // S01E01-E02, S01E01-02 (group 4 holds the range suffix).
-    private val episodeRegex = """[._\-\s\[(]([Ss](\d{1,4})[Ee](\d{1,3})((?:-?[Ee]\d{1,3}|-\d{1,3})*))(?:[._\-\s\])]|$)""".toRegex()
+    // Tier 1: Captures S01E01, s01e01, S1E1, S01.E01, S01E100, S01E1071, S2024E01, a revision (S01E05v2), and
+    // multi-episode files: S01E01E02, S01E01-E02, S01E01-02 (group 4 holds the range suffix). The marker can
+    // start the name ("S01E01 - Pilot") and be followed by a tag ("S01E01[1080p]").
+    private val episodeRegex =
+        """(?:^|[._\-\s\[(])([Ss](\d{1,4})[._\s]?[Ee](\d{1,4})((?:-?[Ee]\d{1,4}|-\d{1,3})*))(?:v\d{1,2})?(?=[._\-\s\[\]()]|$)""".toRegex()
 
     // Tier 1b: 1x01 / 01x01, and 1x01-02 / 1x01x02 / 1x01-1x02. The episode needs two digits, so a
     // title like "3x3 Eyes" isn't read as one, and the season must start a token ("1920x1080" doesn't).
     private val crossEpisodeRegex =
-        """(?:^|[._\-\s\[(])((\d{1,2})[xX](\d{2,3})((?:[-xX]\d{2,3}|-\d{1,2}[xX]\d{2,3})*))(?:[._\-\s\])]|$)""".toRegex()
+        """(?:^|[._\-\s\[(])((\d{1,2})[xX](\d{2,3})((?:[-xX]\d{2,3}|-\d{1,2}[xX]\d{2,3})*))(?=[._\-\s\[\]()]|$)""".toRegex()
 
     // The numbers in a range suffix; the last one ends the range
     private val rangeNumberRegex = """\d+""".toRegex()

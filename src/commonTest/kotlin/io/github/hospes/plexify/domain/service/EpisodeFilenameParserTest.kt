@@ -157,6 +157,42 @@ class EpisodeFilenameParserTest {
             expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = "2008", resolution = "720p")
         ),
 
+        // --- SxxEyy variants ---
+        TestCase(
+            filename = "Show.S01E01[1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Show S01E05v2 [1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 5, year = null, resolution = "1080p")
+        ),
+        // No show name: the show comes from the folder
+        TestCase(
+            filename = "S01E01 - Pilot.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "", season = 1, episode = 1, year = null)
+        ),
+        TestCase(
+            filename = "Show.S01.E01.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 1, year = null)
+        ),
+        TestCase(
+            filename = "Show S01 E02 720p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 2, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "One.Piece.S01E1071.1080p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "one piece", season = 1, episode = 1071, year = null, resolution = "1080p")
+        ),
+        // The name plexify writes for an episode past 999
+        TestCase(
+            filename = "One Piece (1999) - S01E1071 - Luffy's Fury - [1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "one piece", season = 1, episode = 1071, year = "1999", resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Friends.1x01[720p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "friends", season = 1, episode = 1, year = null, resolution = "720p")
+        ),
+
         // --- Episode numbers past 99, year-numbered seasons ---
         TestCase(
             filename = "One.Piece.S01E100.1080p.WEB-DL.mkv",
