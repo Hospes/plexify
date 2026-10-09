@@ -20,6 +20,7 @@ import kotlin.random.Random
 /**
  * Seasons by show ID, each listing its episode numbers; anything else is a 404. IMDb IDs are "tt" + TMDB ID.
  * Fetching one of [failingSeasons] ("showId:season") fails the first [seasonFailures] times, then loads it.
+ * [episodeGroupsOf] gives a show's episode groups; the first [episodeGroupFailures] lookups fail.
  * [moviesByYear] answers the search with a year, empty for any other year; [yearSearchFailure] fails it.
  * [resultsByTitle] answers the general search for those titles instead of [results].
  */
@@ -28,6 +29,8 @@ internal class FakeTmdb(
     private val seasons: Map<String, Map<Int, IntRange>> = emptyMap(),
     private val failingSeasons: Set<String> = emptySet(),
     private val seasonFailures: Int = Int.MAX_VALUE,
+    private val episodeGroupsOf: (CanonicalMedia.TvShow) -> List<CanonicalMedia.EpisodeGroup> = { emptyList() },
+    private val episodeGroupFailures: Int = 0,
     private val moviesByYear: Map<String, List<MediaSearchResult>> = emptyMap(),
     private val yearSearchFailure: Throwable? = null,
     private val resultsByTitle: Map<String, List<MediaSearchResult>> = emptyMap(),
@@ -35,6 +38,7 @@ internal class FakeTmdb(
     override val id = "tmdb"
     override val supportedIds = setOf("tmdbid", "imdbid", "tvdbid")
     val seasonFetches = mutableListOf<String>()
+    val episodeGroupFetches = mutableListOf<String>()
     val externalIdLookups = mutableListOf<String>()
     val yearSearches = mutableListOf<String>()
     val searchedTitles = mutableListOf<String>()
@@ -59,8 +63,11 @@ internal class FakeTmdb(
         return Result.success(CanonicalMedia.Season(show, season, episodes.map { CanonicalMedia.Episode(show, season, it, "Episode $it") }))
     }
 
-    override suspend fun episodeGroups(show: CanonicalMedia.TvShow): Result<List<CanonicalMedia.EpisodeGroup>> =
-        Result.success(emptyList())
+    override suspend fun episodeGroups(show: CanonicalMedia.TvShow): Result<List<CanonicalMedia.EpisodeGroup>> {
+        episodeGroupFetches += show.tmdbId!!
+        if (episodeGroupFetches.size <= episodeGroupFailures) return Result.failure(IllegalStateException("HTTP 503 fetching episode groups"))
+        return Result.success(episodeGroupsOf(show))
+    }
 
     override suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> {
         val tmdbId = when (media) {
