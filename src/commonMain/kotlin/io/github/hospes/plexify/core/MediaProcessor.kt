@@ -54,6 +54,8 @@ class MediaProcessor(
         val titleSeason: TitleSeason? = null,
         /** The searched title ends in an arc that no title of this candidate places (see [namesUnplacedArc]). */
         val namesUnplacedArc: Boolean = false,
+        /** Its match score; at least the confidence minimum. */
+        val score: Double = 0.0,
     )
 
     /** A season named by its own title, e.g. an anime arc: "Kimetsu no Yaiba: Hashira Geiko-hen" is season 5. */
@@ -149,31 +151,8 @@ class MediaProcessor(
         debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
         val title = parsedInfo.title
-        val year = parsedInfo.year
-        val searchResults = metadataService.search(title, year)
+        val (results, ranking) = lookUpMovie(title, parsedInfo.year)
             .getOrElse { error -> return@indent searchFailed(source, error) }
-            .filterIsInstance<MediaSearchResult.Movie>()
-
-        // The general search returns one page and ignores the year, so for a remade title the film
-        // from the filename year may not be on it. Unless the best match is from that year, search
-        // again with the year and rank both result sets together.
-        val firstRanking = rankMatches(searchResults, title, year, reportMiss = year == null)
-        val bestIsFromYear = (firstRanking.firstOrNull()?.media as? CanonicalMedia.Movie)?.year?.toString() == year
-        val (results, ranking) = if (year == null || bestIsFromYear) {
-            searchResults to firstRanking
-        } else {
-            debug("No match from $year among the first results; searching again with the year")
-            val byYear = metadataService.searchMovies(title, year)
-                .getOrElse { error ->
-                    // With no candidate from the first search, the failed one decides the file.
-                    if (firstRanking.isEmpty()) return@indent searchFailed(source, error)
-                    debug("Search with the year failed: ${error.message}")
-                    emptyList()
-                }
-                .filterIsInstance<MediaSearchResult.Movie>()
-            val merged = (searchResults + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
-            merged to rankMatches(merged, title, year)
-        }
 
         if (results.isEmpty()) {
             status("✗ ${source.name} — no metadata found for '$title'")
@@ -192,6 +171,68 @@ class MediaProcessor(
         debug("Found match: $canonicalMovie")
         organizeFile(source, destination, canonicalMovie, parsedInfo, mode, isTestMode)
     }
+
+    /**
+     * Every movie result found for [title] and [year], with the ranked candidates. Fails when a search
+     * failed and nothing else found a candidate.
+     *
+     * The general search returns one page and ignores the year, so when its best match is not from
+     * the filename year, two more searches follow. The same title searched with the year finds a
+     * remade film missing from that page. Then, unless the user set the title or the year, the year
+     * is read as part of the title ("Wonder.Woman.1984.1080p"), and that match wins if it scores higher.
+     */
+    context(_: LoggingContext)
+    private suspend fun lookUpMovie(
+        title: String,
+        year: String?,
+    ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
+        val first = metadataService.search(title, year)
+            .getOrElse { return Result.failure(it) }
+            .filterIsInstance<MediaSearchResult.Movie>()
+        val firstRanking = rankMatches(first, title, year, reportMiss = year == null)
+        if (year == null || firstRanking.bestYear() == year) return Result.success(first to firstRanking)
+
+        // A search that fails after an earlier one found a candidate is left out; with no candidate
+        // yet, it decides the file.
+        suspend fun moviesUnlessFailed(found: List<RankedMatch>, search: suspend () -> Result<List<MediaSearchResult>>) =
+            search().fold(
+                onSuccess = { Result.success(it.filterIsInstance<MediaSearchResult.Movie>()) },
+                onFailure = { error ->
+                    if (found.isEmpty()) return@fold Result.failure(error)
+                    debug("Search failed: ${error.message}")
+                    Result.success(emptyList())
+                },
+            )
+
+        debug("No match from $year among the first results; searching again with the year")
+        val byYear = moviesUnlessFailed(firstRanking) { metadataService.searchMovies(title, year) }
+            .getOrElse { return Result.failure(it) }
+        val merged = (first + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
+        val ranking = rankMatches(merged, title, year, reportMiss = false)
+
+        if (ranking.bestYear() != year && titleOverride == null && yearOverride == null) {
+            val joinedTitle = "$title $year"
+            debug("Still no match from $year; trying '$joinedTitle' as the whole title")
+            val joined = moviesUnlessFailed(ranking) { metadataService.search(joinedTitle, null) }
+                .getOrElse { return Result.failure(it) }
+            // Only a film whose title has the year: the reading has no year to rule out the namesakes
+            // the first one rejected ("Dracula" for "Dracula 1974").
+            val joinedRanking = rankMatches(joined, joinedTitle, null, reportMiss = false)
+                .filter { year in (it.media as CanonicalMedia.Movie).title }
+            val joinedScore = joinedRanking.firstOrNull()?.score
+            if (joinedScore != null && joinedScore > (ranking.firstOrNull()?.score ?: 0.0)) {
+                debug("'$joinedTitle' matches better (${joinedScore.format(2)})")
+                return Result.success(merged + joined to joinedRanking)
+            }
+            if (ranking.isEmpty()) rankMatches(merged, title, year) // reports why nothing matched
+            return Result.success(merged + joined to ranking)
+        }
+
+        if (ranking.isEmpty()) rankMatches(merged, title, year)
+        return Result.success(merged to ranking)
+    }
+
+    private fun List<RankedMatch>.bestYear(): String? = (firstOrNull()?.media as? CanonicalMedia.Movie)?.year?.toString()
 
     context(_: LoggingContext)
     private suspend fun processEpisode(
@@ -672,7 +713,7 @@ class MediaProcessor(
         return@indent scoredGroups
             .filter { it.score >= MINIMUM_CONFIDENCE_SCORE }
             .sortedByDescending { it.score }
-            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason, it.namesUnplacedArc) }
+            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason, it.namesUnplacedArc, it.score) }
     }
 
     private class ScoredGroup(
