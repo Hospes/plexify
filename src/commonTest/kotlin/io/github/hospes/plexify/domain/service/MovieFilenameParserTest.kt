@@ -168,6 +168,35 @@ class MovieFilenameParserTest {
             expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
         ),
 
+        // --- Years that are part of the title ---
+        // A year no release can have yet is a title word
+        TestCase(
+            filename = "Blade.Runner.2049.1080p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = null, resolution = "1080p")
+        ),
+        // A year with no title before it is the title
+        TestCase(
+            filename = "1917.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "1917", year = null, resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "1917.2019.1080p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "1917", year = "2019", resolution = "1080p")
+        ),
+        TestCase(
+            filename = "2001.A.Space.Odyssey.1080p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "2001 a space odyssey", year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "2046.2004.720p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "2046", year = "2004", resolution = "720p")
+        ),
+        // Either reading is possible; matching tries "wonder woman 1984" when this one has no match from 1984
+        TestCase(
+            filename = "Wonder.Woman.1984.1080p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "wonder woman", year = "1984", resolution = "1080p")
+        ),
+
         // --- Not episodes, despite the episode patterns ---
         // " - 1979" is a year, not a fansub episode number
         TestCase(
