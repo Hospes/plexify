@@ -207,13 +207,14 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 
 | Form                                                     | Example                                                                 | Season comes from |
 | -------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------- |
-| `SxxEyy` (1–3 digit episode, up to 4 digit season)       | `Breaking.Bad.S01E01.720p.mkv`, `One.Piece.S01E100.mkv`                 | the name          |
+| `SxxEyy` (up to 4 digits each, optional `v2`)            | `Breaking.Bad.S01E01.720p.mkv`, `Show.S01.E01.mkv`, `Show S01E05v2 [1080p].mkv`, `One.Piece.S01E1071.mkv` | the name |
 | Multi-episode `SxxEyy`                                   | `Show.S01E01E02.mkv`, `Show.S01E01-E02.mkv`, `Show.S01E01-02.mkv`       | the name          |
 | `NxNN`                                                   | `Friends.1x01.mkv`, `Friends - 02x24 - Title.mkv`, `Friends.10x17-18.mkv` | the name        |
 | Fansub `Show - NN` (optional `v2`, absolute numbers)     | `[SubsPlease] Sousou no Frieren - 01 (1080p) [ABCD1234].mkv`, `Show - 01v2.mkv`, `[SubsPlease] One Piece - 1071 (1080p).mkv` | `S2` / `Season 2` / `2nd Season` closing the title, else the parent folder |
 | `Season N` / `SN` + `[NN]`                               | `Tsue_to_Tsurugi_no_Wistoria_Season_2_[01]_[HEVC].mkv`, `Gate_S2_[12].mkv` | the name       |
 | `[NN]`                                                   | `Dungeon.Meshi.[13].[1080p].mkv`                                        | the parent folder (`Season 2`, `S02`, `S2`) |
 
+-   A name that starts with the episode (`S01E01 - Pilot.mkv`) has no show title; set it with `-t`.
 -   When no season is found, Season 1 is assumed (with a warning); use `-s` to set it. Two exceptions, both looked up on TMDB:
     -   An episode number past the end of that season is placed through the show's TMDB episode groups (split-cour releases) or its absolute order (*One Piece* `1071`).
     -   An anime arc release (`Kimetsu no Yaiba - Hashira Geiko-hen [01]`) takes the season whose TMDB title matches the arc. If TMDB has no such season title, the file is skipped with a hint to use `-s`, instead of overwriting Season 1.
