@@ -560,6 +560,7 @@ class MediaProcessor(
 
         // Collected so a failed lookup can report *why* in the concise output.
         val yearRejected = mutableListOf<String>()
+        val yearMismatched = mutableListOf<String>()
 
         val scoredGroups = groupedByMedia.values.mapNotNull { group ->
             val representative = group.first()
@@ -599,6 +600,13 @@ class MediaProcessor(
             val yearScore = if (parsedY != null && groupY != null) {
                 yearScore(parsedY, groupY, isShow = representative is MediaSearchResult.TvShow)
             } else null
+            // A known year that contradicts the filename's makes it another film or show of the same
+            // title (a remake, a namesake), however well the title matches.
+            if (yearScore != null && yearScore < 0) {
+                debug("Candidate: '${representative.title} (${representative.year})' | Discarded (year does not match $parsedY)")
+                yearMismatched += "'${representative.title} (${representative.year})'"
+                return@mapNotNull null
+            }
             score += yearScore ?: 0.0
 
             score += (group.distinctBy { it.provider }.size - 1) * 2.0
@@ -616,11 +624,8 @@ class MediaProcessor(
         val bestGroup = scoredGroups.maxByOrNull { it.score }
         if (bestGroup == null || bestGroup.score < MINIMUM_CONFIDENCE_SCORE) {
             val reason = when {
-                yearRejected.isNotEmpty() -> {
-                    val listed = yearRejected.take(3).joinToString(", ")
-                    val more = if (yearRejected.size > 3) " and ${yearRejected.size - 3} more" else ""
-                    "$listed$more rejected (year does not match override $yearOverride)"
-                }
+                yearRejected.isNotEmpty() -> "${yearRejected.listed()} rejected (year does not match override $yearOverride)"
+                yearMismatched.isNotEmpty() -> "${yearMismatched.listed()} rejected (year does not match $parsedYear)"
 
                 bestGroup != null -> {
                     val candidate = bestGroup.group.first()
@@ -725,6 +730,10 @@ private fun CanonicalMedia.describe(): String = when (this) {
 
 private fun Int?.inParens(): String = this?.let { " ($it)" } ?: ""
 
+// The first few rejected candidates for a "No match" line, with a count of the rest.
+private fun List<String>.listed(): String =
+    take(3).joinToString(", ") + if (size > 3) " and ${size - 3} more" else ""
+
 private fun Int.pad2(): String = toString().padStart(2, '0')
 
 // Helper function to format a Double to a specific number of decimal places in a multiplatform-safe way.
@@ -749,6 +758,8 @@ private fun Double.format(digits: Int): String {
  * filename year is therefore consistent with it, not a mismatch: it scores +5, slowly decaying with
  * distance so the closest earlier show wins among same-titled ones. Only a show that started after
  * the filename year (beyond the usual one-year release-date disagreement) is penalized.
+ *
+ * A negative score is a contradiction, not a weak signal: [MediaProcessor.rankMatches] discards the candidate.
  */
 internal fun yearScore(parsedYear: Int, candidateYear: Int, isShow: Boolean): Double {
     val diff = parsedYear - candidateYear

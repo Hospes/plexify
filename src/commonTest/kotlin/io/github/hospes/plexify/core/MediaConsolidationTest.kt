@@ -114,7 +114,7 @@ class MediaConsolidationTest {
         val ranked = processor.rankMatches(theBoysResults + unrelated, "The Boys", "2022")
 
         // "Boyz (2025)" passes the title floor but premiered after the filename year, which
-        // puts it below the confidence minimum.
+        // rules it out.
         assertEquals(listOf("76479", "152483"), ranked.map { (it.media as CanonicalMedia.TvShow).tmdbId })
     }
 
@@ -150,6 +150,38 @@ class MediaConsolidationTest {
         assertEquals(5.0, yearScore(parsedYear = 2021, candidateYear = 2022, isShow = false))
         assertEquals(-10.0, yearScore(parsedYear = 2021, candidateYear = 2016, isShow = false))
         assertEquals(-10.0, yearScore(parsedYear = 2021, candidateYear = 2026, isShow = false))
+    }
+
+    @Test
+    fun `exact-title movie whose year is two or more off is rejected`() = with(LoggingContext()) {
+        // "Blade.Runner.2049.1080p.mkv" parses as year 2049; the 1982 film used to pass at exactly the minimum.
+        val results = listOf(
+            MediaSearchResult.Movie(title = "Blade Runner", year = "1982", tmdbId = "78", provider = "TMDb", matchConfidence = 100.0),
+        )
+
+        assertNull(processor.findAndConsolidateBestMatch(results, "blade runner", "2049"))
+        assertNull(processor.findAndConsolidateBestMatch(results, "blade runner", "1980"))
+    }
+
+    @Test
+    fun `exact-title movie one year off still matches`() = with(LoggingContext()) {
+        val results = listOf(
+            MediaSearchResult.Movie(title = "Blade Runner", year = "1982", tmdbId = "78", provider = "TMDb", matchConfidence = 100.0),
+        )
+
+        val match = processor.findAndConsolidateBestMatch(results, "blade runner", "1983")
+
+        assertIs<CanonicalMedia.Movie>(match)
+        assertEquals("78", match.tmdbId)
+    }
+
+    @Test
+    fun `exact-title show premiering years after the filename year is rejected`() = with(LoggingContext()) {
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "The Boys", year = "2019", tmdbId = "76479", provider = "TMDb", matchConfidence = 100.0),
+        )
+
+        assertNull(processor.findAndConsolidateBestMatch(results, "The Boys", "2016"))
     }
 
     @Test
