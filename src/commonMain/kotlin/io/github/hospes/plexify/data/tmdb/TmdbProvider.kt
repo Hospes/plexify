@@ -31,6 +31,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.*
+import kotlin.coroutines.cancellation.CancellationException
 
 class TmdbProvider(
     private val credentials: TmdbCredentials,
@@ -242,15 +243,17 @@ class TmdbProvider(
         }
 
     /**
-     * GET [path] and check the status. A timeout fails with a short message naming the [action]
-     * instead of Ktor's, which spells out the whole request URL.
+     * GET [path] and check the status. A timeout or a connection error fails with a short message
+     * naming the [action] instead of Ktor's, which spells out the whole request URL. A failed search
+     * is reported on every file it fails, so the message has to stay readable.
      */
     private suspend fun get(path: String, block: HttpRequestBuilder.() -> Unit = {}, action: () -> String): HttpResponse {
         val response = try {
             httpClient.get(path, block)
         } catch (e: Throwable) {
             if (e.isTimeout()) throw MetadataTimeoutException("TMDB request timed out ${action()}")
-            throw e
+            if (e is CancellationException) throw e
+            throw IllegalStateException("TMDB request failed ${action()}: ${e.failureReason()}")
         }
         response.ensureSuccess(action)
         return response
@@ -279,6 +282,12 @@ data class TmdbTimeouts(
     /** Extra tries after a timeout, out of the three retries a call gets (HTTP 429 may use all three). */
     val retries: Int = 1,
 )
+
+// The curl engine's message is "Connection failed for request: <request, URL included>. Reason: <curl error>".
+private fun Throwable.failureReason(): String {
+    val message = message ?: return this::class.simpleName ?: "unknown error"
+    return message.substringAfter("Reason: ", missingDelimiterValue = message)
+}
 
 // Ktor may deliver a timeout wrapped in a CancellationException.
 private fun Throwable.isTimeout(): Boolean = generateSequence(this) { it.cause }.take(8).any {
