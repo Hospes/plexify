@@ -4,7 +4,6 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 
 class SeasonFailureTest {
 
@@ -28,9 +27,10 @@ class SeasonFailureTest {
 
         val run = runProcessor(provider, "Ghosts.S04E01.1080p.WEB.mkv", "Ghosts.S04E02.1080p.WEB.mkv")
 
+        // Files come in directory order, which only Windows keeps alphabetical: either one may be first.
         assertEquals(1, run.stats.failed)
         assertEquals(1, run.stats.organized)
-        assertNotNull(run.episodeOf("Ghosts.S04E02.1080p.WEB.mkv"))
+        assertEquals(listOf("1:4", "1:4"), run.provider.seasonFetches)
     }
 
     @Test
