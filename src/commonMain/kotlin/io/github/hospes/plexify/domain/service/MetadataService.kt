@@ -90,23 +90,32 @@ class MetadataService(
         else Result.failure(IllegalStateException("No metadata provider can fetch seasons."))
     }
 
-    /** Alternative orderings of the show's episodes, from the first provider that has any. */
+    /**
+     * Alternative orderings of the show's episodes, from the first provider that has any; empty when
+     * none has. Fails as [getSeason] does when a lookup failed (timeout, rate limit, network error)
+     * and no provider had any: that says nothing about whether the show has groups.
+     */
     context(_: LoggingContext)
-    suspend fun getEpisodeGroups(show: CanonicalMedia.TvShow): List<CanonicalMedia.EpisodeGroup> {
-        return indent {
-            for (provider in resolveActiveProviders()) {
-                val groups = provider.episodeGroups(show)
-                    .onFailure { error ->
-                        if (error !is UnsupportedOperationException) log("Error(${provider.id}): ${error.message}")
+    suspend fun getEpisodeGroups(show: CanonicalMedia.TvShow): Result<List<CanonicalMedia.EpisodeGroup>> = indent {
+        var failure: Throwable? = null
+        for (provider in resolveActiveProviders()) {
+            provider.episodeGroups(show)
+                .onSuccess { groups ->
+                    if (groups.isNotEmpty()) {
+                        debug("${groups.size} episode group(s) fetched from ${provider.id}")
+                        return@indent Result.success(groups)
                     }
-                    .getOrNull()
-                if (!groups.isNullOrEmpty()) {
-                    debug("${groups.size} episode group(s) fetched from ${provider.id}")
-                    return@indent groups
                 }
-            }
-            emptyList()
+                .onFailure { error ->
+                    // The caller reports a failed lookup with the file it fails.
+                    debug("${provider.id}: ${error.message}")
+                    when (error) {
+                        is MetadataNotFoundException, is UnsupportedOperationException -> Unit
+                        else -> if (failure == null) failure = error
+                    }
+                }
         }
+        failure?.let { Result.failure(it) } ?: Result.success(emptyList())
     }
 
     /**
