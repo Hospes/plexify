@@ -20,6 +20,7 @@ import kotlin.random.Random
 /**
  * Seasons by show ID, each listing its episode numbers; anything else is a 404. IMDb IDs are "tt" + TMDB ID.
  * [moviesByYear] answers the search with a year, empty for any other year; [yearSearchFailure] fails it.
+ * [resultsByTitle] answers the general search for those titles instead of [results].
  */
 internal class FakeTmdb(
     private val results: List<MediaSearchResult>,
@@ -27,14 +28,19 @@ internal class FakeTmdb(
     private val failingSeasons: Set<String> = emptySet(),
     private val moviesByYear: Map<String, List<MediaSearchResult>> = emptyMap(),
     private val yearSearchFailure: Throwable? = null,
+    private val resultsByTitle: Map<String, List<MediaSearchResult>> = emptyMap(),
 ) : MetadataProvider {
     override val id = "tmdb"
     override val supportedIds = setOf("tmdbid", "imdbid", "tvdbid")
     val seasonFetches = mutableListOf<String>()
     val externalIdLookups = mutableListOf<String>()
     val yearSearches = mutableListOf<String>()
+    val searchedTitles = mutableListOf<String>()
 
-    override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = Result.success(results)
+    override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> {
+        searchedTitles += title
+        return Result.success(resultsByTitle[title] ?: results)
+    }
 
     override suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> {
         yearSearches += year
@@ -95,6 +101,7 @@ internal suspend fun runProcessor(
     vararg fileNames: String,
     namingStrategy: NamingStrategy = NamingStrategy.Jellyfin,
     seasonOverride: Int? = null,
+    yearOverride: String? = null,
 ): ProcessorRun {
     val organizer = RecordingOrganizer()
     val processor = MediaProcessor(
@@ -102,6 +109,7 @@ internal suspend fun runProcessor(
         fileOrganizer = organizer,
         cache = MetadataCache(),
         seasonOverride = seasonOverride,
+        yearOverride = yearOverride,
     )
     val dir = Path(SystemTemporaryDirectory, "plexify-processor-test-${Random.nextLong().toULong()}")
     SystemFileSystem.createDirectories(dir)
