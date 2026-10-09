@@ -222,20 +222,17 @@ class MovieFilenameParserTest {
 
     @Test
     fun `parses list of movies correctly`() {
-        movies.forEach { (filename, expected) ->
+        // Every failing name at once, not only the first
+        val failures = movies.mapNotNull { (filename, expected) ->
             val actual = MediaFilenameParser.parse(filename)
-
-            // Use assertTrue for a more detailed custom message on failure
-            assertTrue(
-                actual = (actual == expected),
-                message = """
+            if (actual == expected) null else """
             Test failed for filename: '$filename'
             -------------------------------------------------
             Expected: $expected
             Actual:   $actual
             -------------------------------------------------
             """.trimIndent()
-            )
         }
+        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
     }
 }
