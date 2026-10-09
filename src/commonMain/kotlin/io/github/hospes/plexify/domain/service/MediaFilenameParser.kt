@@ -63,6 +63,8 @@ object MediaFilenameParser {
     // Provider-ID tags: the [tmdbid-27205] / [imdbid-tt1375666] forms our templates produce, plus the
     // {tmdb-27205} / [tmdbid=27205] forms Plex and Jellyfin also read. Never part of the title.
     private val providerIdTagRegex = """[\[{](?:tmdb|imdb|tvdb)(?:id)?[-=][^\]}]*[\]}]""".toRegex(RegexOption.IGNORE_CASE)
+    // Plex's edition tag: "Blade Runner (1982) {edition-Final Cut}"
+    private val plexEditionTagRegex = """\{edition-[^}]*}""".toRegex(RegexOption.IGNORE_CASE)
     // The {version} suffix PathFormatter appends: " - [1080p] [BluRay] [Extended]"
     private val versionSuffixRegex = """\s-\s(?:\[[^\[\]]+]\s*)+$""".toRegex()
 
@@ -214,7 +216,7 @@ object MediaFilenameParser {
         }
 
         // --- MOVIE PARSING LOGIC (Fallback) ---
-        return parseAsMovie(workingFilename)
+        return parseAsMovie(workingFilename, leadingGroup)
     }
 
     private fun seasonFromDir(parentDirName: String?): Int? =
@@ -229,70 +231,74 @@ object MediaFilenameParser {
     private fun cleanShowTitle(rawTitle: String): String =
         rawTitle.replace(leadingGroupsRegex, " ").replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
 
-    private fun parseAsMovie(filename: String): ParsedMediaInfo {
-        var workingTitle = filename
-        var year: String? = null
+    private fun parseAsMovie(filename: String, leadingGroup: String?): ParsedMediaInfo {
+        // Normalize common delimiters to spaces first, so word boundary matching (\b) is reliable.
+        val normalized = filename.replace('.', ' ').replace('_', ' ').replace(cleanupRegex, " ")
 
-        // *** FIX: Normalize common delimiters to spaces BEFORE parsing. ***
-        // This makes word boundary matching (\b) reliable for all subsequent regexes.
-        workingTitle = workingTitle.replace('.', ' ')
-            .replace('_', ' ')
-            .replace(Regex("\\s+"), " ") // Collapse multiple spaces
-
-        // 2. Extract optional metadata from the full filename first.
-        val resolution = resolutionRegex.find(workingTitle)?.value
-        val quality = qualityRegex.find(workingTitle)?.value
-        val hdr = extractHdr(workingTitle)
-        val releaseGroup = releaseGroupRegex.find(workingTitle)?.value
-        val edition = extractEdition(workingTitle)
-
-        // Our own {version} suffix is metadata only; drop it so tags with no stop word (e.g. "[Final Cut]")
-        // don't end up in the title.
-        workingTitle = workingTitle.replace(versionSuffixRegex, "")
-
-        // 3. Find the year using a prioritized approach.
-        val yearInBracketsMatch = yearInBracketsRegex.findAll(workingTitle).firstOrNull { it.groupValues[1].isReleaseYear() }
-        if (yearInBracketsMatch != null) {
-            // Priority 1: Year in brackets or parentheses is most reliable.
-            year = yearInBracketsMatch.groupValues[1] // groupValues[1] is the captured year number
-            // Remove the entire bracketed year from the string to not interfere with title parsing.
-            workingTitle = workingTitle.replace(yearInBracketsMatch.value, " ")
-        } else {
-            // Priority 2 (Fallback): Find all potential years and assume the *last* one is the release year.
-            // This helps with titles like "2001 A Space Odyssey 1968". A year with no title before it is
-            // the title ("1917.1080p"), and so is one no release can have yet.
-            val lastYearMatch = yearRegex.findAll(workingTitle).lastOrNull { match ->
-                match.value.isReleaseYear() && workingTitle.take(match.range.first).any { it.isLetterOrDigit() }
-            }
-            if (lastYearMatch != null) {
-                year = lastYearMatch.value
-                // Cut the string at the position of the last year found. This is our primary title delimiter.
-                workingTitle = workingTitle.take(lastYearMatch.range.first)
-            }
-        }
-
-        // 4. If there's still noise after the title (e.g., no year was found to delimit it),
-        //    find the *first* "stop word" and cut the string there.
-        val stopWordMatch = stopWordRegex.find(workingTitle)
-        if (stopWordMatch != null) {
-            workingTitle = workingTitle.take(stopWordMatch.range.first)
-        }
-
-        // 5. Sanitize the final title string.
-        //    - Replace all common delimiters with a single space.
-        //    - Collapse multiple spaces into one.
-        //    - Trim whitespace from the start and end.
-        val cleanTitle = workingTitle.replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+        // A leading release group ("[Judas] Suzume (2022)") is not part of the title, unless it is the
+        // title itself ("[REC] (2007)").
+        val withoutGroups = normalized.replace(leadingGroupsRegex, "")
+        val groupless = movieTitleAndYear(withoutGroups).takeIf { withoutGroups != normalized && it.first.isNotEmpty() }
+        val (title, year) = groupless ?: movieTitleAndYear(normalized)
 
         return ParsedMediaInfo.Movie(
-            title = cleanTitle.lowercase(),
+            title = title,
             year = year,
-            resolution = resolution,
-            quality = quality,
-            hdr = hdr,
-            releaseGroup = releaseGroup,
-            edition = edition,
+            resolution = resolutionRegex.find(normalized)?.value,
+            quality = qualityRegex.find(normalized)?.value,
+            hdr = extractHdr(normalized),
+            releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup?.takeIf { groupless != null },
+            edition = extractEdition(normalized),
         )
+    }
+
+    // The title and year of a movie name, its delimiters already normalized to spaces.
+    private fun movieTitleAndYear(name: String): Pair<String, String?> {
+        // Our own {version} suffix and Plex's edition tag are metadata only; drop them so tags with no stop
+        // word (e.g. "[Final Cut]") don't end up in the title.
+        var workingTitle = name.replace(versionSuffixRegex, "").replace(plexEditionTagRegex, " ")
+        var year: String? = null
+        // A year ends the title, so the release tags come after it: a tag before it is a title word
+        // ("Internal.Affairs.1990").
+        var titleEndsAtYear = false
+
+        // A year in brackets or parentheses is the most reliable.
+        val yearInBracketsMatch = yearInBracketsRegex.findAll(workingTitle).firstOrNull { it.groupValues[1].isReleaseYear() }
+        if (yearInBracketsMatch != null) {
+            year = yearInBracketsMatch.groupValues[1]
+            if (workingTitle.take(yearInBracketsMatch.range.first).any { it.isLetterOrDigit() }) {
+                // Whatever follows is not the title: "Avatar (2009) Extended Collector's Edition"
+                workingTitle = workingTitle.take(yearInBracketsMatch.range.first)
+                titleEndsAtYear = true
+            } else {
+                // Nothing before it: "(2019) Parasite 1080p"
+                workingTitle = workingTitle.replaceRange(yearInBracketsMatch.range, " ")
+            }
+        } else {
+            // Otherwise the last year before the release tags, which start at the first stop word after a
+            // year: "2001.A.Space.Odyssey.1968.720p", not the "2020" in "Movie.1999.1080p.x264-2020". A
+            // year with no title before it is the title ("1917.1080p"), and so is one no release can have yet.
+            val years = yearRegex.findAll(workingTitle).filter { match ->
+                match.value.isReleaseYear() && workingTitle.take(match.range.first).any { it.isLetterOrDigit() }
+            }.toList()
+            val tagsStart = years.firstOrNull()
+                ?.let { first -> stopWordRegex.find(workingTitle, first.range.last + 1)?.range?.first }
+                ?: workingTitle.length
+            val lastYearMatch = years.lastOrNull { it.range.first < tagsStart }
+            if (lastYearMatch != null) {
+                year = lastYearMatch.value
+                workingTitle = workingTitle.take(lastYearMatch.range.first)
+                titleEndsAtYear = true
+            }
+        }
+
+        // With no year to end it, the title ends at the first "stop word".
+        if (!titleEndsAtYear) {
+            stopWordRegex.find(workingTitle)?.let { workingTitle = workingTitle.take(it.range.first) }
+        }
+
+        val cleanTitle = workingTitle.replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
+        return cleanTitle.lowercase() to year
     }
 
     // Metadata extractors must run on the normalized text: '_' is a word character, so `\b` never

@@ -221,7 +221,8 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 -   A leading release-group tag such as `[SubsPlease]` or `[Erai-raws]` is not part of an episode's title; it fills `{releasegroup}`. Trailing tags like `(1080p)` and CRC checksums like `[ABCD1234]` are ignored.
 -   A year closing a scene show name (`Doctor.Who.2005.S01E01.mkv`) is the show's year, which tells remakes apart (*Doctor Who* from 2005, not 1963). When no show from that year matches, the year is tried as part of the title instead (`Space.1999.S01E01.mkv` is *Space: 1999*).
 -   A multi-episode file is named with its range, `Show (2008) - S01E01-E02 - Pilot & Cat's in the Bag.mkv`, the form Plex and Jellyfin read as several episodes. When the episodes after the first aren't the next ones on TMDB (the range runs past the season, or TMDB merges them into one), the file is filed as its first episode with a warning.
--   For movies, the year is taken from brackets when present (`Title (2024)`), otherwise from the last year in the name, so `2001.A.Space.Odyssey.1968.mkv` is matched as *2001: A Space Odyssey (1968)*. The title ends at the year or at the first technical tag.
+-   For movies, the year is taken from brackets when present (`Title (2024)`), otherwise from the last year before the technical tags, so `2001.A.Space.Odyssey.1968.mkv` is matched as *2001: A Space Odyssey (1968)*. The title ends at the year, so a word before it is part of the title even when it is also a tag (`Internal.Affairs.1990.1080p.mkv`), and anything after it is not (`Avatar (2009) Extended Collector's Edition.mkv`, Plex's `{edition-Final Cut}`). With no year, the title ends at the first technical tag.
+-   A leading release group (`[Judas] Suzume (2022).mkv`) is not part of a movie's title either, unless nothing else is left: `[REC] (2007).mkv` is *[REC]*.
 -   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media, so a library can be re-run. ID tags like `[tmdbid-603]`, `[imdbid-tt0133093]` or `{tmdb-603}` are never treated as part of the title.
 -   In an episode name with a title after the episode (`Show (2010) - S01E01 - Pilot`), the tags come from the whole name, as Sonarr writes them (`… - Pilot WEBDL-1080p.mkv`), except the edition: *The Final Cut* is as likely an episode title. In Plexify's own names, which end in the ` - [1080p] [BluRay]` suffix, only that suffix counts.
 
@@ -319,7 +320,7 @@ Placeholder names are case-insensitive: `{CleanTitle}` and `{cleantitle}` are th
 | `{quality}`      | Source from the filename.                                                                      | `BluRay`                          |
 | `{hdr}`          | HDR format from the filename.                                                                  | `HDR10`                           |
 | `{edition}`      | Edition from the filename.                                                                     | `Directors Cut`                   |
-| `{releasegroup}` | Release group from the filename: a leading fansub tag on an episode (`[SubsPlease]`), or `LostFilm`. Scene suffixes like `-YTS` aren't recognized. | `SubsPlease` |
+| `{releasegroup}` | Release group from the filename: a leading fansub tag (`[SubsPlease]`), or `LostFilm`. Scene suffixes like `-YTS` aren't recognized. | `SubsPlease` |
 | `{version}`      | All technical tags present, with a leading ` - `; empty when there are none.                   | ` - [2160p] [BluRay] [HDR10]`     |
 
 Because `{version}` brings its own leading ` - `, put it directly after the preceding text, without a space: `{CleanTitle} ({year}){version}.{ext}`.
@@ -379,7 +380,7 @@ Run with `--test --verbose` first. The log shows what was parsed from each filen
 -   **Absolute episode numbers** (`One Piece - 1071`, or `S01E1071`) are placed through the show's TMDB absolute-order episode group. A show without one needs `-s` and `--episode-offset`.
 -   **Fansub `Show - NN` names**: a number after ` - ` is read as an episode, so a movie named `Title - 2.mkv` is parsed as one (name it `Title 2 (Year).mkv`). Years are excluded: `Alien - 1979.mkv` stays a movie, and so does any `- 19xx`/`- 20xx`. Batch ranges (`Show - 01-12`), specials (`Show - OVA`, `Show - 12.5`) and episode-only names (`01.mkv`) are not recognized.
 -   **Multi-episode ranges** must be consecutive episodes of one season. Ranges across seasons (`S01E24-S02E01`) are filed as their first episode, and so is a range TMDB lists as a single episode (*Friends* "The Last One", `10x17-18`).
--   **Release groups**: a movie named `[Group] Movie (2020).mkv` keeps the group in its search title, since a bracket can be the title itself (`[REC] (2007).mkv`). Scene suffixes (`-YTS`) aren't read as release groups.
+-   **Release groups**: scene suffixes (`-YTS`) aren't read as release groups.
 -   **Year-numbered seasons** (`S2024E01`) are parsed, but match only if TMDB numbers the show's seasons by year.
 -   **Date-based episodes** (`Show.2024.03.15.mkv`) aren't recognized.
 -   **One file at a time**: sample files and extras inside a release folder are processed like any other video, and subtitles and other companion files are not carried along.
