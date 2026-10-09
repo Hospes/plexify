@@ -157,6 +157,21 @@ class EpisodeFilenameParserTest {
             expected = ParsedMediaInfo.Episode(showTitle = "breaking bad", season = 1, episode = 1, lastEpisode = 2, year = "2008", resolution = "720p")
         ),
 
+        // Sonarr's names: the same shape, with the quality after the episode title instead of a {version} suffix
+        TestCase(
+            filename = "The Show (2010) - S01E01 - Pilot WEBDL-1080p.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the show", season = 1, episode = 1, year = "2010", resolution = "1080p", quality = "WEBDL")
+        ),
+        TestCase(
+            filename = "The Show (2010) - S01E01 - Pilot [Bluray-2160p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the show", season = 1, episode = 1, year = "2010", resolution = "2160p", quality = "Bluray")
+        ),
+        // Without a {version} suffix, an edition word is still the episode title's
+        TestCase(
+            filename = "Some Show (2020) - S02E05 - The Final Cut.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 2, episode = 5, year = "2020")
+        ),
+
         // --- SxxEyy variants ---
         TestCase(
             filename = "Show.S01E01[1080p].mkv",

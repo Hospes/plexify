@@ -70,7 +70,7 @@ object MediaFilenameParser {
 
     private val qualityTags = listOf(
         "bluray", "blu-ray", "bdrip", "brrip", "dvd", "dvdrip",
-        "web-dl", "web-rip", "webrip", "hdtv", "hdrip", "web-dlrip",
+        "web-dl", "webdl", "web-rip", "webrip", "hdtv", "hdrip", "web-dlrip",
     )
     private val qualityRegex = "\\b(${qualityTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
@@ -131,13 +131,15 @@ object MediaFilenameParser {
             val showTitle = cleanShowTitle(showYear?.let { showPart.substring(0, it.range.first) } ?: showPart)
 
             // Plexify's own names: "Show (2015) - S01E13 - Episode Title - [720p] [HDTV]". The episode
-            // title is free text, so read metadata only from the show part and the {version} suffix.
+            // title is free text, so read metadata only from the show part and the {version} suffix. Without
+            // that suffix the name can be another tool's, with the tags after the episode title ("Pilot
+            // WEBDL-1080p", as Sonarr writes it), so the tags come from the whole name, but not the edition:
+            // an episode is as likely to be titled "The Final Cut".
             val afterEpisode = workingFilename.substring(episodeMatch.range.last + 1)
-            val metadataText = if (afterEpisode.trimStart().startsWith("- ")) {
-                showPart + (versionSuffixRegex.find(afterEpisode)?.value ?: "")
-            } else {
-                workingFilename
-            }
+            val versionSuffix = versionSuffixRegex.find(afterEpisode)?.value
+            val titledEpisode = afterEpisode.trimStart().startsWith("- ")
+            val metadataText = if (titledEpisode && versionSuffix != null) showPart + versionSuffix else workingFilename
+            val editionText = if (titledEpisode) showPart + (versionSuffix ?: "") else workingFilename
 
             val episode = episodeMatch.groupValues[3].toInt()
             return buildEpisode(
@@ -146,6 +148,7 @@ object MediaFilenameParser {
                 episode = episode,
                 lastEpisode = rangeEnd(episode, episodeMatch.groupValues[4]),
                 normalized = metadataText.replace('.', ' ').replace('_', ' '),
+                editionText = editionText.replace('.', ' ').replace('_', ' '),
                 year = showYear?.groupValues?.get(1),
                 leadingGroup = leadingGroup,
             )
@@ -292,6 +295,7 @@ object MediaFilenameParser {
         season: Int?,
         episode: Int,
         normalized: String,
+        editionText: String = normalized,
         lastEpisode: Int? = null,
         year: String? = null,
         leadingGroup: String? = null,
@@ -306,7 +310,7 @@ object MediaFilenameParser {
             quality = qualityRegex.find(normalized)?.value,
             hdr = extractHdr(normalized),
             releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup,
-            edition = extractEdition(normalized),
+            edition = extractEdition(editionText),
         )
 
     // The first year outside the show's own title: "1923.S01E01" has none (the show premiered in 2022),

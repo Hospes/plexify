@@ -222,6 +222,7 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 -   A multi-episode file is named with its range, `Show (2008) - S01E01-E02 - Pilot & Cat's in the Bag.mkv`, the form Plex and Jellyfin read as several episodes. When the episodes after the first aren't the next ones on TMDB (the range runs past the season, or TMDB merges them into one), the file is filed as its first episode with a warning.
 -   For movies, the year is taken from brackets when present (`Title (2024)`), otherwise from the last year in the name, so `2001.A.Space.Odyssey.1968.mkv` is matched as *2001: A Space Odyssey (1968)*. The title ends at the year or at the first technical tag.
 -   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media, so a library can be re-run. ID tags like `[tmdbid-603]`, `[imdbid-tt0133093]` or `{tmdb-603}` are never treated as part of the title.
+-   In an episode name with a title after the episode (`Show (2010) - S01E01 - Pilot`), the tags come from the whole name, as Sonarr writes them (`… - Pilot WEBDL-1080p.mkv`), except the edition: *The Final Cut* is as likely an episode title. In Plexify's own names, which end in the ` - [1080p] [BluRay]` suffix, only that suffix counts.
 
 ### Technical tags
 
@@ -230,7 +231,7 @@ These tags are picked up from the filename and are available to naming templates
 | Tag        | Recognized values                                                                                       |
 | ---------- | ------------------------------------------------------------------------------------------------------- |
 | Resolution | `480p`, `720p`, `1080p`, `2160p`, `4K`                                                                  |
-| Source     | `BluRay`, `Blu-ray`, `BDRip`, `BRRip`, `DVD`, `DVDRip`, `WEB-DL`, `WEBRip`, `WEB-Rip`, `WEB-DLRip`, `HDTV`, `HDRip` |
+| Source     | `BluRay`, `Blu-ray`, `BDRip`, `BRRip`, `DVD`, `DVDRip`, `WEB-DL`, `WEBDL`, `WEBRip`, `WEB-Rip`, `WEB-DLRip`, `HDTV`, `HDRip` |
 | HDR        | `HDR10+`, `HDR10`, `HDR`, `DV`, `DoVi`, `HLG`, `SDR`                                                    |
 | Edition    | `Unrated`, `Extended`, `Limited`, `Theatrical`, `Remastered`, `Redux`, `IMAX`, `Director's Cut`, `Special Edition`, `Anniversary Edition`, `Final Cut` |
 
