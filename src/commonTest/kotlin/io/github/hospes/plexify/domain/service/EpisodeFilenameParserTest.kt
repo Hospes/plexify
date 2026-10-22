@@ -194,6 +194,17 @@ class EpisodeFilenameParserTest {
             filename = "Some Show (2020) - S01E03 - Part One - The Start - [1080p] [WEB-DL].mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 3, year = "2020", resolution = "1080p", quality = "WEB-DL")
         ),
+        // Invalid characters replaced: "Fate/Zero" -> "Fate-Zero", episode "Part 1/2" -> "Part 1-2"
+        TestCase(
+            filename = "Fate-Zero (2011) - S01E01 - Part 1-2 - [1080p] [BluRay].mkv",
+            parentDirName = "Season 01",
+            expected = ParsedMediaInfo.Episode(showTitle = "fate zero", season = 1, episode = 1, year = "2011", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Re ZERO -Starting Life in Another World- (2016) - S01E01 - The End of the Beginning and the Beginning of the End.mkv",
+            parentDirName = "Season 01",
+            expected = ParsedMediaInfo.Episode(showTitle = "re zero starting life in another world", season = 1, episode = 1, year = "2016")
+        ),
         // A multi-episode file plexify wrote
         TestCase(
             filename = "Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag - [720p].mkv",

@@ -144,6 +144,11 @@ class MovieFilenameParserTest {
             filename = "Blade Runner 2049 (2017) [tmdbid-335984] - [2160p] [BluRay] [HDR10].mkv",
             expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = "2017", resolution = "2160p", quality = "BluRay", hdr = "HDR10")
         ),
+        // Invalid characters replaced: "Fate/stay night: Heaven's Feel" -> "Fate-stay night Heaven's Feel"
+        TestCase(
+            filename = "Fate-stay night Heaven's Feel I. presage flower (2017) [tmdbid-390634] - [1080p] [BluRay].mkv",
+            expected = ParsedMediaInfo.Movie(title = "fate stay night heaven's feel i presage flower", year = "2017", resolution = "1080p", quality = "BluRay")
+        ),
         // Plex template: "{CleanTitle} ({year}){version}.{ext}"
         TestCase(
             filename = "Inception (2010) - [1080p] [BluRay].mkv",

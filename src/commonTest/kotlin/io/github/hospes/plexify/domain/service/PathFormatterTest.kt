@@ -275,4 +275,97 @@ class PathFormatterTest {
         }
         assertEquals("The naming template renders an empty file name", error.message)
     }
+
+    // --- Characters invalid in file names ---
+
+    private fun movieNamed(title: String) = CanonicalMedia.Movie(title = title, year = 2011, tmdbId = "1")
+
+    private fun cleanMovieTitle(title: String): String =
+        formatter.formatMoviePath("{CleanTitle}", "{CleanTitle}.{ext}", movieNamed(title), parsedMovie, source).name.substringBeforeLast('.')
+
+    private fun cleanEpisodeTitle(title: String): String {
+        val episode = CanonicalMedia.Episode(breakingBad, season = 1, episode = 1, title = title)
+        return formatter.formatEpisodePath("{CleanTitle}", "Season {season:2}", "{episodeTitle}.{ext}", episode, parsedRange, rangeSource)
+            .name.substringBeforeLast('.')
+    }
+
+    @Test
+    fun `a slash between words becomes a hyphen`() {
+        assertEquals("Fate-Zero", cleanMovieTitle("Fate/Zero"))
+        assertEquals("AC-DC Let There Be Rock", cleanMovieTitle("AC/DC: Let There Be Rock"))
+        assertEquals("Part 1-2", cleanEpisodeTitle("Part 1/2"))
+        assertEquals("Fate-Zero", cleanMovieTitle("""Fate\Zero"""))
+    }
+
+    @Test
+    fun `slashes in a row become one hyphen`() {
+        assertEquals(".hack-SIGN", cleanMovieTitle(".hack//SIGN"))
+        assertEquals("a-b", cleanEpisodeTitle("""a/\b"""))
+    }
+
+    @Test
+    fun `a control character becomes a space`() {
+        assertEquals("Tab Title", cleanMovieTitle("Tab\tTitle"))
+        assertEquals("Ctrl X", cleanEpisodeTitle("Ctrl\u0001X"))
+        assertEquals("Line Break", cleanMovieTitle("Line\r\nBreak"))
+    }
+
+    @Test
+    fun `a slash with spaces around it becomes a space`() {
+        assertEquals("Love Death and Robots", cleanMovieTitle("Love / Death and Robots"))
+        assertEquals("Either Or", cleanEpisodeTitle("Either /Or"))
+    }
+
+    @Test
+    fun `a colon becomes a space`() {
+        assertEquals("Avatar The Way of Water", cleanMovieTitle("Avatar: The Way of Water"))
+        assertEquals("Re ZERO -Starting Life in Another World-", cleanMovieTitle("Re:ZERO -Starting Life in Another World-"))
+        assertEquals("Chapter One The Hellfire Club", cleanEpisodeTitle("Chapter One: The Hellfire Club"))
+    }
+
+    @Test
+    fun `a vertical bar becomes a space`() {
+        assertEquals("Foo Bar", cleanMovieTitle("Foo|Bar"))
+        assertEquals("Foo Bar", cleanMovieTitle("Foo | Bar"))
+    }
+
+    @Test
+    fun `question marks asterisks quotes and angle brackets are dropped`() {
+        assertEquals("What If...", cleanMovieTitle("What If...?"))
+        assertEquals("MASH", cleanMovieTitle("M*A*S*H"))
+        assertEquals("The Bad Guys", cleanEpisodeTitle("The \"Bad\" Guys"))
+        assertEquals("Hearts", cleanMovieTitle("<Hearts>"))
+    }
+
+    @Test
+    fun `a name with a replaced slash parses back to the title`() {
+        val show = CanonicalMedia.TvShow(title = "Fate/Zero", year = 2011, tmdbId = "45845")
+        val episode = CanonicalMedia.Episode(show, season = 1, episode = 1, title = "Part 1/2")
+
+        val path = formatter.formatEpisodePath(
+            NamingStrategy.Jellyfin.tvShowFolderTemplate, NamingStrategy.Jellyfin.seasonFolderTemplate,
+            NamingStrategy.Jellyfin.episodeFileTemplate, episode, parsedRange, rangeSource,
+        )
+        assertEquals("Fate-Zero (2011) - S01E01 - Part 1-2 - [720p].mkv", path.name)
+
+        val reparsed = MediaFilenameParser.parse(path.name, "Season 01") as ParsedMediaInfo.Episode
+        assertEquals("fate zero", reparsed.showTitle)
+        assertEquals(1, reparsed.season)
+        assertEquals(1, reparsed.episode)
+        assertEquals(null, reparsed.lastEpisode)
+        assertEquals("2011", reparsed.year)
+    }
+
+    @Test
+    fun `a movie name with a replaced slash parses back to the title`() {
+        val name = NamingStrategy.Jellyfin.renderNamed(CanonicalMedia.Movie(title = "Fate/stay night: Heaven's Feel I. presage flower", year = 2017, tmdbId = "390634"))
+        assertEquals("Fate-stay night Heaven's Feel I. presage flower (2017) [tmdbid-390634].mkv", name)
+
+        val reparsed = MediaFilenameParser.parse(name) as ParsedMediaInfo.Movie
+        assertEquals("fate stay night heaven's feel i presage flower", reparsed.title)
+        assertEquals("2017", reparsed.year)
+    }
+
+    private fun NamingStrategy.renderNamed(media: CanonicalMedia.Movie): String =
+        formatter.formatMoviePath(movieFolderTemplate, movieFileTemplate, media, parsedMovie, Path("x.mkv")).name
 }

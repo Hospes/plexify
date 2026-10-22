@@ -15,8 +15,10 @@ class PathFormatter {
     // Regex to find a lone placeholder in parentheses like ({year}), with the whitespace before it
     private val parenthesizedPlaceholderRegex = Regex("""\s*\(\{(\w+)(?::\d+)?}\)""")
 
-    // Regex to find and remove characters that are invalid in file/directory names
-    private val invalidCharsRegex = Regex("""[<>:"/\\|?*]""")
+    // Characters that are invalid in file/directory names, grouped by what cleanName() makes of them
+    private val joiningSlashRegex = Regex("""(?<=\S)[/\\]+(?=\S)""")
+    private val separatorCharsRegex = Regex("""[:/\\|\u0000-\u001F]""")
+    private val droppedCharsRegex = Regex("""[<>"?*]""")
 
 
     fun formatMoviePath(
@@ -149,7 +151,7 @@ class PathFormatter {
                 commonPlaceholders.putAll(
                     mapOf(
                         "title" to media.title,
-                        "cleantitle" to media.title.replace(invalidCharsRegex, ""),
+                        "cleantitle" to cleanName(media.title),
                         "year" to media.year?.toString(),
                         "imdbid" to media.imdbId,
                         "tmdbid" to media.tmdbId,
@@ -162,13 +164,13 @@ class PathFormatter {
                 commonPlaceholders.putAll(
                     mapOf(
                         "title" to media.show.title,
-                        "cleantitle" to media.show.title.replace(invalidCharsRegex, ""),
+                        "cleantitle" to cleanName(media.show.title),
                         "year" to media.show.year?.toString(),
                         "season" to media.season.toString(),
                         "episode" to media.episode.toString(),
                         // Composite like {version}: "-E02" closing "S01E01-E02" for a multi-episode file, else ""
                         "multiepisode" to (media.lastEpisode?.let { "-E${it.toString().padStart(2, '0')}" } ?: ""),
-                        "episodetitle" to media.title.replace(invalidCharsRegex, ""),
+                        "episodetitle" to cleanName(media.title),
                         "imdbid" to media.show.imdbId,
                         "tmdbid" to media.show.tmdbId,
                         "tvdbid" to media.show.tvdbId,
@@ -180,6 +182,18 @@ class PathFormatter {
         }
         return commonPlaceholders.filterValues { it != null }.mapKeys { it.key.lowercase() }
     }
+
+    // 1b. Make a title usable in a file or folder name without joining its words. Slashes or backslashes
+    // between two words become one hyphen ("Fate/Zero" -> "Fate-Zero", "Part 1/2" -> "Part 1-2", ".hack//SIGN" ->
+    // ".hack-SIGN"); any other separator (":", "|", a slash with a space beside it, a control character) becomes
+    // a space ("Avatar: The Way of Water" -> "Avatar The Way of Water", "Re:ZERO" -> "Re ZERO");
+    // ? * " < > are dropped ("M*A*S*H" -> "MASH").
+    private fun cleanName(value: String): String = value
+        .replace(joiningSlashRegex, "-")
+        .replace(separatorCharsRegex, " ")
+        .replace(droppedCharsRegex, "")
+        .replace(Regex("""\s{2,}"""), " ")
+        .trim()
 
     // 2. Process conditional blocks first.
     // E.g., for "[imdbid-{imdbid}]", if {imdbid} is not available, the whole block is removed.
