@@ -24,9 +24,12 @@ expect fun createHardLink(source: Path, destination: Path)
 
 /**
  * Returns true when [first] and [second] are the same file on disk: the same path, or two hardlinks to the same data
- * (same device and inode on Linux, same volume and file index on Windows). Returns false if either path can't be read.
+ * (the same [FileIdentity]). Returns false if either path can't be read.
  */
-expect fun isSameFile(first: Path, second: Path): Boolean
+fun isSameFile(first: Path, second: Path): Boolean {
+    val firstIdentity = PlatformFileSystem.identity(first) ?: return false
+    return firstIdentity == PlatformFileSystem.identity(second)
+}
 
 /**
  * If [path] is a symbolic link, returns the absolute path of the file it finally points at (after every link in the
@@ -43,6 +46,12 @@ internal const val CROSS_VOLUME_HINT = " (source and destination must be on the 
 enum class FileKind { REGULAR_FILE, DIRECTORY, OTHER }
 
 /**
+ * Which file or directory a path leads to, the same through every hardlink or symlink to it: device and inode on
+ * Linux, volume serial number and file index on Windows.
+ */
+data class FileIdentity(val volume: ULong, val file: ULong)
+
+/**
  * File operations on the user's media paths: the source tree and the library. Use [PlatformFileSystem].
  *
  * On Windows, kotlinx-io's [kotlinx.io.files.SystemFileSystem] goes through the ANSI C runtime (`stat`, `opendir`,
@@ -57,6 +66,9 @@ interface MediaFileSystem {
      * @throws kotlinx.io.IOException If [path] can't be examined, e.g. a parent directory isn't readable.
      */
     fun kind(path: Path): FileKind?
+
+    /** Returns the identity of what is at [path] (following symlinks), or null if [path] can't be examined. */
+    fun identity(path: Path): FileIdentity?
 
     /**
      * Returns the entries of [directory], without `.` and `..`.
@@ -88,30 +100,57 @@ expect val PlatformFileSystem: MediaFileSystem
  * Directories are not yielded, only traversed. A missing [root] yields nothing. A path that can't be examined,
  * or a directory that can't be listed, is passed to [onUnreadable] with the error and skipped, so the caller can
  * report it instead of losing it silently.
+ *
+ * Symlinked directories (and junctions on Windows) are followed, but each directory is walked once per walk, by
+ * [FileIdentity]: a directory reached again (through a link back to one of its parents, which would loop until the OS
+ * gives up, or a second link to the same directory) is passed to [onRevisited] with the path it was walked at, and
+ * skipped. Of two paths to a directory, the one the walk order above reaches first is walked.
  */
 fun walkFiles(
     root: Path,
     fileSystem: MediaFileSystem = PlatformFileSystem,
+    onRevisited: (path: Path, original: Path) -> Unit = { _, _ -> },
     onUnreadable: (Path, Exception) -> Unit = { _, _ -> },
 ): Sequence<Path> = sequence {
+    // Each iteration of the sequence is a walk of its own, with its own record of the directories walked.
+    yieldAll(walkFiles(root, fileSystem, mutableMapOf(), onRevisited, onUnreadable))
+}
+
+private fun walkFiles(
+    path: Path,
+    fileSystem: MediaFileSystem,
+    walked: MutableMap<FileIdentity, Path>,
+    onRevisited: (path: Path, original: Path) -> Unit,
+    onUnreadable: (Path, Exception) -> Unit,
+): Sequence<Path> = sequence {
     val kind = try {
-        fileSystem.kind(root)
+        fileSystem.kind(path)
     } catch (e: Exception) {
-        onUnreadable(root, e)
+        onUnreadable(path, e)
         return@sequence
     }
 
     when (kind) {
-        FileKind.REGULAR_FILE -> yield(root)
+        FileKind.REGULAR_FILE -> yield(path)
         FileKind.DIRECTORY -> {
+            // kind() just read it, so a missing identity is unlikely; such a directory is walked untracked.
+            val identity = fileSystem.identity(path)
+            if (identity != null) {
+                val original = walked[identity]
+                if (original != null) {
+                    onRevisited(path, original)
+                    return@sequence
+                }
+                walked[identity] = path
+            }
             val children = try {
-                fileSystem.list(root)
+                fileSystem.list(path)
             } catch (e: Exception) {
-                onUnreadable(root, e)
+                onUnreadable(path, e)
                 return@sequence
             }
             children.sortedWith(compareBy(FileNameOrder) { it.name })
-                .forEach { yieldAll(walkFiles(it, fileSystem, onUnreadable)) }
+                .forEach { yieldAll(walkFiles(it, fileSystem, walked, onRevisited, onUnreadable)) }
         }
         FileKind.OTHER, null -> Unit
     }

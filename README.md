@@ -266,6 +266,8 @@ A source file can be a symbolic link (pointing at a download in another folder o
 -   **`HARDLINK`**: the library gets a hardlink to the file the symlink points at, not to the symlink itself, so it keeps working however the symlink was written. The symlink is left alone. The file it points at must be on the same volume as the library.
 -   **`MOVE`**: the symlink itself is moved into the library, the way a library made of symlinks (e.g. to a cloud or debrid mount) expects; the file it points at is not touched. Plexify checks that the moved symlink still leads to the same file. A relative symlink usually doesn't from its new folder: the move is then undone and reported as failed (`… won't resolve from the library`). Use `HARDLINK` mode for those, or recreate them as absolute links.
 
+A folder in the source can be a symbolic link too (or, on Windows, a junction or `mklink /D` link): Plexify follows it, so a source folder can gather downloads from several disks or mounts. Within one source folder, each folder is walked once, however many paths lead to it. A link to a folder already walked in this source folder is skipped with a warning, `Warning: Skipping <link>: it leads to <folder>, already walked`: a link back to one of its own parent folders, which would otherwise repeat the folder until the system gives up, or a second link to the same folder. Of two paths to one folder, the one that comes first in name order (see *How It Works*) is used, so its files are processed once, under that path.
+
 ## 📝 Naming Templates
 
 ### Built-in templates

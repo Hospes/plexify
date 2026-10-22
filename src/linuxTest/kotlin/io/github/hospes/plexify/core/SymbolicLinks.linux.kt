@@ -5,7 +5,7 @@ import kotlinx.io.files.Path
 import platform.posix.symlink
 
 @OptIn(ExperimentalForeignApi::class)
-actual fun createSymbolicLink(link: Path, target: String): Boolean {
+actual fun createSymbolicLink(link: Path, target: String, directory: Boolean): Boolean {
     check(symlink(target, link.toString()) == 0) { "Can't create symlink '$link'" }
     return true
 }
