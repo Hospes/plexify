@@ -5,7 +5,8 @@ import kotlinx.io.files.Path
 /**
  * Creates a symbolic link at [link] pointing at [target], written as given: a relative [target] (with `/`
  * separators) is relative to [link]'s folder. Returns false if this system doesn't allow creating symlinks (Windows
- * without Developer Mode or administrator rights), so a test can skip instead of failing.
+ * without Developer Mode or administrator rights), so a test can skip instead of failing. On CI (the `CI` environment
+ * variable is set) it fails instead: CI output doesn't list tests, so a skip there would pass unnoticed.
  *
  * Windows tells a link to a [directory] from a link to a file when the link is created; Linux doesn't.
  */
