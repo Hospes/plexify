@@ -3,6 +3,7 @@ package io.github.hospes.plexify.core
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
+import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import kotlinx.io.IOException
@@ -490,6 +491,26 @@ class DefaultFileOrganizerTest {
         assertIs<OrganizeOutcome.Organized>(outcome)
         assertTrue(outcome.path.name.encodeToByteArray().size <= 255)
         assertTrue(isSameFile(source, outcome.path))
+    }
+
+    @Test
+    fun `keeps a file whose own name carries its release group`() {
+        for (mode in OperationMode.entries) {
+            val source = file(Path(root, "Inception.2010.1080p.BluRay.x264-YTS.mkv"), "movie")
+            val organized = organizer().organize(source, library, movie, MediaFilenameParser.parse(source.name), mode, isTestMode = false)
+                .getOrThrow()
+            assertIs<OrganizeOutcome.Organized>(organized, "mode $mode")
+            assertEquals("Inception (2010) [tmdbid-27205] - [1080p] [BluRay] [YTS].mkv", organized.path.name)
+
+            // A re-run over the library reads the group back from the name and finds the file in place.
+            val rerun = organizer().organize(organized.path, library, movie, MediaFilenameParser.parse(organized.path.name), mode, isTestMode = false)
+                .getOrThrow()
+
+            assertIs<OrganizeOutcome.AlreadyInPlace>(rerun, "mode $mode")
+            assertEquals("movie", read(organized.path))
+            deleteRecursively(library)
+            if (SystemFileSystem.exists(source)) SystemFileSystem.delete(source)
+        }
     }
 
     private fun assertKeepsFileAlreadyAtTarget(mode: OperationMode) {

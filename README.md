@@ -12,7 +12,7 @@ It is a single native executable for Linux (x64, arm64) and Windows. No Java or 
 ```text
 downloads/                                        library/
 ├── The.Matrix.1999.1080p.BluRay.x264-YTS.mkv     ├── The Matrix (1999) [tmdbid-603]/
-└── Breaking Bad S01/                       ──►   │   └── The Matrix (1999) [tmdbid-603] - [1080p] [BluRay].mkv
+└── Breaking Bad S01/                       ──►   │   └── The Matrix (1999) [tmdbid-603] - [1080p] [BluRay] [YTS].mkv
     └── Breaking.Bad.S01E01.Pilot.1080p.mkv       └── Breaking Bad (2008) [tmdbid-1396]/
                                                       └── Season 01/
                                                           └── Breaking Bad (2008) - S01E01 - Pilot - [1080p].mkv
@@ -217,12 +217,12 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 -   When no season is found, Season 1 is assumed (with a warning); use `-s` to set it. Two exceptions, both looked up on TMDB:
     -   An episode number past the end of that season is placed through the show's TMDB episode groups (split-cour releases) or its absolute order (*One Piece* `1071`).
     -   An anime arc release (`Kimetsu no Yaiba - Hashira Geiko-hen [01]`) takes the season whose TMDB title matches the arc. If TMDB has no such season title, the file is skipped with a hint to use `-s`, instead of overwriting Season 1.
--   A leading release-group tag such as `[SubsPlease]` or `[Erai-raws]` is not part of an episode's title; it is ignored. Trailing tags like `(1080p)` and CRC checksums like `[ABCD1234]` are ignored.
+-   A leading release-group tag such as `[SubsPlease]` or `[Erai-raws]` is not part of an episode's title; it becomes the release group, the last tag of the name. Trailing tags like `(1080p)` and CRC checksums like `[ABCD1234]` are ignored.
 -   A year closing a scene show name (`Doctor.Who.2005.S01E01.mkv`) is the show's year, which tells remakes apart (*Doctor Who* from 2005, not 1963). When no show from that year matches, the year is tried as part of the title instead (`Space.1999.S01E01.mkv` is *Space: 1999*).
 -   A multi-episode file is named with its range, `Show (2008) - S01E01-E02 - Pilot & Cat's in the Bag.mkv`, the form Plex and Jellyfin read as several episodes. When the episodes after the first aren't the next ones on TMDB (the range runs past the season, or TMDB merges them into one), the file is filed as its first episode with a warning.
 -   For movies, the year is taken from brackets when present (`Title (2024)`), otherwise from the last year before the technical tags, so `2001.A.Space.Odyssey.1968.mkv` is matched as *2001: A Space Odyssey (1968)*. The title ends at the year, so a word before it is part of the title even when it is also a tag (`Internal.Affairs.1990.1080p.mkv`), and anything after it is not (`Avatar (2009) Extended Collector's Edition.mkv`, Plex's `{edition-Final Cut}`). With no year, the title ends at the first technical tag.
 -   A leading release group (`[Judas] Suzume (2022).mkv`) is not part of a movie's title either, unless nothing else is left: `[REC] (2007).mkv` is *[REC]*.
--   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media, so a library can be re-run. ID tags like `[tmdbid-603]`, `[imdbid-tt0133093]`, `{imdb-tt0133093}` or `{tmdb-603}` are never treated as part of the title.
+-   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media and tags, the release group closing the tag list included, so a library can be re-run. ID tags like `[tmdbid-603]`, `[imdbid-tt0133093]`, `{imdb-tt0133093}` or `{tmdb-603}` are never treated as part of the title.
 -   In an episode name with a title after the episode (`Show (2010) - S01E01 - Pilot`), the tags come from the whole name, as Sonarr writes them (`… - Pilot WEBDL-1080p.mkv`), except the edition: *The Final Cut* is as likely an episode title. In Plexify's own names, which end in the ` - [1080p] [BluRay]` suffix, only that suffix counts.
 
 ### Technical tags
@@ -235,6 +235,8 @@ These tags are picked up from the filename and go at the end of the file name, a
 | Source     | `BluRay`, `Blu-ray`, `BDRip`, `BRRip`, `DVD`, `DVDRip`, `WEB-DL`, `WEBDL`, `WEBRip`, `WEB-Rip`, `WEB-DLRip`, `HDTV`, `HDRip` |
 | HDR        | `HDR10+`, `HDR10`, `HDR`, `DV`, `DoVi`, `HLG`, `SDR`                                                    |
 | Edition    | `Unrated`, `Extended`, `Limited`, `Theatrical`, `Remastered`, `Redux`, `IMAX`, `Director's Cut`, `Special Edition`, `Anniversary Edition`, `Final Cut` |
+
+The release group, when the filename has one, closes the list: ` - [1080p] [BluRay] [YTS]`.
 
 Tags keep the spelling used in the filename (`BluRay` stays `BluRay`), except HDR formats and editions, which are normalized.
 
@@ -254,7 +256,7 @@ By default, Plexify never deletes or overwrites a file that is already at the ta
 
 -   **The target is the file itself.** The source already sits at its target (for example, when you run Plexify over an existing library), or the target is a hardlink to the source (or to the file a symlinked source points at). The file is left alone: `= Movie.mkv — already in the library: <path>`.
 -   **A different file is at the target.** Both files are left alone: `✗ Movie.mkv — target already exists: <path>`. To replace it, run again with `--overwrite` (`-o`), or delete or rename the existing file yourself.
--   **An earlier file of the same run has the target.** Two sources can get the same name, for example a release and its `REPACK` (the [technical tags](#technical-tags) in a name hold only resolution, source, HDR and edition). The first one processed keeps the target, and the later one is left alone: `✗ Movie.REPACK.mkv — same target as Movie.mkv earlier in this run: <path>`. Files are processed in name order (see *How It Works* below), so of two files in one folder, the one whose name sorts first wins, on every platform and file system. This also applies to a file that was already in place. To keep the later file instead, organize it on its own in a separate run with `--overwrite`.
+-   **An earlier file of the same run has the target.** Two sources can get the same name, for example a release and its `REPACK` (the [technical tags](#technical-tags) in a name hold only resolution, source, HDR, edition and release group). The first one processed keeps the target, and the later one is left alone: `✗ Movie.REPACK.mkv — same target as Movie.mkv earlier in this run: <path>`. Files are processed in name order (see *How It Works* below), so of two files in one folder, the one whose name sorts first wins, on every platform and file system. This also applies to a file that was already in place. To keep the later file instead, organize it on its own in a separate run with `--overwrite`.
 
 With `--overwrite`, a different file at the target is replaced and counted as *organized*: `✓ Movie.mkv → Movie (2010)/Movie (2010).mkv (replaced existing file)`. In `HARDLINK` mode the new link is created under a temporary name (`.plexify-<8 hex digits>.tmp`) first and then renamed over the old file, so the old file stays if linking fails. If Plexify is killed between those two steps, the temporary file is left next to the old one; the next run that writes to that folder deletes it. Replacing only removes the library's name for the old file: if it is also hardlinked elsewhere (an old download folder, say), that copy stays on disk. `--overwrite` never applies to the other two cases: a file that already is its own target, or one this run already placed, is always left alone.
 
@@ -287,7 +289,7 @@ The Matrix (1999) {imdb-tt0133093}/The Matrix (1999) - [1080p] [BluRay].mkv
 Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E01 - Pilot - [1080p].mkv
 ```
 
-Both name a multi-episode file with its range: `Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag... - [1080p].mkv`. When TMDB has no year for a title, the `(year)` part is left out. A name too long for the file system is shortened (see [How names are built](#how-names-are-built)).
+The tags end with the release group when the filename has one, so `The.Matrix.1999.1080p.BluRay.x264-YTS.mkv` becomes `The Matrix (1999) [tmdbid-603] - [1080p] [BluRay] [YTS].mkv`. Both name a multi-episode file with its range: `Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag... - [1080p].mkv`. When TMDB has no year for a title, the `(year)` part is left out. A name too long for the file system is shortened (see [How names are built](#how-names-are-built)).
 
 The Plex template tags folders with IMDb IDs in `{imdb-…}` form, the curly-brace form Plex documents for IDs. Plexify looks them up on TMDB for each matched movie or show (one extra request per title, not per file). When TMDB has no IMDb ID, the `{imdb-…}` tag is left out.
 
@@ -297,9 +299,9 @@ The Plex template tags folders with IMDb IDs in `{imdb-…}` form, the curly-bra
 
 -   **Title:** the title from TMDB, made safe for file names while keeping words apart: `/` or `\` between two words becomes `-` (`Fate/Zero` → `Fate-Zero`, `.hack//SIGN` → `.hack-SIGN`); `:`, `|`, control characters and a `/` or `\` with a space beside it become a space (`Re:ZERO` → `Re ZERO`); `" < > ? *` are dropped. Episode titles are cleaned the same way (`Part 1/2` → `Part 1-2`), and a multi-episode file joins its titles with ` & `.
 -   **Year:** the release year of a movie, or the first-air year of a show. When TMDB has none, the `(year)` part is left out.
--   **Technical tags:** the resolution, source, HDR format and edition found in the filename (see [Technical tags](#technical-tags)), as a ` - [2160p] [BluRay] [HDR10]` suffix. Without any, there is no suffix.
+-   **Technical tags:** the resolution, source, HDR format and edition found in the filename (see [Technical tags](#technical-tags)), then the release group (`[SubsPlease] …`, `…x265-FLUX`), as a ` - [2160p] [BluRay] [HDR10] [FLUX]` suffix. Without any, there is no suffix.
 -   **Trimming:** repeated spaces are collapsed, and leading and trailing spaces are trimmed from every folder and file name. Trailing dots are trimmed too: Windows can't keep them, and they are trimmed on Linux as well, so a library gets the same names on both. Only a name that ends in the dot changes: with no year and no IMDb ID, Plex puts `S.W.A.T.` in the folder `S.W.A.T`, while `S.W.A.T. (2017) {imdb-…}` keeps its dots.
--   **Long names:** a folder or file name is at most 255 bytes in UTF-8, the limit on Linux (it also fits Windows' limit of 255 characters). A longer name is shortened, usually a multi-episode file with many titles: the episode title is cut first, at a word and marked with `…`, then the title, so the season and episode, the technical tags and the extension stay. Letters outside the Latin alphabet take 2 or 3 bytes each, so such titles are cut sooner.
+-   **Long names:** a folder or file name is at most 255 bytes in UTF-8, the limit on Linux (it also fits Windows' limit of 255 characters). A longer name is shortened, usually a multi-episode file with many titles: the episode title is cut first, at a word and marked with `…`, then the title, so the season and episode, the technical tags and the extension stay. Only a name that still doesn't fit loses its release group tag. Letters outside the Latin alphabet take 2 or 3 bytes each, so such titles are cut sooner.
 
 ## ⚙️ How It Works
 
@@ -348,6 +350,7 @@ Run with `--test --verbose` first. The log shows what was parsed from each filen
 -   **Absolute episode numbers** (`One Piece - 1071`, or `S01E1071`) are placed through the show's TMDB absolute-order episode group. A show without one needs `-s` and `--episode-offset`.
 -   **Fansub `Show - NN` names**: a number after ` - ` is read as an episode, so a movie named `Title - 2.mkv` is parsed as one (name it `Title 2 (Year).mkv`). Years are excluded: `Alien - 1979.mkv` stays a movie, and so does any `- 19xx`/`- 20xx`, or a number with a bracketed year after it (`Star Wars - 4 - A New Hope (1977).mkv`). Batch ranges (`Show - 01-12`), specials (`Show - OVA`, `Show - 12.5`) and episode-only names (`01.mkv`) are not recognized.
 -   **Multi-episode ranges** must be consecutive episodes of one season. Ranges across seasons (`S01E24-S02E01`) are filed as their first episode, and so is a range TMDB lists as a single episode (*Friends* "The Last One", `10x17-18`).
+-   **Release groups**: a scene suffix counts only after a technical tag (`1080p.BluRay.x264-YTS`), so a hyphenated title (`Spider-Man.mkv`) isn't misread. A suffix with no tag before it (`Movie.2019-GROUP.mkv`) and groups signed mid-name or without a hyphen (`Movie.2018.1080p.NTb.mkv`) are not read, except the known groups `LostFilm`, `AniLibria` and `AniLiberty`, which are found anywhere in the name, and also in the release folder's name when the file has no group (AniLiberty signs only its folders). Two releases of the same movie or episode by different groups get different names, so both are kept. Names written before 0.6.0 have no group, so a run over the library itself keeps them. Running Plexify again over the original downloads (kept by the default `HARDLINK` mode) creates the new name next to the old file, which you remove by hand.
 -   **Year-numbered seasons** (`S2024E01`) are parsed, but match only if TMDB numbers the show's seasons by year.
 -   **Date-based episodes** (`Show.2024.03.15.mkv`) aren't recognized.
 -   **One file at a time**: sample files and extras inside a release folder are processed like any other video, and subtitles and other companion files are not carried along.
