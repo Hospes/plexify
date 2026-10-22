@@ -145,6 +145,15 @@ The template options are mutually exclusive.
 
 > **Note:** `--title`, `--year`, `--season` and `--episode-offset` apply to **every file in the run**. Use them when pointing Plexify at one movie or at one season of a show, not at a mixed downloads folder.
 
+### Exit status
+
+| Status | Meaning                                                                                                                                                  |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`    | Every file was organized or skipped.                                                                                                                     |
+| `1`    | At least one file or source failed (counted as `failed` in the summary), or the run couldn't start: invalid arguments, or missing or rejected TMDB credentials. |
+
+A file fails when looking it up on TMDB or placing it in the library ran into an error, and a source fails when it doesn't exist, can't be read, or is neither a file nor a directory. Skipped files don't fail the run: no confident match, a target that already exists, a file already in the library. `--test` runs follow the same rule. Scripts, cron jobs and Sonarr/Radarr custom scripts can check the status to catch failed runs.
+
 ### Examples
 
 **Organize a downloads folder with hardlinks and Jellyfin naming (the defaults):**

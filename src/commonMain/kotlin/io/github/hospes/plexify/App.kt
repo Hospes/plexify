@@ -3,6 +3,7 @@ package io.github.hospes.plexify
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.convert
@@ -163,6 +164,8 @@ object App : CliktCommand(name = "plexify") {
         echo("---")
         val stats = processor.stats
         echo("Done: ${stats.organized} organized, ${stats.skipped} skipped, ${stats.failed} failed.")
+        val status = exitStatus(stats)
+        if (status != EXIT_OK) throw ProgramResult(status)
     }
 
     /**
@@ -194,6 +197,17 @@ object App : CliktCommand(name = "plexify") {
     private val hasBuiltInTmdbKey: Boolean
         get() = BuildConfig.TMDB_API_KEY.isNotBlank() || BuildConfig.TMDB_API_ACCESS_TOKEN.isNotBlank()
 }
+
+const val EXIT_OK = 0
+
+/**
+ * A file or source path failed. Clikt exits with 1 for invalid arguments too, as does a run that can't start
+ * (missing or rejected TMDB credentials): either way, something needs looking at.
+ */
+const val EXIT_FAILED = 1
+
+/** [EXIT_FAILED] when any file or source path failed, [EXIT_OK] otherwise. Skipped files aren't failures. */
+internal fun exitStatus(stats: MediaProcessor.Stats): Int = if (stats.failed > 0) EXIT_FAILED else EXIT_OK
 
 /** Required by the TMDB API terms of use, section 3. */
 const val TMDB_ATTRIBUTION = "This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB."

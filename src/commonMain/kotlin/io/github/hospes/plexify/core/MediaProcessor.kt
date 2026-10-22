@@ -90,10 +90,12 @@ class MediaProcessor(
             PlatformFileSystem.kind(source)
         } catch (e: Exception) {
             log("Error: ${e.message}")
+            stats.failed++
             return
         }
         if (kind == null) {
             log("Error: Source path does not exist: $source")
+            stats.failed++
             return
         }
         if (kind == FileKind.DANGLING_LINK) {
@@ -134,7 +136,8 @@ class MediaProcessor(
                 stats.skipped++
             }
         } else {
-            log("Warning: Source is not a regular file or directory, skipping: $source")
+            log("Error: Source is not a regular file or directory: $source")
+            stats.failed++
         }
     }
 
