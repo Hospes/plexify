@@ -1,10 +1,12 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.MetadataConnectionException
 import io.ktor.client.engine.mock.*
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 
 class TmdbConnectionErrorTest {
 
@@ -25,8 +27,9 @@ class TmdbConnectionErrorTest {
 
         val error = provider.search("Dune", null).exceptionOrNull()
 
-        assertEquals("TMDB request failed searching for 'Dune': Could not connect to server (CURLE_COULDNT_CONNECT)", error?.message)
-        val printed = error!!.stackTraceToString()
+        assertIs<MetadataConnectionException>(error)
+        assertEquals("TMDB request failed searching for 'Dune': Could not connect to server (CURLE_COULDNT_CONNECT)", error.message)
+        val printed = error.stackTraceToString()
         assertFalse("secret-key" in printed, printed)
         assertFalse("api.themoviedb.org" in printed, printed)
     }

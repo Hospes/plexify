@@ -1,8 +1,10 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.MetadataConnectionException
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.MetadataTimeoutException
+import io.github.hospes.plexify.data.MetadataUnreachableException
 import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
@@ -51,7 +53,9 @@ class TmdbProvider(
                 retryIf(maxRetries = 3) { _, response -> response.status == HttpStatusCode.TooManyRequests }
                 // Fewer tries for a timeout (they share the count above): a stall usually means TMDB
                 // or the network is down, and every try costs the full timeout.
-                retryOnExceptionIf { _, cause -> cause.isTimeout() && retryCount <= timeouts.retries }
+                retryOnExceptionIf { request, cause ->
+                    cause.isTimeout() && retryCount <= timeouts.retries && OptionalLookup !in request.attributes
+                }
                 exponentialDelay()
             }
 
@@ -82,6 +86,12 @@ class TmdbProvider(
         }
     }
 
+
+    // Requests in a row that got no answer (timed out or could not connect). Files are processed one
+    // after another, so in an outage each would wait out the timeouts again: from `unreachableAfter`
+    // on, every request fails at once for the rest of the run.
+    private var unanswered = 0
+    private val unreachable get() = unanswered >= timeouts.unreachableAfter
 
     /** One cheap call before a run, so wrong or revoked credentials fail once and clearly. */
     suspend fun verifyCredentials(): Result<Unit> = tmdbCatching {
@@ -116,12 +126,22 @@ class TmdbProvider(
      */
     private suspend fun List<MediaSearchResult>.withAlternativeTitles(title: String): List<MediaSearchResult> {
         var lookups = 0
+        var answered = true
         return map { result ->
-            if (result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
+            if (!answered || result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
                 result
             } else {
                 lookups++
-                enrichWithAlternativeTitles(result, title)
+                // Optional, so a failed lookup leaves the result as it is. When TMDB didn't answer, the
+                // next lookups would wait as long, so the search goes on without them.
+                try {
+                    enrichWithAlternativeTitles(result, title)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    answered = !e.isNoAnswer()
+                    result
+                }
             }
         }
     }
@@ -131,11 +151,13 @@ class TmdbProvider(
             is MediaSearchResult.Movie -> "movie/${result.tmdbId}/alternative_titles"
             is MediaSearchResult.TvShow -> "tv/${result.tmdbId}/alternative_titles"
         }
-        val dto = runCatching {
-            httpClient.get(endpoint).body<TmdbAlternativeTitlesDto>()
-        }.getOrNull()
-        val altTitles = dto?.all.orEmpty().map { it.title }
-        if (dto == null || altTitles.isEmpty()) return result
+        val response = get(endpoint, {
+            attributes.put(OptionalLookup, Unit)
+            timeout { requestTimeoutMillis = timeouts.optionalRequestMillis }
+        }) { "fetching alternative titles of '${result.title}'" }
+        val dto = response.body<TmdbAlternativeTitlesDto>()
+        val altTitles = dto.all.map { it.title }
+        if (altTitles.isEmpty()) return result
 
         return when (result) {
             is MediaSearchResult.Movie -> result.copy(alternativeTitles = altTitles)
@@ -248,13 +270,24 @@ class TmdbProvider(
      * is reported on every file it fails, so the message has to stay readable.
      */
     private suspend fun get(path: String, block: HttpRequestBuilder.() -> Unit = {}, action: () -> String): HttpResponse {
+        if (unreachable) throw MetadataUnreachableException("Not ${action()}: TMDB stopped answering earlier in this run")
         val response = try {
             httpClient.get(path, block)
         } catch (e: Throwable) {
-            if (e.isTimeout()) throw MetadataTimeoutException("TMDB request timed out ${action()}")
-            if (e is CancellationException) throw e
-            throw IllegalStateException("TMDB request failed ${action()}: ${e.failureReason()}")
+            val failure = when {
+                e.isTimeout() -> MetadataTimeoutException("TMDB request timed out ${action()}")
+                e is CancellationException -> throw e
+                else -> MetadataConnectionException("TMDB request failed ${action()}: ${e.failureReason()}")
+            }
+            unanswered++
+            if (unreachable) {
+                throw MetadataUnreachableException(
+                    "${failure.message}; TMDB stopped answering ($unanswered requests in a row), so later lookups in this run fail at once"
+                )
+            }
+            throw failure
         }
+        unanswered = 0
         response.ensureSuccess(action)
         return response
     }
@@ -281,6 +314,10 @@ data class TmdbTimeouts(
     val requestMillis: Long = 30_000,
     /** Extra tries after a timeout, out of the three retries a call gets (HTTP 429 may use all three). */
     val retries: Int = 1,
+    /** Request timeout of an optional lookup (alternative titles), which gets no retry after a timeout. */
+    val optionalRequestMillis: Long = 10_000,
+    /** Requests in a row with no answer (timed out or could not connect) after which TMDB counts as unreachable for the run. */
+    val unreachableAfter: Int = 3,
 )
 
 // The curl engine's message is "Connection failed for request: <request, URL included>. Reason: <curl error>".
@@ -288,6 +325,12 @@ private fun Throwable.failureReason(): String {
     val message = message ?: return this::class.simpleName ?: "unknown error"
     return message.substringAfter("Reason: ", missingDelimiterValue = message)
 }
+
+// Marks a request whose failure only costs a detail, so a timeout is not worth a second try.
+private val OptionalLookup = AttributeKey<Unit>("PlexifyOptionalLookup")
+
+private fun Throwable.isNoAnswer(): Boolean =
+    this is MetadataTimeoutException || this is MetadataConnectionException || this is MetadataUnreachableException
 
 // Ktor may deliver a timeout wrapped in a CancellationException.
 private fun Throwable.isTimeout(): Boolean = generateSequence(this) { it.cause }.take(8).any {
