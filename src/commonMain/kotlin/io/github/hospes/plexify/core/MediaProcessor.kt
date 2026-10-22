@@ -71,6 +71,9 @@ class MediaProcessor(
     // Searched show titles (keyed "title:year") that end in an arc no season title places.
     private val unplacedArcTitles = mutableSetOf<String>()
 
+    // Show titles closing in a number (keyed "title:year") and whether that number is the season.
+    private val numberedTitles = mutableMapOf<String, Boolean>()
+
     // Show titles already reported as naming their season.
     private val titleSeasonNotices = mutableSetOf<String>()
 
@@ -235,10 +238,11 @@ class MediaProcessor(
         source: Path,
         destination: Path,
         mode: OperationMode,
-        parsedInfo: ParsedMediaInfo.Episode,
+        parsed: ParsedMediaInfo.Episode,
         isTestMode: Boolean,
     ) = indent {
-        debug("Parsed as TV Show: Show='${parsedInfo.showTitle}', Season: ${parsedInfo.season}, Episode: ${parsedInfo.episode}")
+        debug("Parsed as TV Show: Show='${parsed.showTitle}', Season: ${parsed.season}, Episode: ${parsed.episode}")
+        val parsedInfo = withSeasonFromTitle(parsed).getOrElse { error -> return@indent lookupFailed(source, error) }
 
         // Step 1: Find the candidate shows, best first, using the cache first.
         val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year, parsedInfo.bareShowYear)
@@ -289,6 +293,64 @@ class MediaProcessor(
         debug("Found episode: ${bestEpisodeMatch.describe()}")
         organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
     }
+
+    /**
+     * The release read with the number closing its show title as the season ("Devil_May_Cry_2_[01]" is Devil
+     * May Cry season 2), when the title without it matches a show that has that season and the whole title
+     * matches no other show; else as parsed. "Kaiju No. 8" stays whole (the show has no season 8), and so
+     * does "Lupin III" (Lupin the Third is not *Lupin*). Decided once per show title; a failed lookup is
+     * not decided and fails the file.
+     */
+    context(_: LoggingContext)
+    private suspend fun withSeasonFromTitle(parsed: ParsedMediaInfo.Episode): Result<ParsedMediaInfo.Episode> {
+        val numbered = parsed.numberedSeason ?: return Result.success(parsed)
+        // A season from the parent directory or the command line that differs makes the number the title's.
+        if (titleOverride != null || (parsed.season != null && parsed.season != numbered.season)) return Result.success(parsed)
+
+        val key = "${parsed.showTitle}:${parsed.year}"
+        val isSeason = numberedTitles[key] ?: run {
+            val show = showWithTitleSeason(parsed, numbered).getOrElse { return Result.failure(it) }
+            if (show != null) status("No season number in filenames; '${parsed.showTitle}' is Season ${numbered.season} of ${show.describe()}")
+            (show != null).also { numberedTitles[key] = it }
+        }
+        return Result.success(
+            if (isSeason) parsed.copy(showTitle = numbered.showTitle, season = numbered.season, numberedSeason = null) else parsed
+        )
+    }
+
+    /** The show [numbered] names, when it has that season and the whole title names no other show. */
+    context(_: LoggingContext)
+    private suspend fun showWithTitleSeason(
+        parsed: ParsedMediaInfo.Episode,
+        numbered: ParsedMediaInfo.NumberedSeason,
+    ): Result<CanonicalMedia.TvShow?> = indent {
+        debug("Trying '${numbered.showTitle}' Season ${numbered.season} for '${parsed.showTitle}'")
+        // With its external IDs now, so the season cached below carries them, as findEpisode expects.
+        val show = bestShow(numbered.showTitle, parsed.year).getOrElse { return@indent Result.failure(it) }
+            ?.withExternalIds()
+            ?: return@indent Result.success(null)
+        val season = findOrFetchSeason(show, numbered.season).getOrElse { return@indent Result.failure(it) }
+        if (season.episodes.isEmpty()) {
+            debug("${show.describe()} has no Season ${numbered.season}; the number is part of the title")
+            return@indent Result.success(null)
+        }
+        val whole = bestShow(parsed.showTitle, parsed.year).getOrElse { return@indent Result.failure(it) }
+        if (whole != null && whole.identity != show.identity) {
+            debug("'${parsed.showTitle}' is ${whole.describe()}, not ${show.describe()}")
+            return@indent Result.success(null)
+        }
+        Result.success(show)
+    }
+
+    /** The best show match for [title]; a reading being tried reports no miss of its own. */
+    context(_: LoggingContext)
+    private suspend fun bestShow(title: String, year: String?): Result<CanonicalMedia.TvShow?> =
+        metadataService.search(title, year).map { results ->
+            rankMatches(results.filterIsInstance<MediaSearchResult.TvShow>(), title, year, reportMiss = false)
+                .firstOrNull()?.media as? CanonicalMedia.TvShow
+        }
+
+    private val CanonicalMedia.TvShow.identity: String get() = tmdbId ?: imdbId ?: title
 
     /**
      * The lookup itself failed (a search or a season fetch timed out, or hit an HTTP or network error),
@@ -526,7 +588,7 @@ class MediaProcessor(
     private fun RankedMatch.canStandInFor(best: RankedMatch): Boolean =
         titleSimilarity >= best.titleSimilarity && (yearScore == null || yearScore > 0)
 
-    private fun CanonicalMedia.TvShow.seasonCacheKey(season: Int): String = "${tmdbId ?: imdbId ?: title}:$season"
+    private fun CanonicalMedia.TvShow.seasonCacheKey(season: Int): String = "$identity:$season"
 
     /**
      * Fallback for releases numbered differently from the provider, typically anime split into
