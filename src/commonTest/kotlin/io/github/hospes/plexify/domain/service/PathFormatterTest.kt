@@ -6,6 +6,8 @@ import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import kotlinx.io.files.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class PathFormatterTest {
 
@@ -126,5 +128,151 @@ class PathFormatterTest {
         assertEquals(1, reparsed.episode)
         assertEquals(2, reparsed.lastEpisode)
         assertEquals("breaking bad", reparsed.showTitle)
+    }
+
+    // --- Trailing dots and spaces ---
+
+    @Test
+    fun `trims a trailing dot from a folder`() {
+        val swat = CanonicalMedia.Episode(CanonicalMedia.TvShow(title = "S.W.A.T.", year = null, tmdbId = "71790"), 1, 1, "Pilot")
+
+        assertEquals(
+            path("S.W.A.T", "Season 01", "S.W.A.T. - S01E01 - Pilot.mkv"),
+            formatter.formatEpisodePath(
+                NamingStrategy.Plex.tvShowFolderTemplate, NamingStrategy.Plex.seasonFolderTemplate, NamingStrategy.Plex.episodeFileTemplate,
+                swat, parsedEpisode, source,
+            ).toString(),
+        )
+    }
+
+    @Test
+    fun `trims trailing dots and spaces from every folder of a custom template`() {
+        val whatIf = CanonicalMedia.Movie(title = "What If...", year = null, tmdbId = "1")
+        val template = NamingStrategy.Custom("{CleanTitle} [({imdbid})]/{CleanTitle}/{CleanTitle}{version}.{ext}")
+
+        assertEquals(
+            path("What If", "What If", "What If....mkv"),
+            formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, whatIf, parsedMovie, source).toString(),
+        )
+    }
+
+    @Test
+    fun `trims a trailing dot from a file without an extension`() {
+        val template = NamingStrategy.Custom("{CleanTitle}/{CleanTitle}.{ext}")
+
+        assertEquals(
+            path("Inception", "Inception"),
+            formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, movie(null), parsedMovie, Path("Inception")).toString(),
+        )
+    }
+
+    // --- Names over 255 bytes ---
+
+    private val show = CanonicalMedia.TvShow(title = "Show", year = 2020, tmdbId = "3")
+    private val parsedTwelve = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 1, lastEpisode = 12, year = null, resolution = "720p", quality = "WEB-DL")
+    private val twelveSource = Path("Show.S01E01-E12.720p.mkv")
+
+    private fun twelveEpisodes(show: CanonicalMedia.TvShow = this.show, title: (Int) -> String) =
+        CanonicalMedia.Episode(show, season = 1, episode = 1, title = (1..12).joinToString(" & ", transform = title), lastEpisode = 12)
+
+    private fun renderTwelve(media: CanonicalMedia.Episode): List<String> {
+        val strategy = NamingStrategy.Jellyfin
+        val path = formatter.formatEpisodePath(strategy.tvShowFolderTemplate, strategy.seasonFolderTemplate, strategy.episodeFileTemplate, media, parsedTwelve, twelveSource)
+        return generateSequence(path) { it.parent }.map { it.name }.toList().reversed()
+    }
+
+    private val String.bytes get() = encodeToByteArray().size
+
+    @Test
+    fun `cuts the episode title of a name over 255 bytes`() {
+        val name = renderTwelve(twelveEpisodes { "The Rather Long Episode Title Number $it" }).last()
+
+        assertTrue(name.bytes <= 255, "${name.bytes} bytes: $name")
+        assertTrue(name.startsWith("Show (2020) - S01E01-E12 - The Rather Long Episode Title Number 1 & "), name)
+        assertTrue(name.endsWith("… - [720p] [WEB-DL].mkv"), name)
+        // Cut at a word, without a dangling " &" before the ellipsis.
+        assertTrue(Regex("""Number \d+… - """) in name, name)
+    }
+
+    @Test
+    fun `a shortened name parses back to the same episodes`() {
+        val name = renderTwelve(twelveEpisodes { "The Rather Long Episode Title Number $it" }).last()
+
+        val reparsed = MediaFilenameParser.parse(name, "Season 01") as ParsedMediaInfo.Episode
+
+        assertEquals("show", reparsed.showTitle)
+        assertEquals(1, reparsed.season)
+        assertEquals(1, reparsed.episode)
+        assertEquals(12, reparsed.lastEpisode)
+        assertEquals("720p", reparsed.resolution)
+    }
+
+    @Test
+    fun `counts the length of a name in UTF-8 bytes`() {
+        // Cyrillic letters are 2 bytes each: uncut, the name is 241 characters but 361 bytes.
+        val name = renderTwelve(twelveEpisodes { "Длинное имя $it" }).last()
+
+        assertTrue(name.bytes <= 255, "${name.bytes} bytes: $name")
+        assertTrue(name.endsWith("… - [720p] [WEB-DL].mkv"), name)
+    }
+
+    @Test
+    fun `never splits a character made of two UTF-16 units`() {
+        val name = renderTwelve(twelveEpisodes { "🎬".repeat(10) }).last()
+
+        assertTrue(name.bytes <= 255, "${name.bytes} bytes: $name")
+        assertEquals(name, name.encodeToByteArray().decodeToString())
+    }
+
+    @Test
+    fun `cuts a show title over 255 bytes in the folder and the file`() {
+        val longShow = CanonicalMedia.TvShow(title = "Show ".repeat(60).trim(), year = 2020, tmdbId = "3")
+        val segments = renderTwelve(twelveEpisodes(longShow) { "Part $it" })
+
+        segments.forEach { assertTrue(it.bytes <= 255, "${it.bytes} bytes: $it") }
+        assertTrue(segments[0].endsWith("… (2020) [tmdbid-3]"), segments[0])
+        assertEquals("Season 01", segments[1])
+        assertTrue(segments[2].endsWith(" - [720p] [WEB-DL].mkv"), segments[2])
+        // No room is left for the episode titles: an ellipsis stands in for them.
+        assertTrue(Regex("""… \(2020\) - S01E01-E12 - … - \[720p]""") in segments[2], segments[2])
+    }
+
+    @Test
+    fun `cuts the literal text of a custom template and keeps the extension`() {
+        val template = NamingStrategy.Custom("{CleanTitle}/${"x".repeat(300)}.{ext}")
+
+        val file = formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, movie(2010), parsedMovie, source).name
+
+        assertEquals("x".repeat(251) + ".mkv", file)
+    }
+
+    @Test
+    fun `leaves a name of exactly 255 bytes alone`() {
+        val template = NamingStrategy.Custom("{CleanTitle}/${"x".repeat(251)}.{ext}")
+
+        val file = formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, movie(2010), parsedMovie, source).name
+
+        assertEquals("x".repeat(251) + ".mkv", file)
+    }
+
+    @Test
+    fun `cuts a placeholder used twice by half the excess at each place`() {
+        val longTitle = CanonicalMedia.Movie(title = "Word ".repeat(40).trim(), year = 2010, tmdbId = "1")
+        val template = NamingStrategy.Custom("{CleanTitle}/{CleanTitle} - {CleanTitle}.{ext}")
+
+        val file = formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, longTitle, parsedMovie, source).name
+
+        assertTrue(file.bytes in 240..255, "${file.bytes} bytes: $file")
+        assertTrue(Regex("""^Word( Word)*… - Word( Word)*…\.mkv$""").matches(file), file)
+    }
+
+    @Test
+    fun `fails with a reason when the file name renders empty`() {
+        val nothing = CanonicalMedia.Movie(title = "???", year = null, tmdbId = "1")
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            formatter.formatMoviePath(NamingStrategy.Plex.movieFolderTemplate, NamingStrategy.Plex.movieFileTemplate, nothing, parsedMovie, Path("noext"))
+        }
+        assertEquals("The naming template renders an empty file name", error.message)
     }
 }
