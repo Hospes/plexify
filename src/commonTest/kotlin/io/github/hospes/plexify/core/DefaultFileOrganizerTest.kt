@@ -5,6 +5,7 @@ import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
+import kotlinx.io.IOException
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -15,6 +16,7 @@ import kotlin.random.Random
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -327,6 +329,35 @@ class DefaultFileOrganizerTest {
             assertIs<OrganizeOutcome.AlreadyInPlace>(organize(source, mode, overwrite = true), "mode $mode")
             assertTrue(isSameFile(source, target), "mode $mode")
             assertEquals("movie", read(target))
+        }
+    }
+
+    @Test
+    fun `leaves a dangling symlink at the target untouched`() {
+        val source = file(Path(root, "Inception.2010.1080p.mkv"), "new release")
+        val target = symlink(targetPath(), "missing.mkv") ?: return
+
+        for (mode in OperationMode.entries) for (isTestMode in listOf(true, false)) {
+            val label = "mode $mode, test mode $isTestMode"
+            assertIs<OrganizeOutcome.TargetExists>(organize(source, mode, isTestMode), label)
+            assertEquals("new release", read(source), label)
+            assertEquals(listOf(target.name), PlatformFileSystem.list(target.parent!!).map { it.name }, label)
+            assertFailsWith<IOException>(label) { resolveSymbolicLink(target) }
+        }
+    }
+
+    @Test
+    fun `overwrite replaces a dangling symlink at the target`() {
+        for (mode in OperationMode.entries) {
+            val source = file(Path(root, "Inception.2010.1080p.mkv"), "new release")
+            val target = symlink(targetPath(), "missing.mkv") ?: return
+
+            assertIs<OrganizeOutcome.Replaced>(organize(source, mode, isTestMode = true, overwrite = true), "test mode, mode $mode")
+            assertIs<OrganizeOutcome.Replaced>(organize(source, mode, overwrite = true), "mode $mode")
+            assertEquals("new release", read(target), "mode $mode")
+            assertNull(resolveSymbolicLink(target), "mode $mode")
+            assertEquals(listOf(target.name), PlatformFileSystem.list(target.parent!!).map { it.name }, "mode $mode")
+            PlatformFileSystem.delete(target)
         }
     }
 

@@ -60,7 +60,11 @@ private object LinuxFileSystem : MediaFileSystem {
         val pathStat = alloc<stat>()
         if (stat(path.toString(), pathStat.ptr) != 0) {
             val code = errno
-            if (code == ENOENT || code == ENOTDIR) return null
+            if (code == ENOENT || code == ENOTDIR) {
+                // stat follows a symlink, so a link whose target is missing fails the same way as a missing path.
+                val isLink = lstat(path.toString(), pathStat.ptr) == 0 && pathStat.st_mode.toInt() and S_IFMT == S_IFLNK
+                return if (isLink) FileKind.DANGLING_LINK else null
+            }
             throw IOException("Can't read '$path': ${errorMessage(code)}")
         }
         when (pathStat.st_mode.toInt() and S_IFMT) {

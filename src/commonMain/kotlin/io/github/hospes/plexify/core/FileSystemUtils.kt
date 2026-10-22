@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.core
 
+import kotlinx.io.IOException
 import kotlinx.io.files.Path
 
 /**
@@ -43,7 +44,17 @@ expect fun resolveSymbolicLink(path: Path): Path?
 internal const val CROSS_VOLUME_HINT = " (source and destination must be on the same volume/partition)"
 
 /** What a path points at. */
-enum class FileKind { REGULAR_FILE, DIRECTORY, OTHER }
+enum class FileKind {
+    REGULAR_FILE,
+    DIRECTORY,
+    OTHER,
+
+    /**
+     * A symbolic link (or, on Windows, a junction) whose target doesn't exist or can't be reached, e.g. one into a
+     * mount that isn't mounted or a network share that is offline. The link itself is still an entry in its folder.
+     */
+    DANGLING_LINK,
+}
 
 /**
  * Which file or directory a path leads to, the same through every hardlink or symlink to it: device and inode on
@@ -61,7 +72,8 @@ data class FileIdentity(val volume: ULong, val file: ULong)
  */
 interface MediaFileSystem {
     /**
-     * Returns what is at [path] (following symlinks), or null if nothing is.
+     * Returns what is at [path], following symlinks (and junctions on Windows): [FileKind.DANGLING_LINK] for a link
+     * whose target doesn't exist, null if nothing is at [path].
      *
      * @throws kotlinx.io.IOException If [path] can't be examined, e.g. a parent directory isn't readable.
      */
@@ -98,8 +110,8 @@ expect val PlatformFileSystem: MediaFileSystem
  * two files with the same target keeps it, and which show a season is placed in.
  *
  * Directories are not yielded, only traversed. A missing [root] yields nothing. A path that can't be examined,
- * or a directory that can't be listed, is passed to [onUnreadable] with the error and skipped, so the caller can
- * report it instead of losing it silently.
+ * a directory that can't be listed, or a dangling symlink is passed to [onUnreadable] with the error and skipped, so
+ * the caller can report it instead of losing it silently.
  *
  * Symlinked directories (and junctions on Windows) are followed, but each directory is walked once per walk, by
  * [FileIdentity]: a directory reached again (through a link back to one of its parents, which would loop until the OS
@@ -152,6 +164,7 @@ private fun walkFiles(
             children.sortedWith(compareBy(FileNameOrder) { it.name })
                 .forEach { yieldAll(walkFiles(it, fileSystem, walked, onRevisited, onUnreadable)) }
         }
+        FileKind.DANGLING_LINK -> onUnreadable(path, IOException("broken symlink: its target doesn't exist or can't be reached"))
         FileKind.OTHER, null -> Unit
     }
 }
