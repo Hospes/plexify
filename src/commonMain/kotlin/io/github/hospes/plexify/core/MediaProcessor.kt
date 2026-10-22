@@ -98,7 +98,11 @@ class MediaProcessor(
         }
 
         if (kind == FileKind.DIRECTORY) {
-            val mediaFiles = walkFiles(source) { path, error ->
+            val mediaFiles = walkFiles(
+                source,
+                // Not counted as skipped: its files are all walked at the other path.
+                onRevisited = { path, original -> log("Warning: Skipping $path: it leads to $original, already walked") },
+            ) { path, error ->
                 log("Warning: Skipping unreadable $path (${error.message})")
                 stats.skipped++
             }

@@ -68,7 +68,7 @@ class FileSystemUtilsTest {
             "show/extras" to listOf("b.mkv", "A.mkv"),
         )
 
-        val found = walkFiles(Path("show"), fileSystem).map { it.toString().replace('\\', '/') }.toList()
+        val found = walkFiles(Path("show"), fileSystem).map { key(it) }.toList()
 
         assertEquals(
             listOf(
@@ -82,6 +82,78 @@ class FileSystemUtilsTest {
             ),
             found,
         )
+    }
+
+    @Test
+    fun `walkFiles doesn't follow a directory link back to an ancestor`() {
+        val movie = file(Path(root, "movies", "Movie.2010.mkv"))
+        val loop = Path(root, "movies", "all")
+        if (!createSymbolicLink(loop, "..", directory = true)) return
+        val revisited = mutableListOf<Pair<Path, Path>>()
+
+        val found = walkFiles(root, onRevisited = { path, original -> revisited += path to original }) { path, error ->
+            throw AssertionError("unreadable $path", error)
+        }.toList()
+
+        assertEquals(listOf(movie), found)
+        assertEquals(listOf(loop to root), revisited)
+    }
+
+    @Test
+    fun `walkFiles walks a directory reached through two links once`() {
+        val outside = Path(root, "outside").also { PlatformFileSystem.createDirectories(it) }
+        val movie = file(Path(outside, "Movie.2010.mkv"))
+        val source = Path(root, "source").also { PlatformFileSystem.createDirectories(it) }
+        val first = Path(source, "a")
+        val second = Path(source, "b")
+        val linked = createSymbolicLink(first, "../outside", directory = true) &&
+            createSymbolicLink(second, "../outside", directory = true)
+        if (!linked) return
+        val revisited = mutableListOf<Pair<Path, Path>>()
+
+        val found = walkFiles(source, onRevisited = { path, original -> revisited += path to original }) { path, error ->
+            throw AssertionError("unreadable $path", error)
+        }.toList()
+
+        // A link to a folder outside the source (a mount, say) is followed, the first time.
+        assertEquals(listOf(Path(first, movie.name)), found)
+        assertEquals(listOf(second to first), revisited)
+    }
+
+    @Test
+    fun `walkFiles stops at a directory it has already walked`() {
+        // Two links back to the root on one level: followed blindly, that is 2^40 paths before the OS gives up.
+        val fileSystem = ListedFileSystem(
+            "dl" to listOf("loop1", "loop2", "movies"),
+            "dl/movies" to listOf("Movie.2010.mkv"),
+            aliases = mapOf("dl/loop1" to "dl", "dl/loop2" to "dl"),
+        )
+        val revisited = mutableListOf<String>()
+
+        val found = walkFiles(Path("dl"), fileSystem, onRevisited = { path, original ->
+            revisited += "${key(path)} -> ${key(original)}"
+        }).map { key(it) }.toList()
+
+        assertEquals(listOf("dl/movies/Movie.2010.mkv"), found)
+        assertEquals(listOf("dl/loop1 -> dl", "dl/loop2 -> dl"), revisited)
+    }
+
+    @Test
+    fun `walkFiles walks again each time its sequence is iterated`() {
+        val fileSystem = ListedFileSystem(
+            "dl" to listOf("loop", "movies"),
+            "dl/movies" to listOf("Movie.2010.mkv"),
+            aliases = mapOf("dl/loop" to "dl"),
+        )
+        val revisited = mutableListOf<String>()
+        val walk = walkFiles(Path("dl"), fileSystem, onRevisited = { path, _ -> revisited += key(path) })
+
+        val first = walk.map { key(it) }.toList()
+        val second = walk.map { key(it) }.toList()
+
+        assertEquals(listOf("dl/movies/Movie.2010.mkv"), first)
+        assertEquals(first, second)
+        assertEquals(listOf("dl/loop", "dl/loop"), revisited)
     }
 
     @Test
@@ -153,23 +225,38 @@ class FileSystemUtilsTest {
         return path
     }
 
-    /** Directories (by `/`-separated path) listing their entries in the given order; any other path is a file. */
-    private class ListedFileSystem(vararg directories: Pair<String, List<String>>) : MediaFileSystem {
+    /**
+     * Directories (by `/`-separated path) listing their entries in the given order; any other path is a file.
+     * [aliases] are directory links: each path is the directory it maps to, under another name.
+     */
+    private class ListedFileSystem(
+        vararg directories: Pair<String, List<String>>,
+        private val aliases: Map<String, String> = emptyMap(),
+    ) : MediaFileSystem {
         private val directories = directories.toMap()
+        private val identities = this.directories.keys.withIndex().associate { (index, name) -> name to index.toULong() }
 
-        override fun kind(path: Path) = if (key(path) in directories) FileKind.DIRECTORY else FileKind.REGULAR_FILE
-        override fun list(directory: Path) = directories.getValue(key(directory)).map { Path(directory, it) }
+        override fun kind(path: Path) = if (real(path) in directories) FileKind.DIRECTORY else FileKind.REGULAR_FILE
+        override fun identity(path: Path) = identities[real(path)]?.let { FileIdentity(0u, it) }
+        override fun list(directory: Path) = directories.getValue(real(directory)).map { Path(directory, it) }
         override fun createDirectories(path: Path) = throw UnsupportedOperationException()
         override fun atomicMove(source: Path, destination: Path) = throw UnsupportedOperationException()
         override fun delete(path: Path) = throw UnsupportedOperationException()
 
-        private fun key(path: Path) = path.toString().replace('\\', '/')
+        private fun real(path: Path) = key(path).let { aliases[it] ?: it }
     }
 
     private fun deleteRecursively(path: Path) {
+        // A link (to a directory, or dangling) is deleted as the link, not walked into.
+        if (runCatching { resolveSymbolicLink(path) }.let { it.isFailure || it.getOrNull() != null }) {
+            return PlatformFileSystem.delete(path)
+        }
         if (PlatformFileSystem.kind(path) == FileKind.DIRECTORY) {
             PlatformFileSystem.list(path).forEach { deleteRecursively(it) }
         }
         PlatformFileSystem.delete(path)
     }
 }
+
+/** [path] with `/` separators on every platform. */
+private fun key(path: Path) = path.toString().replace('\\', '/')

@@ -38,14 +38,6 @@ actual fun createHardLink(source: Path, destination: Path) {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-actual fun isSameFile(first: Path, second: Path): Boolean = memScoped {
-    val firstStat = alloc<stat>()
-    val secondStat = alloc<stat>()
-    if (stat(first.toString(), firstStat.ptr) != 0 || stat(second.toString(), secondStat.ptr) != 0) return false
-    firstStat.st_dev == secondStat.st_dev && firstStat.st_ino == secondStat.st_ino
-}
-
-@OptIn(ExperimentalForeignApi::class)
 actual fun resolveSymbolicLink(path: Path): Path? = memScoped {
     val pathStat = alloc<stat>()
     if (lstat(path.toString(), pathStat.ptr) != 0) throw IOException("Can't read '$path': ${errorMessage(errno)}")
@@ -76,6 +68,13 @@ private object LinuxFileSystem : MediaFileSystem {
             S_IFDIR -> FileKind.DIRECTORY
             else -> FileKind.OTHER
         }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun identity(path: Path): FileIdentity? = memScoped {
+        val pathStat = alloc<stat>()
+        if (stat(path.toString(), pathStat.ptr) != 0) return null
+        FileIdentity(pathStat.st_dev, pathStat.st_ino)
     }
 
     override fun list(directory: Path): List<Path> = SystemFileSystem.list(directory).toList()

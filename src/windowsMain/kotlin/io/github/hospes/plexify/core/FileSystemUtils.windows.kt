@@ -18,15 +18,6 @@ actual fun createHardLink(source: Path, destination: Path) {
     }
 }
 
-@OptIn(ExperimentalForeignApi::class)
-actual fun isSameFile(first: Path, second: Path): Boolean = memScoped {
-    val firstInfo = fileInformation(first) ?: return false
-    val secondInfo = fileInformation(second) ?: return false
-    firstInfo.dwVolumeSerialNumber == secondInfo.dwVolumeSerialNumber &&
-        firstInfo.nFileIndexHigh == secondInfo.nFileIndexHigh &&
-        firstInfo.nFileIndexLow == secondInfo.nFileIndexLow
-}
-
 /** Volume serial and file index identify a file across all of its hardlinks. Null if [path] can't be opened. */
 @OptIn(ExperimentalForeignApi::class)
 private fun MemScope.fileInformation(path: Path): BY_HANDLE_FILE_INFORMATION? {
@@ -87,6 +78,14 @@ private object WindowsFileSystem : MediaFileSystem {
         }
         // Like stat on Linux, this follows a symlink or junction to a directory.
         if (attributes.value and FILE_ATTRIBUTE_DIRECTORY.toUInt() != 0u) FileKind.DIRECTORY else FileKind.REGULAR_FILE
+    }
+
+    override fun identity(path: Path): FileIdentity? = memScoped {
+        val info = fileInformation(path) ?: return null
+        FileIdentity(
+            volume = info.dwVolumeSerialNumber.toULong(),
+            file = (info.nFileIndexHigh.toULong() shl 32) or info.nFileIndexLow.toULong(),
+        )
     }
 
     override fun list(directory: Path): List<Path> = memScoped {
