@@ -86,31 +86,4 @@ sealed interface NamingStrategy {
             """.trimIndent()
         }
     }
-
-    /**
-     * A naming strategy that uses a user-provided custom template string.
-     */
-    data class Custom(
-        private val fullTemplate: String,
-    ) : NamingStrategy {
-        override val name: String = "Custom"
-        override val movieFolderTemplate: String = fullTemplate.substringBeforeLast('/', missingDelimiterValue = "")
-        override val movieFileTemplate: String = fullTemplate.substringAfterLast('/')
-
-        override val tvShowFolderTemplate: String = movieFolderTemplate
-        override val seasonFolderTemplate: String = "Season {season:2}"
-        override val episodeFileTemplate: String = "{CleanTitle} ({year}) - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
-
-        override fun toString(): String {
-            return """
-                $name [
-                    movieFolderTemplate='$movieFolderTemplate',
-                    movieFileTemplate='$movieFileTemplate',
-                    tvShowFolderTemplate='$tvShowFolderTemplate',
-                    seasonFolderTemplate='$seasonFolderTemplate',
-                    episodeFileTemplate='$episodeFileTemplate'
-                ]
-            """.trimIndent()
-        }
-    }
 }

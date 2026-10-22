@@ -88,7 +88,7 @@ class PathFormatter {
             }
         }
         if (segment.utf8Size() <= MAX_SEGMENT_BYTES) return segment
-        // Only literal text in a custom template is left to cut: cut the end, keeping the extension.
+        // Only the template's literal text and tags are left to cut: cut the end, keeping the extension.
         val extension = placeholders["ext"]?.takeIf { it.isNotEmpty() && segment.endsWith(".$it") }?.let { ".$it" } ?: ""
         return finishSegment(segment.removeSuffix(extension).takeUtf8(MAX_SEGMENT_BYTES - extension.utf8Size())) + extension
     }

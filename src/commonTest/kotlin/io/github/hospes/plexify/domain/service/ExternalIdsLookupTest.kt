@@ -44,24 +44,13 @@ class ExternalIdsLookupTest {
         assertEquals(1, provider.lookups)
     }
 
-    private val tvdbTemplate = NamingStrategy.Custom("{CleanTitle} ({year}) [tvdbid-{tvdbid}]/{CleanTitle}.{ext}")
-
     @Test
-    fun `looks up show ids when the template uses tvdbid`() = runTest {
+    fun `looks up the show imdb id for plex`() = runTest {
         val provider = FakeProvider(Result.success(breakingBadIds))
-        val service = MetadataService(listOf(provider), tvdbTemplate)
+        val service = MetadataService(listOf(provider), NamingStrategy.Plex)
 
-        assertEquals("81189", with(LoggingContext()) { service.getExternalIds(breakingBad) }?.tvdbId)
+        assertEquals("tt0903747", with(LoggingContext()) { service.getExternalIds(breakingBad) }?.imdbId)
         assertEquals(1, provider.lookups)
-    }
-
-    @Test
-    fun `skips movies when the template only uses tvdbid`() = runTest {
-        val provider = FakeProvider(Result.success(ExternalIds(imdbId = "tt0133093")))
-        val service = MetadataService(listOf(provider), tvdbTemplate)
-
-        assertNull(with(LoggingContext()) { service.getExternalIds(matrix) })
-        assertEquals(0, provider.lookups)
     }
 
     @Test
@@ -71,15 +60,6 @@ class ExternalIdsLookupTest {
 
         assertNull(with(LoggingContext()) { service.getExternalIds(breakingBad) })
         assertNull(with(LoggingContext()) { service.getExternalIds(matrix) })
-        assertEquals(0, provider.lookups)
-    }
-
-    @Test
-    fun `skips the lookup when the template uses no external id`() = runTest {
-        val provider = FakeProvider(Result.success(breakingBadIds))
-        val service = MetadataService(listOf(provider), NamingStrategy.Custom("{CleanTitle} [tmdbid-{tmdbid}]/{CleanTitle}.{ext}"))
-
-        assertNull(with(LoggingContext()) { service.getExternalIds(breakingBad) })
         assertEquals(0, provider.lookups)
     }
 

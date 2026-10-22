@@ -467,13 +467,13 @@ class DefaultFileOrganizerTest {
     @Test
     fun `organizes into a folder whose name would end in a space`() {
         val source = file(Path(root, "Inception.2010.1080p.mkv"), "movie")
-        val template = NamingStrategy.Custom("{CleanTitle} [({imdbid})]/Extras/{CleanTitle}.{ext}")
 
-        val outcome = DefaultFileOrganizer(PathFormatter(), template)
+        // Without an IMDb ID, Plex drops its IMDb tag and leaves "Inception (2010) " until it is trimmed.
+        val outcome = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Plex)
             .organize(source, library, movie, parsed, OperationMode.HARDLINK, isTestMode = false).getOrThrow()
 
         assertIs<OrganizeOutcome.Organized>(outcome)
-        assertEquals(Path(library, "Inception", "Extras", "Inception.mkv"), outcome.path)
+        assertEquals(Path(library, "Inception (2010)", "Inception (2010).mkv"), outcome.path)
         assertTrue(isSameFile(source, outcome.path))
     }
 
