@@ -123,27 +123,34 @@ class TmdbProvider(
      * TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
      * carries the localized and original titles. For results that don't resemble the query by
      * either of those, pull the alternative titles so downstream scoring can see the alias.
+     *
+     * A lookup that fails with an HTTP error leaves its result as it is. One TMDB didn't answer ends
+     * the lookups (the next ones would wait as long), and fails the search unless a result resembles
+     * the query anyway: the missing alias may be the match, so "no match" would be a guess, and the
+     * file would be skipped and its show cached as a miss instead of failing.
      */
     private suspend fun List<MediaSearchResult>.withAlternativeTitles(title: String): List<MediaSearchResult> {
         var lookups = 0
-        var answered = true
-        return map { result ->
-            if (!answered || result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
+        var noAnswer: Exception? = null
+        val enriched = map { result ->
+            if (noAnswer != null || result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
                 result
             } else {
                 lookups++
-                // Optional, so a failed lookup leaves the result as it is. When TMDB didn't answer, the
-                // next lookups would wait as long, so the search goes on without them.
                 try {
                     enrichWithAlternativeTitles(result, title)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    answered = !e.isNoAnswer()
+                    if (e.isNoAnswer()) noAnswer = e
                     result
                 }
             }
         }
+        noAnswer?.let { failure ->
+            if (enriched.none { it.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD }) throw failure
+        }
+        return enriched
     }
 
     private suspend fun enrichWithAlternativeTitles(result: MediaSearchResult, queryTitle: String): MediaSearchResult {

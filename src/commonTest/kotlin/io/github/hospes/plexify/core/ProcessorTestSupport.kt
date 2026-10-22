@@ -96,7 +96,7 @@ internal class RecordingOrganizer : FileOrganizer {
     }
 }
 
-internal class ProcessorRun(val provider: FakeTmdb, val organizer: RecordingOrganizer, val stats: MediaProcessor.Stats) {
+internal class ProcessorRun<P : MetadataProvider>(val provider: P, val organizer: RecordingOrganizer, val stats: MediaProcessor.Stats) {
     fun showOf(fileName: String): String? = episodeOf(fileName)?.show?.tmdbId
 
     fun movieOf(fileName: String): String? = (organizer.organized[fileName] as? CanonicalMedia.Movie)?.tmdbId
@@ -105,13 +105,13 @@ internal class ProcessorRun(val provider: FakeTmdb, val organizer: RecordingOrga
 }
 
 /** Processes empty files with these names, from a fresh temporary directory, with a fresh processor. */
-internal suspend fun runProcessor(
-    provider: FakeTmdb,
+internal suspend fun <P : MetadataProvider> runProcessor(
+    provider: P,
     vararg fileNames: String,
     namingStrategy: NamingStrategy = NamingStrategy.Jellyfin,
     seasonOverride: Int? = null,
     yearOverride: String? = null,
-): ProcessorRun {
+): ProcessorRun<P> {
     val organizer = RecordingOrganizer()
     val processor = MediaProcessor(
         metadataService = MetadataService(listOf(provider), namingStrategy),
