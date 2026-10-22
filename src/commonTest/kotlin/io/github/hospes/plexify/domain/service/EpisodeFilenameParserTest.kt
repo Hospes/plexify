@@ -53,6 +53,57 @@ class EpisodeFilenameParserTest {
             parentDirName = "S03",
             expected = ParsedMediaInfo.Episode(showTitle = "", season = 3, episode = 1, year = null)
         ),
+        TestCase(
+            filename = "Gate_[01]_[720p].mkv",
+            parentDirName = "Gate S2 - AniLibria.TV [HDTV-Rip 720p]",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Gate_[01]_[720p].mkv",
+            parentDirName = "Gate - Season 2",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Gate_[01]_[720p].mkv",
+            parentDirName = "Gate.S02.720p",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Gate_[01]_[720p].mkv",
+            parentDirName = "Gate_S2_[720p]",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Gate_[01]_[720p].mkv",
+            parentDirName = "Season02",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p")
+        ),
+        TestCase(
+            filename = "Shingeki_no_Kyojin_[01]_[720p].mkv",
+            parentDirName = "進撃の巨人S2",
+            expected = ParsedMediaInfo.Episode(showTitle = "shingeki no kyojin", season = 2, episode = 1, year = null, resolution = "720p")
+        ),
+        // An "s" closing a word is not a season marker: no season here
+        TestCase(
+            filename = "Dungeon.Meshi.[13].[1080p].mkv",
+            parentDirName = "Dungeon Meshi (Episodes 13-24)",
+            expected = ParsedMediaInfo.Episode(showTitle = "dungeon meshi", season = null, episode = 13, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Dungeon.Meshi.[01].[1080p].mkv",
+            parentDirName = "Dungeon Meshi (Eps 1-8)",
+            expected = ParsedMediaInfo.Episode(showTitle = "dungeon meshi", season = null, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "Dungeon.Meshi.[01].[1080p].mkv",
+            parentDirName = "Dungeon Meshi Seasons 1-2",
+            expected = ParsedMediaInfo.Episode(showTitle = "dungeon meshi", season = null, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "[SubsPlease] Dungeon Meshi - 13 (1080p) [ABCD1234].mkv",
+            parentDirName = "Dungeon Meshi (Episodes 13-24)",
+            expected = ParsedMediaInfo.Episode(showTitle = "dungeon meshi", season = null, episode = 13, year = null, resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
 
         // --- Tier 4: [NN] bracket only (absolute numbering, no season) ---
         TestCase(
