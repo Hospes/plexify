@@ -43,6 +43,16 @@ class MetadataNotFoundException(message: String) : Exception(message)
  */
 class MetadataTimeoutException(message: String) : Exception(message)
 
+/** The connection to the provider failed (DNS, refused, TLS, ...). Like [MetadataTimeoutException], it carries no cause. */
+class MetadataConnectionException(message: String) : Exception(message)
+
+/**
+ * The provider stopped answering: several requests in a row timed out or could not connect, so the
+ * remaining ones of the run fail at once instead of each waiting out the timeouts. The files still
+ * count as failed.
+ */
+class MetadataUnreachableException(message: String) : Exception(message)
+
 internal fun calculateTitleConfidence(query: String, resultTitle: String): Double {
     val distance = levenshtein(query.lowercase(), resultTitle.lowercase())
     val titleLength = max(query.length, resultTitle.length)
