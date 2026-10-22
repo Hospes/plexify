@@ -297,7 +297,7 @@ The Matrix (1999) [imdbid-tt0133093]/The Matrix (1999) - [1080p] [BluRay].mkv
 Breaking Bad (2008) [imdbid-tt0903747]/Season 01/Breaking Bad (2008) - S01E01 - Pilot - [1080p].mkv
 ```
 
-Both name a multi-episode file with its range: `Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag... - [1080p].mkv`. When TMDB has no year for a title, the `(year)` part is left out.
+Both name a multi-episode file with its range: `Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag... - [1080p].mkv`. When TMDB has no year for a title, the `(year)` part is left out. A name too long for the file system is shortened (see [Formatting](#formatting)).
 
 The Plex template uses IMDb IDs, which Plexify looks up on TMDB for each matched movie or show (one extra request per title, not per file). When TMDB has no IMDb ID, the `[imdbid-…]` tag is left out.
 
@@ -346,7 +346,8 @@ Because `{version}` brings its own leading ` - `, put it directly after the prec
     -   `{CleanTitle} ({year}) [imdbid-{imdbid}]` → `The Matrix (1999) [imdbid-tt0133093]`
     -   …or `The Matrix (1999)` when no IMDb ID was found.
     -   Use one plain placeholder per block: only the first placeholder in a block is checked, and padded placeholders such as `{season:2}` don't make a block optional.
--   Repeated spaces are collapsed, and leading and trailing spaces are trimmed.
+-   Repeated spaces are collapsed, and leading and trailing spaces are trimmed from every folder and file name. Trailing dots are trimmed too: Windows can't keep them, and they are trimmed on Linux as well, so a library gets the same names on both. Only a name that ends in the dot changes: with no year and no IMDb ID, Plex puts `S.W.A.T.` in the folder `S.W.A.T`, while `S.W.A.T. (2017) [imdbid-…]` keeps its dots.
+-   **Long names:** a folder or file name is at most 255 bytes in UTF-8, the limit on Linux (it also fits Windows' limit of 255 characters). A longer name is shortened, usually a multi-episode file with many titles: the episode title is cut first, at a word and marked with `…`, then the title, so the season and episode, the `{version}` tags and the extension stay. Letters outside the Latin alphabet take 2 or 3 bytes each, so such titles are cut sooner.
 
 ## ⚙️ How It Works
 

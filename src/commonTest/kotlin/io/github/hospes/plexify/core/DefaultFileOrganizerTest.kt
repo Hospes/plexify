@@ -448,6 +448,50 @@ class DefaultFileOrganizerTest {
         assertTrue(isSameFile(source, outcome.path))
     }
 
+    // Windows drops a single trailing dot from every segment of a path, but more than one only from the last, and a
+    // trailing space only from the last: the folder was created without them while the file's path kept them.
+    @Test
+    fun `organizes into a folder whose title ends in dots`() {
+        val source = file(Path(root, "What.If.mkv"), "movie")
+        val whatIf = CanonicalMedia.Movie(title = "What If...", year = null, tmdbId = "1")
+
+        val outcome = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Plex)
+            .organize(source, library, whatIf, ParsedMediaInfo.Movie(title = "what if", year = null), OperationMode.HARDLINK, isTestMode = false)
+            .getOrThrow()
+
+        assertIs<OrganizeOutcome.Organized>(outcome)
+        assertEquals("What If", outcome.path.parent!!.name)
+        assertTrue(isSameFile(source, outcome.path))
+    }
+
+    @Test
+    fun `organizes into a folder whose name would end in a space`() {
+        val source = file(Path(root, "Inception.2010.1080p.mkv"), "movie")
+        val template = NamingStrategy.Custom("{CleanTitle} [({imdbid})]/Extras/{CleanTitle}.{ext}")
+
+        val outcome = DefaultFileOrganizer(PathFormatter(), template)
+            .organize(source, library, movie, parsed, OperationMode.HARDLINK, isTestMode = false).getOrThrow()
+
+        assertIs<OrganizeOutcome.Organized>(outcome)
+        assertEquals(Path(library, "Inception", "Extras", "Inception.mkv"), outcome.path)
+        assertTrue(isSameFile(source, outcome.path))
+    }
+
+    @Test
+    fun `organizes a multi-episode file whose titles make a name over 255 characters`() {
+        val source = file(Path(root, "Show.S01E01-E12.720p.mkv"), "episodes")
+        val titles = (1..12).joinToString(" & ") { "The Rather Long Episode Title Number $it" }
+        val episodes = CanonicalMedia.Episode(CanonicalMedia.TvShow(title = "Show", year = 2020, tmdbId = "3"), 1, 1, titles, lastEpisode = 12)
+        val parsedEpisodes = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 1, lastEpisode = 12, year = null, resolution = "720p")
+
+        val outcome = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin)
+            .organize(source, library, episodes, parsedEpisodes, OperationMode.HARDLINK, isTestMode = false).getOrThrow()
+
+        assertIs<OrganizeOutcome.Organized>(outcome)
+        assertTrue(outcome.path.name.encodeToByteArray().size <= 255)
+        assertTrue(isSameFile(source, outcome.path))
+    }
+
     private fun assertKeepsFileAlreadyAtTarget(mode: OperationMode) {
         val target = file(targetPath(), "movie")
 
