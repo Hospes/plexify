@@ -53,7 +53,7 @@ class PathFormatterTest {
     @Test
     fun `plex movie without year leaves no space before the extension`() {
         assertEquals(
-            path("Inception [imdbid-tt1375666]", "Inception.mkv"),
+            path("Inception {imdb-tt1375666}", "Inception.mkv"),
             NamingStrategy.Plex.renderMovie(null),
         )
     }
@@ -73,7 +73,7 @@ class PathFormatterTest {
             NamingStrategy.Jellyfin.renderEpisode(null),
         )
         assertEquals(
-            path("The Boys [imdbid-tt1190634]", "Season 03", "The Boys - S03E01 - Payback.mkv"),
+            path("The Boys {imdb-tt1190634}", "Season 03", "The Boys - S03E01 - Payback.mkv"),
             NamingStrategy.Plex.renderEpisode(null),
         )
     }
@@ -368,4 +368,99 @@ class PathFormatterTest {
 
     private fun NamingStrategy.renderNamed(media: CanonicalMedia.Movie): String =
         formatter.formatMoviePath(movieFolderTemplate, movieFileTemplate, media, parsedMovie, Path("x.mkv")).name
+
+    // --- Curly-brace groups ---
+
+    /** Renders [template] as a movie folder name. */
+    private fun folder(template: String, media: CanonicalMedia.Movie = movie(2010)): String =
+        formatter.formatMoviePath(template, "x.{ext}", media, parsedMovie, source).parent!!.name
+
+    private val noImdb = movie(2010).copy(imdbId = null)
+
+    @Test
+    fun `plex tags movie folders with the imdb id in curly braces`() {
+        assertEquals(
+            path("Inception (2010) {imdb-tt1375666}", "Inception (2010).mkv"),
+            NamingStrategy.Plex.renderMovie(2010),
+        )
+    }
+
+    @Test
+    fun `plex tags show folders with the imdb id in curly braces`() {
+        assertEquals(
+            path("The Boys (2019) {imdb-tt1190634}", "Season 03", "The Boys (2019) - S03E01 - Payback.mkv"),
+            NamingStrategy.Plex.renderEpisode(2019),
+        )
+    }
+
+    @Test
+    fun `plex leaves the tag out without an imdb id`() {
+        val plex = NamingStrategy.Plex
+        assertEquals(
+            path("Inception (2010)", "Inception (2010).mkv"),
+            formatter.formatMoviePath(plex.movieFolderTemplate, plex.movieFileTemplate, noImdb, parsedMovie, source).toString(),
+        )
+        val show = episode(2019).let { it.copy(show = it.show.copy(imdbId = null)) }
+        assertEquals(
+            path("The Boys (2019)", "Season 03", "The Boys (2019) - S03E01 - Payback.mkv"),
+            formatter.formatEpisodePath(plex.tvShowFolderTemplate, plex.seasonFolderTemplate, plex.episodeFileTemplate, show, parsedEpisode, source)
+                .toString(),
+        )
+    }
+
+    @Test
+    fun `plex template still asks for the imdb id`() {
+        assertTrue("imdbid" in NamingStrategy.Plex.requiredMetadataFields())
+    }
+
+    @Test
+    fun `a plex folder name parses back to the title and year`() {
+        val reparsed = MediaFilenameParser.parse(folder(NamingStrategy.Plex.movieFolderTemplate)) as ParsedMediaInfo.Movie
+        assertEquals("inception", reparsed.title)
+        assertEquals("2010", reparsed.year)
+    }
+
+    @Test
+    fun `a brace group keeps its braces when its placeholder has a value`() {
+        assertEquals("Inception {imdb-tt1375666}", folder("{CleanTitle} {imdb-{imdbid}}"))
+    }
+
+    @Test
+    fun `a brace group is dropped when its placeholder has no value`() {
+        assertEquals("Inception (2010)", folder("{CleanTitle} ({year}) {imdb-{imdbid}}", noImdb))
+    }
+
+    @Test
+    fun `brace groups are checked one by one`() {
+        val template = "{CleanTitle} {imdb-{imdbid}} {tmdb-{tmdbid}}"
+        assertEquals("Inception {imdb-tt1375666} {tmdb-27205}", folder(template))
+        assertEquals("Inception {tmdb-27205}", folder(template, noImdb))
+    }
+
+    @Test
+    fun `a brace group may hold a padded placeholder`() {
+        val path = formatter.formatEpisodePath("{CleanTitle}", "{S{season:2}}", "{episode}.{ext}", episode(2019), parsedEpisode, source)
+        assertEquals(path("The Boys", "{S03}", "1.mkv"), path.toString())
+    }
+
+    @Test
+    fun `a square block holding a brace group follows the brace group's placeholder`() {
+        val template = "{CleanTitle} [id {imdb-{imdbid}}]"
+        assertEquals("Inception [id {imdb-tt1375666}]", folder(template))
+        assertEquals("Inception", folder(template, noImdb))
+    }
+
+    @Test
+    fun `placeholders side by side are not a brace group`() {
+        assertEquals("Inception2010", folder("{CleanTitle}{year}"))
+        assertEquals("Inception2010", folder("{CleanTitle}{year}", noImdb))
+    }
+
+    @Test
+    fun `a brace group with several placeholders needs a value for each`() {
+        val template = "{CleanTitle} {({year}) imdb-{imdbid}}"
+        assertEquals("Inception {(2010) imdb-tt1375666}", folder(template))
+        assertEquals("Inception", folder(template, noImdb))
+        assertEquals("Inception", folder(template, movie(null)))
+    }
 }

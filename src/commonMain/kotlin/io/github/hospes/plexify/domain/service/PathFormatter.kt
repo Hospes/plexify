@@ -12,6 +12,10 @@ class PathFormatter {
     // Regex to find conditional blocks like [imdbid-{imdbid}]
     private val conditionalBlockRegex = Regex("""\[([^\[\]]*?\{(\w+)}[^\[\]]*?)]""")
 
+    // Regex to find conditional groups in literal curly braces like {imdb-{imdbid}} (Plex's ID tag form): braces
+    // around text and at least one placeholder. A placeholder on its own, like {year}, is not a group.
+    private val conditionalBraceGroupRegex = Regex("""\{((?:[^{}]|\{\w+(?::\d+)?})*?\{\w+(?::\d+)?}(?:[^{}]|\{\w+(?::\d+)?})*?)}""")
+
     // Regex to find a lone placeholder in parentheses like ({year}), with the whitespace before it
     private val parenthesizedPlaceholderRegex = Regex("""\s*\(\{(\w+)(?::\d+)?}\)""")
 
@@ -197,14 +201,20 @@ class PathFormatter {
 
     // 2. Process conditional blocks first.
     // E.g., for "[imdbid-{imdbid}]", if {imdbid} is not available, the whole block is removed.
+    // A curly-brace group like "{imdb-{imdbid}}" is removed when any placeholder in it has no value. Square blocks go
+    // first and keep their rule (the first placeholder decides), so one can hold a brace group.
     private fun processConditionalBlocks(template: String, placeholders: Map<String, String?>): String {
-        return conditionalBlockRegex.replace(template) { matchResult ->
+        val withBlocks = conditionalBlockRegex.replace(template) { matchResult ->
             val placeholderKey = matchResult.groupValues[2].lowercase()
             if (placeholders.containsKey(placeholderKey)) {
                 matchResult.value
             } else {
                 ""
             }
+        }
+        return conditionalBraceGroupRegex.replace(withBlocks) { matchResult ->
+            val keys = placeholderRegex.findAll(matchResult.groupValues[1]).map { it.groupValues[1].lowercase() }
+            if (keys.all { placeholders.containsKey(it) }) matchResult.value else ""
         }
     }
 
