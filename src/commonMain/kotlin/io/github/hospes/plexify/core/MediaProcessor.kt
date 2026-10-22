@@ -105,19 +105,22 @@ class MediaProcessor(
         }
 
         if (kind == FileKind.DIRECTORY) {
+            var unreadable = false
             val mediaFiles = walkFiles(
                 source,
                 // Not counted as skipped: its files are all walked at the other path.
                 onRevisited = { path, original -> log("Warning: Skipping $path: it leads to $original, already walked") },
             ) { path, error ->
-                log("Warning: Skipping unreadable $path (${error.message})")
-                stats.skipped++
+                log("Error: Can't read $path (${error.message})")
+                stats.failed++
+                unreadable = true
             }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS }
                 .toList()
 
             if (mediaFiles.isEmpty()) {
-                log("No supported media files found in: $source")
+                // After a read error, "nothing found" would be misleading: there may well be media in it.
+                if (!unreadable) log("No supported media files found in: $source")
                 return
             }
 
