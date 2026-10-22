@@ -132,3 +132,10 @@ fun gitDescribe(providers: ProviderFactory): Provider<String> {
         commandLine("git", "describe", "--tags", "--always")
     }.standardOutput.asText.map { it.split("\n").first().trim() }
 }
+// PROBE (do not merge): list every test and its output in the CI log.
+tasks.withType<AbstractTestTask>().configureEach {
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = true
+    }
+}

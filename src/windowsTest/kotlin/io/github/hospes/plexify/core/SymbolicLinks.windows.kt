@@ -10,4 +10,5 @@ private const val ALLOW_UNPRIVILEGED_CREATE = 0x2u
 @OptIn(ExperimentalForeignApi::class)
 actual fun createSymbolicLink(link: Path, target: String): Boolean =
     // Windows resolves a symlink's target with backslashes only.
-    CreateSymbolicLinkW(link.toString(), target.replace('/', '\\'), ALLOW_UNPRIVILEGED_CREATE).toInt() != 0
+    (CreateSymbolicLinkW(link.toString(), target.replace('/', '\\'), ALLOW_UNPRIVILEGED_CREATE).toInt() != 0)
+        .also { println("PROBE symlink created=$it link=${link.name}") }
