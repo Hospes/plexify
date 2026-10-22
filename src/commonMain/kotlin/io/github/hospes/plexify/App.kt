@@ -111,11 +111,13 @@ object App : CliktCommand(name = "plexify") {
             "-tj", "--template-jellyfin",
             help = "Use a predefined naming template - Jellyfin."
         ).flag(default = true).convert { NamingStrategy.Jellyfin },
-        option(
-            "-tc", "--template-custom",
-            help = "Use a custom naming template. Use a forward slash '/' to separate the folder from the filename."
-        ).convert { NamingStrategy.Custom(it) },
     ).default(NamingStrategy.Jellyfin)
+
+    // Custom templates were removed. Without this, Clikt would read "-tc <template>" as "-t c", overriding every
+    // title with "c" and taking the template for a source path.
+    @Suppress("unused")
+    private val removedCustomTemplate: String? by option("-tc", "--template-custom", hidden = true)
+        .validate { fail("custom templates were removed; use --template-jellyfin (the default) or --template-plex") }
 
 
     init {

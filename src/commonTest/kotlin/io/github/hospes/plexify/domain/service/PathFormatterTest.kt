@@ -34,6 +34,10 @@ class PathFormatterTest {
 
     private fun path(vararg parts: String) = Path(parts.first(), *parts.drop(1).toTypedArray()).toString()
 
+    /** Renders a movie with a "folder/file" template, to test the formatter on templates no preset uses. */
+    private fun renderMovie(template: String, media: CanonicalMedia.Movie, sourceFile: Path = source): Path =
+        formatter.formatMoviePath(template.substringBeforeLast('/'), template.substringAfterLast('/'), media, parsedMovie, sourceFile)
+
     @Test
     fun `jellyfin movie with year`() {
         assertEquals(
@@ -79,10 +83,10 @@ class PathFormatterTest {
     }
 
     @Test
-    fun `custom template without year drops the parentheses`() {
+    fun `a year alone in parentheses is dropped without a value`() {
         assertEquals(
             path("Inception", "Inception.mkv"),
-            NamingStrategy.Custom("{CleanTitle} ({year})/{CleanTitle} ({year}).{ext}").renderMovie(null),
+            renderMovie("{CleanTitle} ({year})/{CleanTitle} ({year}).{ext}", movie(null)).toString(),
         )
     }
 
@@ -90,7 +94,7 @@ class PathFormatterTest {
     fun `parentheses with a value are kept`() {
         assertEquals(
             path("Inception (2010)", "Inception (2010).mkv"),
-            NamingStrategy.Custom("{CleanTitle} ({year})/{CleanTitle} ({year}).{ext}").renderMovie(2010),
+            renderMovie("{CleanTitle} ({year})/{CleanTitle} ({year}).{ext}", movie(2010)).toString(),
         )
     }
 
@@ -146,23 +150,20 @@ class PathFormatterTest {
     }
 
     @Test
-    fun `trims trailing dots and spaces from every folder of a custom template`() {
+    fun `trims trailing dots and spaces from every folder`() {
         val whatIf = CanonicalMedia.Movie(title = "What If...", year = null, tmdbId = "1")
-        val template = NamingStrategy.Custom("{CleanTitle} [({imdbid})]/{CleanTitle}/{CleanTitle}{version}.{ext}")
 
         assertEquals(
             path("What If", "What If", "What If....mkv"),
-            formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, whatIf, parsedMovie, source).toString(),
+            renderMovie("{CleanTitle} [({imdbid})]/{CleanTitle}/{CleanTitle}{version}.{ext}", whatIf).toString(),
         )
     }
 
     @Test
     fun `trims a trailing dot from a file without an extension`() {
-        val template = NamingStrategy.Custom("{CleanTitle}/{CleanTitle}.{ext}")
-
         assertEquals(
             path("Inception", "Inception"),
-            formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, movie(null), parsedMovie, Path("Inception")).toString(),
+            renderMovie("{CleanTitle}/{CleanTitle}.{ext}", movie(null), Path("Inception")).toString(),
         )
     }
 
@@ -238,19 +239,15 @@ class PathFormatterTest {
     }
 
     @Test
-    fun `cuts the literal text of a custom template and keeps the extension`() {
-        val template = NamingStrategy.Custom("{CleanTitle}/${"x".repeat(300)}.{ext}")
-
-        val file = formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, movie(2010), parsedMovie, source).name
+    fun `cuts the literal text of a template and keeps the extension`() {
+        val file = renderMovie("{CleanTitle}/${"x".repeat(300)}.{ext}", movie(2010)).name
 
         assertEquals("x".repeat(251) + ".mkv", file)
     }
 
     @Test
     fun `leaves a name of exactly 255 bytes alone`() {
-        val template = NamingStrategy.Custom("{CleanTitle}/${"x".repeat(251)}.{ext}")
-
-        val file = formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, movie(2010), parsedMovie, source).name
+        val file = renderMovie("{CleanTitle}/${"x".repeat(251)}.{ext}", movie(2010)).name
 
         assertEquals("x".repeat(251) + ".mkv", file)
     }
@@ -258,9 +255,7 @@ class PathFormatterTest {
     @Test
     fun `cuts a placeholder used twice by half the excess at each place`() {
         val longTitle = CanonicalMedia.Movie(title = "Word ".repeat(40).trim(), year = 2010, tmdbId = "1")
-        val template = NamingStrategy.Custom("{CleanTitle}/{CleanTitle} - {CleanTitle}.{ext}")
-
-        val file = formatter.formatMoviePath(template.movieFolderTemplate, template.movieFileTemplate, longTitle, parsedMovie, source).name
+        val file = renderMovie("{CleanTitle}/{CleanTitle} - {CleanTitle}.{ext}", longTitle).name
 
         assertTrue(file.bytes in 240..255, "${file.bytes} bytes: $file")
         assertTrue(Regex("""^Word( Word)*… - Word( Word)*…\.mkv$""").matches(file), file)
