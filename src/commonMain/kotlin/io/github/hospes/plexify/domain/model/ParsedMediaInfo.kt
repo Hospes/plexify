@@ -34,7 +34,16 @@ sealed interface ParsedMediaInfo {
          * title instead ("Space.1999.S01E01" is *Space: 1999*).
          */
         val bareShowYear: Boolean = false,
+        /**
+         * The number closing [showTitle] read as the season ("Devil May Cry 2", "Shuumatsu no Walkure III"), for
+         * a filename with no season marker. Only the provider can tell it from a title's own number ("Kaiju
+         * No. 8"), so it is a second reading, not the parse.
+         */
+        val numberedSeason: NumberedSeason? = null,
     ) : ParsedMediaInfo
+
+    /** A show title without its closing number, and that number as a season. */
+    data class NumberedSeason(val showTitle: String, val season: Int)
 }
 
 /**

@@ -33,6 +33,10 @@ object MediaFilenameParser {
     private val trailingSeasonRegex =
         """\s(?:S(\d{1,2})|Season\s+(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)\s+Season)$""".toRegex(RegexOption.IGNORE_CASE)
 
+    // A number closing a show title that may be its season: "Devil May Cry 2", "Shuumatsu no Walkure III"
+    private val trailingNumberRegex = """^(.*\p{L}.*?)\s+(\d{1,2}|II|III|IV|V|VI|VII|VIII|IX|X)$""".toRegex(RegexOption.IGNORE_CASE)
+    private val romanNumerals = listOf("i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x")
+
     // Release group tags leading the name, as fansubs write them: "[SubsPlease] Show - 01"
     private val leadingGroupsRegex = """^(?:\s*\[[^\[\]]*])+""".toRegex()
     private val leadingGroupRegex = """^\s*\[([^\[\]]+)]""".toRegex()
@@ -177,14 +181,16 @@ object MediaFilenameParser {
             val showYear = trailingYearRegex.find(showPart)
             if (showYear != null) showPart = showPart.substring(0, showYear.range.first)
 
+            val showTitle = cleanShowTitle(showPart)
             return buildEpisode(
-                showTitle = cleanShowTitle(showPart),
+                showTitle = showTitle,
                 season = seasonInTitle?.groupValues?.drop(1)?.first { it.isNotEmpty() }?.toInt()
                     ?: seasonFromDir(parentDirName),
                 episode = dashMatch.groupValues[1].toInt(),
                 normalized = normalized,
                 year = showYear?.groupValues?.get(1),
                 leadingGroup = leadingGroup,
+                numberedSeason = if (seasonInTitle == null) numberedSeason(showTitle) else null,
             )
         }
 
@@ -208,13 +214,15 @@ object MediaFilenameParser {
         // --- Tiers 3 & 4: bracket episode [NN] ---
         val bracketEpMatch = bracketEpisodeRegex.find(normalized)
         if (bracketEpMatch != null) {
+            val showTitle = cleanShowTitle(normalized.substring(0, bracketEpMatch.range.first))
             return buildEpisode(
-                showTitle = cleanShowTitle(normalized.substring(0, bracketEpMatch.range.first)),
+                showTitle = showTitle,
                 // Tier 3: season from parent directory name; null when there is none (Tier 4)
                 season = seasonFromDir(parentDirName),
                 episode = bracketEpMatch.groupValues[1].toInt(),
                 normalized = normalized,
                 leadingGroup = leadingGroup,
+                numberedSeason = numberedSeason(showTitle),
             )
         }
 
@@ -229,6 +237,20 @@ object MediaFilenameParser {
     // past the first episode.
     private fun rangeEnd(firstEpisode: Int, rangeSuffix: String): Int? =
         rangeNumberRegex.findAll(rangeSuffix).lastOrNull()?.value?.toInt()?.takeIf { it > firstEpisode }
+
+    // The show title without its closing number, and the number as a season ("Devil May Cry 2" is Devil May
+    // Cry season 2); null when it has none, or only the number ("86"). Season 0 is specials, never a sequel,
+    // and a number right after another is a fraction or a range ("Ranma 1-2" is Ranma ½), not a season.
+    private fun numberedSeason(showTitle: String): ParsedMediaInfo.NumberedSeason? {
+        val match = trailingNumberRegex.find(showTitle) ?: return null
+        val title = match.groupValues[1]
+        val number = match.groupValues[2].lowercase()
+        val arabic = number.toIntOrNull()
+        if (arabic != null && title.substringAfterLast(' ').all { it.isDigit() }) return null
+        val season = arabic ?: (romanNumerals.indexOf(number) + 1)
+        if (season < 1) return null
+        return ParsedMediaInfo.NumberedSeason(title.lowercase(), season)
+    }
 
     // Leading release group tags ("[SubsPlease] Show") are not part of the show title.
     private fun cleanShowTitle(rawTitle: String): String =
@@ -295,6 +317,13 @@ object MediaFilenameParser {
             }
         }
 
+        // A square bracket after the title ends it: a release group or the tag list ("The Witcher Sirens of the
+        // Deep [AniLibria] [WEB-DLRip 1080p HEVC]"). One with nothing before it is the title ("[REC] (2007)").
+        val bracket = workingTitle.indexOf('[')
+        if (bracket > 0 && workingTitle.take(bracket).any { it.isLetterOrDigit() }) {
+            workingTitle = workingTitle.take(bracket)
+        }
+
         // With no year to end it, the title ends at the first "stop word".
         if (!titleEndsAtYear) {
             stopWordRegex.find(workingTitle)?.let { workingTitle = workingTitle.take(it.range.first) }
@@ -316,6 +345,7 @@ object MediaFilenameParser {
         year: String? = null,
         bareShowYear: Boolean = false,
         leadingGroup: String? = null,
+        numberedSeason: ParsedMediaInfo.NumberedSeason? = null,
     ) =
         ParsedMediaInfo.Episode(
             showTitle = showTitle.lowercase(),
@@ -329,6 +359,7 @@ object MediaFilenameParser {
             releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup,
             edition = extractEdition(editionText),
             bareShowYear = bareShowYear,
+            numberedSeason = numberedSeason,
         )
 
     // The first year outside the show's own title: "1923.S01E01" has none (the show premiered in 2022),

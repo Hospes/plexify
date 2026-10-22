@@ -259,6 +259,15 @@ class MovieFilenameParserTest {
             filename = "[Judas] Suzume (2022) [BD 1080p].mkv",
             expected = ParsedMediaInfo.Movie(title = "suzume", year = "2022", resolution = "1080p", releaseGroup = "Judas")
         ),
+        // A release group after the title ends it, as AniLibria names its movies
+        TestCase(
+            filename = "The_Witcher_Sirens_of_the_Deep_[AniLibria]_[WEB-DLRip_1080p_HEVC].mkv",
+            expected = ParsedMediaInfo.Movie(title = "the witcher sirens of the deep", year = null, resolution = "1080p", quality = "WEB-DLRip")
+        ),
+        TestCase(
+            filename = "Suzume [Judas] (2022).mkv",
+            expected = ParsedMediaInfo.Movie(title = "suzume", year = "2022")
+        ),
 
         // --- A title word that is also a release tag, before the year ---
         TestCase(

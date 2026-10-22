@@ -125,6 +125,49 @@ class EpisodeFilenameParserTest {
             expected = ParsedMediaInfo.Episode(showTitle = "1923", season = null, episode = 1, year = null, resolution = "1080p", releaseGroup = "Group")
         ),
 
+        // --- A number closing the show title may be the season: the title is kept, with the other reading ---
+        TestCase(
+            filename = "Devil_May_Cry_2_[01]_[HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(
+                showTitle = "devil may cry 2", season = null, episode = 1, year = null,
+                numberedSeason = ParsedMediaInfo.NumberedSeason("devil may cry", 2),
+            )
+        ),
+        TestCase(
+            filename = "Record_of_Ragnarok_2_[15]_[AniLibria_TV]_[WEBRip_1080p].mkv",
+            expected = ParsedMediaInfo.Episode(
+                showTitle = "record of ragnarok 2", season = null, episode = 15, year = null, resolution = "1080p", quality = "WEBRip",
+                numberedSeason = ParsedMediaInfo.NumberedSeason("record of ragnarok", 2),
+            )
+        ),
+        TestCase(
+            filename = "Shuumatsu_no_Walkure_III_[13]_[HEVC].mkv",
+            expected = ParsedMediaInfo.Episode(
+                showTitle = "shuumatsu no walkure iii", season = null, episode = 13, year = null,
+                numberedSeason = ParsedMediaInfo.NumberedSeason("shuumatsu no walkure", 3),
+            )
+        ),
+        TestCase(
+            filename = "[SubsPlease] Mob Psycho 100 III - 01 (1080p) [ABCD1234].mkv",
+            expected = ParsedMediaInfo.Episode(
+                showTitle = "mob psycho 100 iii", season = null, episode = 1, year = null, resolution = "1080p", releaseGroup = "SubsPlease",
+                numberedSeason = ParsedMediaInfo.NumberedSeason("mob psycho 100", 3),
+            )
+        ),
+        // A season marker in the name leaves the number to the title; so does a title of only the number, or a 0
+        TestCase(
+            filename = "[SubsPlease] Mob Psycho 100 S2 - 01 (1080p).mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "mob psycho 100", season = 2, episode = 1, year = null, resolution = "1080p", releaseGroup = "SubsPlease")
+        ),
+        TestCase(
+            filename = "86_[01]_[1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "86", season = null, episode = 1, year = null, resolution = "1080p")
+        ),
+        TestCase(
+            filename = "[Group] Steins Gate 0 - 01 [1080p].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "steins gate 0", season = null, episode = 1, year = null, resolution = "1080p", releaseGroup = "Group")
+        ),
+
         // --- Names plexify itself writes: "{CleanTitle} ({year}) - S{season:2}E{episode:2} - {episodeTitle}{version}.{ext}"
         // (same episode template for Plex and Jellyfin) ---
         TestCase(
@@ -281,7 +324,8 @@ class EpisodeFilenameParserTest {
         ),
         TestCase(
             filename = "[Erai-raws] Kaiju No. 8 - 12 [1080p][Multiple Subtitle].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "kaiju no 8", season = null, episode = 12, year = null, resolution = "1080p", releaseGroup = "Erai-raws")
+            expected = ParsedMediaInfo.Episode(showTitle = "kaiju no 8", season = null, episode = 12, year = null, resolution = "1080p", releaseGroup = "Erai-raws",
+                numberedSeason = ParsedMediaInfo.NumberedSeason("kaiju no", 8))
         ),
         TestCase(
             filename = "Sousou no Frieren - 05v2.mkv",
