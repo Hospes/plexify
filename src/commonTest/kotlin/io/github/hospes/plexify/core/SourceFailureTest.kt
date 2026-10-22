@@ -21,6 +21,14 @@ class SourceFailureTest {
     }
 
     @Test
+    fun `a source that can't be examined counts as failed`() = runTest {
+        // No file system accepts a name this long: Linux fails with ENAMETOOLONG, Windows with an invalid-name error.
+        val stats = processSource(Path(SystemTemporaryDirectory, "x".repeat(300)))
+        assertEquals(1, stats.failed)
+        assertEquals(0, stats.skipped)
+    }
+
+    @Test
     fun `each missing source counts once`() = runTest {
         val dir = Path(SystemTemporaryDirectory, "plexify-missing-${Random.nextLong().toULong()}")
         val stats = processSource(Path(dir, "a.mkv"), Path(dir, "b"))
