@@ -319,7 +319,7 @@ Placeholder names are case-insensitive: `{CleanTitle}` and `{cleantitle}` are th
 | Placeholder      | Value                                                                                          | Example                           |
 | ---------------- | ---------------------------------------------------------------------------------------------- | --------------------------------- |
 | `{title}`        | Title from TMDB, as is.                                                                        | `Avatar: The Way of Water`        |
-| `{cleantitle}`   | Title with characters that are invalid in file names (`< > : " / \ \| ? *`) removed. Use this one in paths. | `Avatar The Way of Water` |
+| `{cleantitle}`   | Title made safe for file names, keeping words apart: `/` or `\` between two words becomes `-` (`Fate/Zero` → `Fate-Zero`, `.hack//SIGN` → `.hack-SIGN`); `:`, `\|`, control characters and a `/` or `\` with a space beside it become a space (`Re:ZERO` → `Re ZERO`); `" < > ? *` are dropped. Use this one in paths. | `Avatar The Way of Water` |
 | `{year}`         | Release year of a movie, or first-air year of a show. Empty when TMDB has none.                | `2022`                            |
 | `{ext}`          | Original file extension.                                                                       | `mkv`                             |
 | `{tmdbid}`       | TMDB ID.                                                                                       | `76600`                           |
@@ -328,7 +328,7 @@ Placeholder names are case-insensitive: `{CleanTitle}` and `{cleantitle}` are th
 | `{season}`       | Season number (episodes only).                                                                 | `1`                               |
 | `{episode}`      | Episode number (episodes only; the first one for a multi-episode file).                       | `5`                               |
 | `{multiepisode}` | `-E` and the last episode for a multi-episode file, empty otherwise.                           | `-E06`                            |
-| `{episodetitle}` | Episode title, cleaned like `{cleantitle}` (episodes only). For a multi-episode file, the titles joined with ` & `. | `The Ride` |
+| `{episodetitle}` | Episode title, cleaned like `{cleantitle}` (episodes only; `Part 1/2` → `Part 1-2`). For a multi-episode file, the titles joined with ` & `. | `The Ride` |
 | `{resolution}`   | Resolution from the filename.                                                                  | `1080p`                           |
 | `{quality}`      | Source from the filename.                                                                      | `BluRay`                          |
 | `{hdr}`          | HDR format from the filename.                                                                  | `HDR10`                           |
