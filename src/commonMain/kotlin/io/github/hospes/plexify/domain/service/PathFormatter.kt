@@ -74,10 +74,24 @@ class PathFormatter {
 
     // 4. Render one path segment, shortened to MAX_SEGMENT_BYTES if needed.
     // The episode title is cut first, then the title, so the S/E marker, {version} and the extension stay intact.
+    // Only when the titles are cut and the name still doesn't fit does {version} lose its release group.
     private fun formatSegment(template: String, placeholders: Map<String, String?>): String {
+        val uses = placeholderRegex.findAll(template).groupingBy { it.groupValues[1].lowercase() }.eachCount()
+        var segment = fitSegment(template, placeholders, uses)
+        val versionWithoutGroup = placeholders[VERSION_WITHOUT_GROUP]
+        if (segment.utf8Size() > MAX_SEGMENT_BYTES && "version" in uses && versionWithoutGroup != placeholders["version"]) {
+            segment = fitSegment(template, placeholders + ("version" to versionWithoutGroup), uses)
+        }
+        if (segment.utf8Size() <= MAX_SEGMENT_BYTES) return segment
+        // Only the template's literal text and tags are left to cut: cut the end, keeping the extension.
+        val extension = placeholders["ext"]?.takeIf { it.isNotEmpty() && segment.endsWith(".$it") }?.let { ".$it" } ?: ""
+        return finishSegment(segment.removeSuffix(extension).takeUtf8(MAX_SEGMENT_BYTES - extension.utf8Size())) + extension
+    }
+
+    // The segment with the placeholders of SHORTENED_FIRST cut, in that order, until it fits or they are used up.
+    private fun fitSegment(template: String, placeholders: Map<String, String?>, uses: Map<String, Int>): String {
         var values = placeholders
         var segment = finishSegment(replacePlaceholders(template, values))
-        val uses = placeholderRegex.findAll(template).groupingBy { it.groupValues[1].lowercase() }.eachCount()
         for (key in SHORTENED_FIRST.filter { it in uses }) {
             while (segment.utf8Size() > MAX_SEGMENT_BYTES) {
                 val value = values[key]?.takeIf { it.isNotEmpty() && it != ELLIPSIS } ?: break
@@ -87,10 +101,7 @@ class PathFormatter {
                 segment = finishSegment(replacePlaceholders(template, values))
             }
         }
-        if (segment.utf8Size() <= MAX_SEGMENT_BYTES) return segment
-        // Only the template's literal text and tags are left to cut: cut the end, keeping the extension.
-        val extension = placeholders["ext"]?.takeIf { it.isNotEmpty() && segment.endsWith(".$it") }?.let { ".$it" } ?: ""
-        return finishSegment(segment.removeSuffix(extension).takeUtf8(MAX_SEGMENT_BYTES - extension.utf8Size())) + extension
+        return segment
     }
 
     // 5. Collapse repeated spaces and trim the ends. Windows can't keep a name that ends in a dot or a space: it drops
@@ -136,17 +147,21 @@ class PathFormatter {
 
     // 1. Create a map of available placeholders and their values.
     private fun buildPlaceholderMap(media: CanonicalMedia, parsedInfo: ParsedMediaInfo, sourceFile: Path): Map<String, String?> {
-        // 1a. Handle special composite placeholders like {version}
+        // 1a. Handle special composite placeholders like {version}. The release group closes it: " - [1080p] [BluRay] [YTS]".
+        // A group that repeats another tag is left out, so the name parses back to the same tags.
         val versionTags = listOfNotNull(parsedInfo.resolution, parsedInfo.quality, parsedInfo.hdr, parsedInfo.edition)
-        val versionString = if (versionTags.isNotEmpty()) " - ${versionTags.joinToString(" ") { "[$it]" }}" else ""
+        val releaseGroup = parsedInfo.releaseGroup?.let { cleanName(it.replace("[", "").replace("]", "")) }
+            ?.takeIf { group -> group.any { it.isLetterOrDigit() } && versionTags.none { it.equals(group, ignoreCase = true) } }
+        fun version(tags: List<String>) = if (tags.isNotEmpty()) " - ${tags.joinToString(" ") { "[$it]" }}" else ""
 
         val commonPlaceholders = mutableMapOf(
             "resolution" to parsedInfo.resolution,
             "quality" to parsedInfo.quality,
             "hdr" to parsedInfo.hdr,
-            "releasegroup" to parsedInfo.releaseGroup,
+            "releasegroup" to releaseGroup,
             "edition" to parsedInfo.edition,
-            "version" to versionString,
+            "version" to version(versionTags + listOfNotNull(releaseGroup)),
+            VERSION_WITHOUT_GROUP to version(versionTags),
             "ext" to sourceFile.name.substringAfterLast('.', "")
         )
 
@@ -247,5 +262,8 @@ class PathFormatter {
         val SHORTENED_FIRST = listOf("episodetitle", "cleantitle", "title")
 
         const val ELLIPSIS = "…"
+
+        /** {version} without the release group, for a name too long to keep it. Not a placeholder: `{\w+}` can't name it. */
+        const val VERSION_WITHOUT_GROUP = "version:nogroup"
     }
 }

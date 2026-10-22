@@ -56,7 +56,7 @@ class EpisodeFilenameParserTest {
         TestCase(
             filename = "Gate_[01]_[720p].mkv",
             parentDirName = "Gate S2 - AniLibria.TV [HDTV-Rip 720p]",
-            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p")
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 1, year = null, resolution = "720p", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Gate_[01]_[720p].mkv",
@@ -118,7 +118,7 @@ class EpisodeFilenameParserTest {
         // --- Underscore-separated names: '_' is a word char, so metadata must be read from normalized text ---
         TestCase(
             filename = "Gate_[01]_[AniLibria_Tv]_[HDTV-Rip_720p].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = null, episode = 1, year = null, resolution = "720p", quality = "HDTV")
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = null, episode = 1, year = null, resolution = "720p", quality = "HDTV", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Dungeon_Meshi_[13]_[1080p].mkv",
@@ -132,23 +132,23 @@ class EpisodeFilenameParserTest {
         // AniLibria marks a season's last episode "[NN_END]"; it must parse like its "[NN]" siblings
         TestCase(
             filename = "Kimetsu_no_Yaiba_[25]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba", season = null, episode = 25, year = null, resolution = "1080p")
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba", season = null, episode = 25, year = null, resolution = "1080p", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Kimetsu_no_Yaiba_[26_END]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba", season = null, episode = 26, year = null, resolution = "1080p")
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba", season = null, episode = 26, year = null, resolution = "1080p", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Kimetsu_no_Yaiba_-_Yuukaku-hen_[10]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba yuukaku hen", season = null, episode = 10, year = null, resolution = "1080p", quality = "WEBRip")
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba yuukaku hen", season = null, episode = 10, year = null, resolution = "1080p", quality = "WEBRip", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Kimetsu_no_Yaiba_-_Yuukaku-hen_[11_END]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba yuukaku hen", season = null, episode = 11, year = null, resolution = "1080p", quality = "WEBRip")
+            expected = ParsedMediaInfo.Episode(showTitle = "kimetsu no yaiba yuukaku hen", season = null, episode = 11, year = null, resolution = "1080p", quality = "WEBRip", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Gate_S2_[24_end]_[AniLibria_TV]_[HDTV-Rip_720p].mkv",
-            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 24, year = null, resolution = "720p", quality = "HDTV")
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 2, episode = 24, year = null, resolution = "720p", quality = "HDTV", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "The_Boys_S03E01_2022_720p_WEB-DL_LostFilm.mkv",
@@ -188,8 +188,7 @@ class EpisodeFilenameParserTest {
             filename = "Record_of_Ragnarok_2_[15]_[AniLibria_TV]_[WEBRip_1080p].mkv",
             expected = ParsedMediaInfo.Episode(
                 showTitle = "record of ragnarok 2", season = null, episode = 15, year = null, resolution = "1080p", quality = "WEBRip",
-                numberedSeason = ParsedMediaInfo.NumberedSeason("record of ragnarok", 2),
-            )
+                numberedSeason = ParsedMediaInfo.NumberedSeason("record of ragnarok", 2), releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Shuumatsu_no_Walkure_III_[13]_[HEVC].mkv",
@@ -434,7 +433,91 @@ class EpisodeFilenameParserTest {
             filename = "[AniLibria] Gate [05] [720p].mkv",
             expected = ParsedMediaInfo.Episode(showTitle = "gate", season = null, episode = 5, year = null, resolution = "720p", releaseGroup = "AniLibria")
         ),
+        // --- Scene release group: "-GROUP" closing the name, after the release tags ---
+        TestCase(
+            filename = "The.Boys.S03E01.Payback.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = null, resolution = "1080p", quality = "WEB-DL", releaseGroup = "NTb")
+        ),
+        TestCase(
+            filename = "Obi-Wan.Kenobi.S01E01.2160p.WEB-DL.x265-NTb.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "obi wan kenobi", season = 1, episode = 1, year = null, resolution = "2160p", quality = "WEB-DL", releaseGroup = "NTb")
+        ),
+        // Sonarr's names: the group after the bracketed tags
+        TestCase(
+            filename = "The Boys (2019) - S03E01 - Payback [WEBDL-1080p][EAC3 5.1][h264]-NTb.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = "2019", resolution = "1080p", quality = "WEBDL", releaseGroup = "NTb")
+        ),
+        // A Usenet repost's own word after the group
+        TestCase(
+            filename = "Some.Show.S01E01.1080p.WEB.h264-NTb-postbot.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 1, year = null, resolution = "1080p", releaseGroup = "NTb")
+        ),
+        // Not groups: a tag word in a free-text episode title
+        TestCase(
+            filename = "Some Show (2020) - S01E02 - A Proper Send-Off.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 2, year = "2020")
+        ),
+        TestCase(
+            filename = "Some Show (2020) - S01E03 - Internal Lock-Down.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 3, year = "2020")
+        ),
+        // Not groups: a hyphenated tag closing the name, a hyphenated episode title
+        TestCase(
+            filename = "The.Boys.S03E01.1080p.WEB-DL.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = null, resolution = "1080p", quality = "WEB-DL")
+        ),
+        TestCase(
+            filename = "Some.Show.S01E01.Spider-Man.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 1, year = null)
+        ),
+        // Plexify's own name with the release group closing the {version} suffix (0.6+)
+        TestCase(
+            filename = "Gate (2015) - S01E13 - The Banquet Begins - [720p] [HDTV] [AniLibria.TV].mkv",
+            parentDirName = "Season 01",
+            expected = ParsedMediaInfo.Episode(showTitle = "gate", season = 1, episode = 13, year = "2015", resolution = "720p", quality = "HDTV", releaseGroup = "AniLibria")
+        ),
+        TestCase(
+            filename = "Some Show (2020) - S01E03 - Part One - The Start - [1080p] [WEB-DL] [NTb].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 3, year = "2020", resolution = "1080p", quality = "WEB-DL", releaseGroup = "NTb")
+        ),
+        // A site advertising itself in the leading tag is no group
+        TestCase(
+            filename = "[ www.Torrenting.com ] - Show.S01E01.1080p.WEB.h264-GROUP.mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "show", season = 1, episode = 1, year = null, resolution = "1080p", releaseGroup = "GROUP")
+        ),
+        // Not groups: plexify's own name, its episode title hyphenated
+        TestCase(
+            filename = "Some Show (2020) - S01E02 - X-Men Return - [1080p] [WEB-DL].mkv",
+            expected = ParsedMediaInfo.Episode(showTitle = "some show", season = 1, episode = 2, year = "2020", resolution = "1080p", quality = "WEB-DL")
+        ),
     )
+
+    // AniLiberty signs only the release folder, not the files in it
+    @Test
+    fun `takes a known release group from the release folder`() {
+        val parsed = MediaFilenameParser.parse(
+            "Shuumatsu_no_Walkure_III_[01]_[HEVC].mkv",
+            "Shuumatsu no Walkure III - AniLiberty [WEB-DL 1080p HEVC]",
+        )
+        assertEquals("AniLiberty", parsed.releaseGroup)
+        assertEquals("AniLibria", MediaFilenameParser.parse("Gate_[01]_[HEVC].mkv", "Gate - AniLibria.TV [HDTV-Rip 720p]").releaseGroup)
+        // "_" is a word character: the folder is read normalized, like a filename
+        val underscored = MediaFilenameParser.parse("Shingeki_no_Kyojin_[01]_[HEVC].mkv", "Shingeki_no_Kyojin_[AniLibria_TV]_[WEBRip_1080p]")
+        assertEquals("AniLibria", underscored.releaseGroup)
+    }
+
+    @Test
+    fun `reads no other group from the release folder`() {
+        assertEquals(null, MediaFilenameParser.parse("Show_[01]_[HEVC].mkv", "Show - SubsPlease [1080p]").releaseGroup)
+        assertEquals(null, MediaFilenameParser.parse("Show_[01]_[HEVC].mkv", "[SubsPlease] Show").releaseGroup)
+        assertEquals(null, MediaFilenameParser.parse("Show.S01E01.1080p.mkv", "Show.S01.1080p.WEB-DL.x264-NTb").releaseGroup)
+    }
+
+    @Test
+    fun `the group in the filename wins over the folder's`() {
+        val parsed = MediaFilenameParser.parse("[SubsPlease] Show - 01 (1080p).mkv", "Show - AniLiberty [WEB-DL 1080p HEVC]")
+        assertEquals("SubsPlease", parsed.releaseGroup)
+    }
 
     // Split-cour anime: the release's S2 is TMDB's S1E13+, remapped later via episode groups,
     // so only title, season and episode matter here.

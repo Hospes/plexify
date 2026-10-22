@@ -40,6 +40,9 @@ object MediaFilenameParser {
     // Release group tags leading the name, as fansubs write them: "[SubsPlease] Show - 01"
     private val leadingGroupsRegex = """^(?:\s*\[[^\[\]]*])+""".toRegex()
     private val leadingGroupRegex = """^\s*\[([^\[\]]+)]""".toRegex()
+    // A site advertising itself in the leading tag ("[ www.Torrenting.com ] - Show"), not a group
+    private val bracketTagRegex = """\[([^\[\]]+)]""".toRegex()
+    private val websiteRegex ="""^www\.|\.(?:com|net|org|info|io|to|cc|cd|me|ws)$""".toRegex(RegexOption.IGNORE_CASE)
 
     // Tier 2: season marker in the (normalized) filename: "Season 2", or a bare "S2" token as in "Gate_S2_[01]"
     private val seasonKeywordRegex = """(?:^|\s)(?:Season\s+|S)(\d{1,2})(?:\s|$)""".toRegex(RegexOption.IGNORE_CASE)
@@ -106,8 +109,12 @@ object MediaFilenameParser {
     )
     private val editionRegex = "\\b(${editionPatterns.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
 
-    private val releaseGroupTags = listOf("LostFilm")
+    // Groups that sign anywhere in the name, not only in a leading tag or a "-GROUP" suffix: "The.Boys.S03E01.LostFilm.TV",
+    // "Gate_[01]_[AniLibria_Tv]_[HDTV-Rip_720p]". Read in this spelling, so a library gets one tag per group.
+    private val releaseGroupTags = listOf("LostFilm", "AniLibria", "AniLiberty")
     private val releaseGroupRegex = "\\b(${releaseGroupTags.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
+    private fun knownGroup(text: String): String? =
+        releaseGroupRegex.find(text)?.value?.let { found -> releaseGroupTags.first { it.equals(found, ignoreCase = true) } }
 
 
     // A comprehensive list of "stop words" to find the end of the title.
@@ -124,18 +131,51 @@ object MediaFilenameParser {
     private val stopWords = (resolutionTags + qualityTags + otherStopTags).joinToString(separator = "|")
     private val stopWordRegex = "\\b($stopWords)\\b".toRegex(RegexOption.IGNORE_CASE)
 
+    // Scene release group closing the name: "x264-YTS", "x264-YTS.MX", "x264-[YTS.MX]", "x265-GalaxyRG[TGx]",
+    // and Radarr's "[x264]-GROUP". The hyphen must follow a letter, digit or ']', which rules out " - " in
+    // titles and plexify's own " - [1080p]" suffix.
+    private val sceneGroupRegex =
+        """(?<=[A-Za-z0-9\]])-(?:\[([A-Za-z0-9][A-Za-z0-9.]*)]|([A-Za-z0-9]+(?:\.[A-Z]{2})?)(?:\[[A-Za-z0-9]+])?)$""".toRegex()
+    // Words that end a hyphenated tag (WEB-DL, Blu-ray, DTS-HD, DTS-ES, DTS-X, HDTV-Rip), close a name as a
+    // tag (x265-10bit, BDRip-ITA) or are no group at all. Not stop words: those would change titles.
+    private val notSceneGroups = setOf(
+        "dl", "rip", "dlrip", "ray", "hd", "ma", "hdma", "es", "ex", "x", "avc", "h265", "av1", "8bit", "10bit",
+        "sample", "trailer", "multi", "dual", "sub", "subs", "dub",
+        "eng", "rus", "ukr", "ita", "fre", "french", "ger", "german", "spa", "pol", "jpn", "kor",
+    )
+    // Usenet reposts append their own word after the group: "x264-SPARKS-Obfuscated", "h264-NTb-postbot"
+    private val repostSuffixRegex =
+        """-(?:Obfuscated|Scrambled|postbot|xpost|Rakuv\w*|AsRequested|AlternativeToRequested|WhiteRev|BUYMORE|RePACKPOST|sample)$"""
+            .toRegex(RegexOption.IGNORE_CASE)
+    // A name segment that is a release tag as a whole, hyphen included ("WEB-DL", "Blu-ray", "DTS-HD")
+    private val wholeTagRegex = "^($stopWords)$".toRegex(RegexOption.IGNORE_CASE)
+
     // Regex for cleaning up the final title string
     private val delimiterRegex = "[._\\[\\]()-]+".toRegex()
     private val cleanupRegex = "\\s+".toRegex()
 
 
     fun parse(filename: String, parentDirName: String? = null): ParsedMediaInfo {
+        val parsed = parseName(filename, parentDirName)
+        // Some groups sign only the release folder ("Shuumatsu no Walkure III - AniLiberty [WEB-DL 1080p HEVC]/
+        // Shuumatsu_no_Walkure_III_[01]_[HEVC].mkv"). Only a known group counts there: a folder is free text.
+        // Normalized like a filename, as "\b" never matches between "_" and a word ("Show_[AniLibria_TV]_[WEBRip]").
+        val folderGroup = parentDirName?.takeIf { parsed.releaseGroup == null }
+            ?.let { knownGroup(it.replace('.', ' ').replace('_', ' ')) } ?: return parsed
+        return when (parsed) {
+            is ParsedMediaInfo.Movie -> parsed.copy(releaseGroup = folderGroup)
+            is ParsedMediaInfo.Episode -> parsed.copy(releaseGroup = folderGroup)
+        }
+    }
+
+    private fun parseName(filename: String, parentDirName: String?): ParsedMediaInfo {
         val workingFilename = filename.substringBeforeLast('.').replace(providerIdTagRegex, " ")
         // Normalize once; all tier regexes run against this
         val normalized = workingFilename.replace('.', ' ').replace('_', ' ')
         // A bracketed number leading the name ("[01].mkv") is an episode, not a group
         val leadingGroup = leadingGroupRegex.find(workingFilename)?.groupValues?.get(1)?.trim()
-            ?.takeIf { tag -> tag.any { it.isLetter() } }
+            ?.takeIf { tag -> tag.any { it.isLetter() } && !websiteRegex.containsMatchIn(tag) && !looksLikeTag(tag) }
+        val sceneGroup by lazy { sceneGroupOf(workingFilename) }
 
         // --- Tier 1: Standard SxxExx, then 1x01 ---
         val episodeMatch = episodeRegex.find(workingFilename) ?: crossEpisodeRegex.find(workingFilename)
@@ -170,6 +210,13 @@ object MediaFilenameParser {
                 year = showYear?.groupValues?.get(1),
                 bareShowYear = bareYear != null,
                 leadingGroup = leadingGroup,
+                // In a titled name the episode title before the tags is free text ("A Proper Send-Off"): only
+                // Sonarr's "[h264]-NTb" counts there, and in plexify's own names the {version} suffix holds it.
+                sceneGroup = when {
+                    !titledEpisode -> sceneGroup
+                    versionSuffix == null -> sceneGroupOf(workingFilename, afterBracketOnly = true)
+                    else -> versionSuffixGroup(versionSuffix)
+                },
             )
         }
 
@@ -193,6 +240,7 @@ object MediaFilenameParser {
                 normalized = normalized,
                 year = showYear?.groupValues?.get(1),
                 leadingGroup = leadingGroup,
+                sceneGroup = sceneGroup,
                 numberedSeason = if (seasonInTitle == null) numberedSeason(showTitle) else null,
             )
         }
@@ -210,6 +258,7 @@ object MediaFilenameParser {
                     episode = bracketEpMatch.groupValues[1].toInt(),
                     normalized = normalized,
                     leadingGroup = leadingGroup,
+                    sceneGroup = sceneGroup,
                 )
             }
         }
@@ -225,12 +274,49 @@ object MediaFilenameParser {
                 episode = bracketEpMatch.groupValues[1].toInt(),
                 normalized = normalized,
                 leadingGroup = leadingGroup,
+                sceneGroup = sceneGroup,
                 numberedSeason = numberedSeason(showTitle),
             )
         }
 
         // --- MOVIE PARSING LOGIC (Fallback) ---
-        return parseAsMovie(workingFilename, leadingGroup)
+        return parseAsMovie(workingFilename, leadingGroup, sceneGroup)
+    }
+
+    // The scene group closing [name] (no extension, delimiters still in place); null unless it is plainly one.
+    // Groups sign after the release tags, so a hyphen with no tag before it is a title's ("Spider-Man",
+    // "X-MEN"), and one inside the first tag is the tag's own ("Movie.2019.WEB-DL").
+    private fun sceneGroupOf(fullName: String, afterBracketOnly: Boolean = false): String? {
+        val name = fullName.replace(repostSuffixRegex, "")
+        val match = sceneGroupRegex.find(name) ?: return null
+        if (afterBracketOnly && name.getOrNull(match.range.first - 1) != ']') return null
+        val group = match.groupValues[1].ifEmpty { match.groupValues[2] }
+        val firstTag = stopWordRegex.find(name.replace('.', ' ').replace('_', ' ')) ?: return null
+        if (match.range.first <= firstTag.range.last) return null
+        // A second hyphen in the segment before it: a hyphenated group ("x264-D-Z0N3", "x264-Fight-BB") we
+        // would cut in half, unless the segment is a tag itself ("WEB-DL-GROUP")
+        val segment = name.substring(0, match.range.first).takeLastWhile { it !in "._ []" }
+        if ('-' in segment && !wholeTagRegex.matches(segment)) return null
+        // "x264-2020" ends in a year, not a group
+        if (group.none { it.isLetter() }) return null
+        if (group.substringBefore('.').lowercase() in notSceneGroups) return null
+        return group.takeUnless { looksLikeTag(it) }
+    }
+
+    // A would-be group holding release metadata rather than a name: "-x264", "-2020", "[1080p HEVC]", "[Extended]"
+    private fun looksLikeTag(text: String): Boolean {
+        val words = text.replace('.', ' ').replace('_', ' ')
+        return stopWordRegex.containsMatchIn(words) || yearRegex.containsMatchIn(words) ||
+            hdrRegex.containsMatchIn(words) || editionRegex.containsMatchIn(words)
+    }
+
+    // The release group closing plexify's own {version} suffix (" - [1080p] [BluRay] [YTS]"): its last tag, unless
+    // that is one of the tags written before the group, as in names without one (" - [1080p] [Directors Cut]").
+    private fun versionSuffixGroup(versionSuffix: String): String? {
+        val last = bracketTagRegex.findAll(versionSuffix).lastOrNull()?.groupValues?.get(1)?.trim() ?: return null
+        val isTag = resolutionRegex.matches(last) || qualityRegex.matches(last) || hdrRegex.matches(last) ||
+            editionRegex.matches(last)
+        return last.takeUnless { isTag || it.none { char -> char.isLetterOrDigit() } }
     }
 
     private fun seasonFromDir(parentDirName: String?): Int? =
@@ -259,7 +345,7 @@ object MediaFilenameParser {
     private fun cleanShowTitle(rawTitle: String): String =
         rawTitle.replace(leadingGroupsRegex, " ").replace(delimiterRegex, " ").replace(cleanupRegex, " ").trim()
 
-    private fun parseAsMovie(filename: String, leadingGroup: String?): ParsedMediaInfo {
+    private fun parseAsMovie(filename: String, leadingGroup: String?, sceneGroup: String?): ParsedMediaInfo {
         // Normalize common delimiters to spaces first, so word boundary matching (\b) is reliable.
         val normalized = filename.replace('.', ' ').replace('_', ' ').replace(cleanupRegex, " ")
 
@@ -275,7 +361,8 @@ object MediaFilenameParser {
             resolution = resolutionRegex.find(normalized)?.value,
             quality = qualityRegex.find(normalized)?.value,
             hdr = extractHdr(normalized),
-            releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup?.takeIf { groupless != null },
+            releaseGroup = knownGroup(normalized) ?: leadingGroup?.takeIf { groupless != null }
+                ?: versionSuffixRegex.find(filename)?.value?.let(::versionSuffixGroup) ?: sceneGroup,
             edition = extractEdition(normalized),
         )
     }
@@ -348,6 +435,7 @@ object MediaFilenameParser {
         year: String? = null,
         bareShowYear: Boolean = false,
         leadingGroup: String? = null,
+        sceneGroup: String? = null,
         numberedSeason: ParsedMediaInfo.NumberedSeason? = null,
     ) =
         ParsedMediaInfo.Episode(
@@ -359,7 +447,7 @@ object MediaFilenameParser {
             resolution = resolutionRegex.find(normalized)?.value,
             quality = qualityRegex.find(normalized)?.value,
             hdr = extractHdr(normalized),
-            releaseGroup = releaseGroupRegex.find(normalized)?.value ?: leadingGroup,
+            releaseGroup = knownGroup(normalized) ?: leadingGroup ?: sceneGroup,
             edition = extractEdition(editionText),
             bareShowYear = bareShowYear,
             numberedSeason = numberedSeason,

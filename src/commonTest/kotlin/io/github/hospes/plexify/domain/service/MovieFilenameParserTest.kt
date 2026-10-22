@@ -12,11 +12,11 @@ class MovieFilenameParserTest {
         // --- Original Test Cases ---
         TestCase(
             filename = "The.Matrix.1999.1080p.BluRay.x264-YTS.mkv",
-            expected = ParsedMediaInfo.Movie(title = "the matrix", year = "1999", resolution = "1080p", quality = "BluRay")
+            expected = ParsedMediaInfo.Movie(title = "the matrix", year = "1999", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS")
         ),
         TestCase(
             filename = "Blade.Runner.2049.[2017].UHD.BluRay.2160p.x265-TERMiNAL.mkv",
-            expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = "2017", resolution = "2160p", quality = "BluRay")
+            expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = "2017", resolution = "2160p", quality = "BluRay", releaseGroup = "TERMiNAL")
         ),
         TestCase(
             filename = "2001.A.Space.Odyssey.1968.720p.BRRip.x264.mp4",
@@ -105,7 +105,7 @@ class MovieFilenameParserTest {
         // --- HDR test cases ---
         TestCase(
             filename = "Dune.Part.Two.2024.2160p.UHD.BluRay.HDR10.x265-GROUP.mkv",
-            expected = ParsedMediaInfo.Movie(title = "dune part two", year = "2024", resolution = "2160p", quality = "BluRay", hdr = "HDR10")
+            expected = ParsedMediaInfo.Movie(title = "dune part two", year = "2024", resolution = "2160p", quality = "BluRay", hdr = "HDR10", releaseGroup = "GROUP")
         ),
         TestCase(
             filename = "Avatar.The.Way.of.Water.2022.2160p.HDR10+.WEB-DL.mkv",
@@ -158,6 +158,15 @@ class MovieFilenameParserTest {
         TestCase(
             filename = "Blade Runner (1982) - [Final Cut].mkv",
             expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", edition = "Final Cut")
+        ),
+        // A release group closing the {version} suffix (Plexify 0.6+); without one (0.5.x) the cases above
+        TestCase(
+            filename = "Inception (2010) [tmdbid-27205] - [1080p] [BluRay] [YTS.MX].mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS.MX")
+        ),
+        TestCase(
+            filename = "Blade Runner (1982) [tmdbid-78] - [Final Cut] [SPARKS].mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", edition = "Final Cut", releaseGroup = "SPARKS")
         ),
         // Other ID tag forms Plex and Jellyfin read
         TestCase(
@@ -267,7 +276,7 @@ class MovieFilenameParserTest {
         // A release group after the title ends it, as AniLibria names its movies
         TestCase(
             filename = "The_Witcher_Sirens_of_the_Deep_[AniLibria]_[WEB-DLRip_1080p_HEVC].mkv",
-            expected = ParsedMediaInfo.Movie(title = "the witcher sirens of the deep", year = null, resolution = "1080p", quality = "WEB-DLRip")
+            expected = ParsedMediaInfo.Movie(title = "the witcher sirens of the deep", year = null, resolution = "1080p", quality = "WEB-DLRip", releaseGroup = "AniLibria")
         ),
         TestCase(
             filename = "Suzume [Judas] (2022).mkv",
@@ -287,6 +296,101 @@ class MovieFilenameParserTest {
         TestCase(
             filename = "The.Matrix.1999.1080p.BluRay.x264-2020.mkv",
             expected = ParsedMediaInfo.Movie(title = "the matrix", year = "1999", resolution = "1080p", quality = "BluRay")
+        ),
+        // --- Scene release group: "-GROUP" closing the name, after the release tags ---
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.x264-YTS.MX.mp4",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS.MX")
+        ),
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.x264.AAC5.1-[YTS.MX].mp4",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS.MX")
+        ),
+        TestCase(
+            filename = "Oppenheimer.2023.1080p.WEBRip.x265-GalaxyRG[TGx].mkv",
+            expected = ParsedMediaInfo.Movie(title = "oppenheimer", year = "2023", resolution = "1080p", quality = "WEBRip", releaseGroup = "GalaxyRG")
+        ),
+        // Radarr's names: the group after the bracketed tags
+        TestCase(
+            filename = "The Matrix (1999) [Bluray-1080p][x264]-SPARKS.mkv",
+            expected = ParsedMediaInfo.Movie(title = "the matrix", year = "1999", resolution = "1080p", quality = "Bluray", releaseGroup = "SPARKS")
+        ),
+        // A hyphenated title before the tags
+        TestCase(
+            filename = "Spider-Man.No.Way.Home.2021.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv",
+            expected = ParsedMediaInfo.Movie(title = "spider man no way home", year = "2021", resolution = "2160p", quality = "WEB-DL", hdr = "DV", releaseGroup = "FLUX")
+        ),
+        // A Usenet repost's own word after the group
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.x264-SPARKS-Obfuscated.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "SPARKS")
+        ),
+        // A hyphenated tag before the group
+        TestCase(
+            filename = "Dune.2021.1080p.WEB-DL-EVO.mkv",
+            expected = ParsedMediaInfo.Movie(title = "dune", year = "2021", resolution = "1080p", quality = "WEB-DL", releaseGroup = "EVO")
+        ),
+        // Not groups: half of a hyphenated group
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.DTS.x264-D-Z0N3.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.x264-Fight-BB.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        // Not groups: a leading tag made of technical tags
+        TestCase(
+            filename = "[1080p HEVC] Inception (2010).mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p")
+        ),
+        // Not groups: a codec or language tag after the hyphen
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay-H265.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.x265-10bit.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Inception.2010.1080p.BDRip-ITA.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BDRip")
+        ),
+        // Not groups: a hyphenated tag closing the name
+        TestCase(
+            filename = "Ant-Man.and.the.Wasp.2018.1080p.WEB-DL.mkv",
+            expected = ParsedMediaInfo.Movie(title = "ant man and the wasp", year = "2018", resolution = "1080p", quality = "WEB-DL")
+        ),
+        TestCase(
+            filename = "Ant-Man.and.the.Wasp.2018.1080p.Blu-ray.mkv",
+            expected = ParsedMediaInfo.Movie(title = "ant man and the wasp", year = "2018", resolution = "1080p", quality = "Blu-ray")
+        ),
+        TestCase(
+            filename = "Heat.1995.1080p.BluRay.DTS-ES.mkv",
+            expected = ParsedMediaInfo.Movie(title = "heat", year = "1995", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Heat.1995.1080p.HDTV-Rip.mkv",
+            expected = ParsedMediaInfo.Movie(title = "heat", year = "1995", resolution = "1080p", quality = "HDTV")
+        ),
+        // Not groups: a tag or a language after the hyphen
+        TestCase(
+            filename = "Inception.2010.BluRay-1080p.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        TestCase(
+            filename = "Inception.2010.1080p.BluRay.x264-MULTI.mkv",
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+        ),
+        // Not groups: a hyphenated title with no release tags before the hyphen
+        TestCase(
+            filename = "Spider-Man.mkv",
+            expected = ParsedMediaInfo.Movie(title = "spider man", year = null)
+        ),
+        TestCase(
+            filename = "Spider-Man (2002).mkv",
+            expected = ParsedMediaInfo.Movie(title = "spider man", year = "2002")
         ),
         TestCase(
             filename = "Atmos (2021) 2160p Atmos.mkv",

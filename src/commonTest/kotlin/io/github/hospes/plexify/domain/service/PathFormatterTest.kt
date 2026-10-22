@@ -134,6 +134,87 @@ class PathFormatterTest {
         assertEquals("breaking bad", reparsed.showTitle)
     }
 
+    // --- Release group: the last {version} tag ---
+
+    private fun renderMovieFile(strategy: NamingStrategy, parsed: ParsedMediaInfo.Movie, media: CanonicalMedia.Movie = movie(2010)): String =
+        formatter.formatMoviePath(strategy.movieFolderTemplate, strategy.movieFileTemplate, media, parsed, source).name
+
+    private fun renderJellyfinEpisode(media: CanonicalMedia.Episode, parsed: ParsedMediaInfo.Episode): String {
+        val strategy = NamingStrategy.Jellyfin
+        return formatter.formatEpisodePath(strategy.tvShowFolderTemplate, strategy.seasonFolderTemplate, strategy.episodeFileTemplate, media, parsed, source).name
+    }
+
+    private val scene = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS")
+
+    @Test
+    fun `closes the version tags of a movie with the release group`() {
+        assertEquals("Inception (2010) [tmdbid-27205] - [1080p] [BluRay] [YTS].mkv", renderMovieFile(NamingStrategy.Jellyfin, scene))
+        assertEquals("Inception (2010) - [1080p] [BluRay] [YTS].mkv", renderMovieFile(NamingStrategy.Plex, scene))
+    }
+
+    @Test
+    fun `closes the version tags of an episode with the release group`() {
+        val parsed = ParsedMediaInfo.Episode(showTitle = "the boys", season = 3, episode = 1, year = null, resolution = "1080p", quality = "WEB-DL", releaseGroup = "NTb")
+
+        assertEquals("The Boys (2019) - S03E01 - Payback - [1080p] [WEB-DL] [NTb].mkv", renderJellyfinEpisode(episode(2019), parsed))
+    }
+
+    @Test
+    fun `a release group alone makes the version tags`() {
+        assertEquals("Inception (2010) [tmdbid-27205] - [SubsPlease].mkv", renderMovieFile(NamingStrategy.Jellyfin, parsedMovie.copy(releaseGroup = "SubsPlease")))
+    }
+
+    @Test
+    fun `cleans the release group like a title`() {
+        val parsed = parsedMovie.copy(resolution = "1080p", releaseGroup = "Foo:Bar?")
+
+        assertEquals("Inception (2010) [tmdbid-27205] - [1080p] [Foo Bar].mkv", renderMovieFile(NamingStrategy.Jellyfin, parsed))
+    }
+
+    @Test
+    fun `leaves out a release group that repeats another tag`() {
+        val parsed = parsedMovie.copy(resolution = "1080p", releaseGroup = "1080P")
+
+        assertEquals("Inception (2010) [tmdbid-27205] - [1080p].mkv", renderMovieFile(NamingStrategy.Jellyfin, parsed))
+    }
+
+    @Test
+    fun `a movie name with a release group parses back to the same name`() {
+        val releases = listOf(
+            "Inception.2010.1080p.BluRay.x264-YTS.mkv",
+            "Inception.2010.1080p.BluRay.x264.AAC5.1-[YTS.MX].mp4",
+            "[Judas] Inception (2010) [1080p] [HEVC].mkv",
+            "Inception.2010.Directors.Cut.2160p.BluRay.HDR10.x265-TERMiNAL.mkv",
+            "Inception.2010.1080p.BluRay.mkv",
+        )
+        for (strategy in listOf(NamingStrategy.Jellyfin, NamingStrategy.Plex)) {
+            for (release in releases) {
+                val parsed = MediaFilenameParser.parse(release) as ParsedMediaInfo.Movie
+                val name = renderMovieFile(strategy, parsed)
+                val reparsed = MediaFilenameParser.parse(name) as ParsedMediaInfo.Movie
+
+                assertEquals("inception", reparsed.title, name)
+                assertEquals("2010", reparsed.year, name)
+                assertEquals(parsed.releaseGroup, reparsed.releaseGroup, name)
+                assertEquals(name, renderMovieFile(strategy, reparsed), "re-rendered from $release")
+            }
+        }
+    }
+
+    @Test
+    fun `an episode name with a release group parses back to the same name`() {
+        val felina = CanonicalMedia.Episode(breakingBad, season = 5, episode = 16, title = "Felina")
+        val parsed = MediaFilenameParser.parse("Breaking.Bad.S05E16.Felina.1080p.BluRay.x264-DEMAND.mkv") as ParsedMediaInfo.Episode
+        val name = renderJellyfinEpisode(felina, parsed)
+
+        val reparsed = MediaFilenameParser.parse(name, "Season 05") as ParsedMediaInfo.Episode
+
+        assertEquals("Breaking Bad (2008) - S05E16 - Felina - [1080p] [BluRay] [DEMAND].mkv", name)
+        assertEquals("breaking bad", reparsed.showTitle)
+        assertEquals("DEMAND", reparsed.releaseGroup)
+        assertEquals(name, renderJellyfinEpisode(felina, reparsed))
+    }
+
     // --- Trailing dots and spaces ---
 
     @Test
@@ -206,6 +287,33 @@ class PathFormatterTest {
         assertEquals(1, reparsed.episode)
         assertEquals(12, reparsed.lastEpisode)
         assertEquals("720p", reparsed.resolution)
+    }
+
+    @Test
+    fun `keeps the release group of a long name and cuts the episode title`() {
+        val strategy = NamingStrategy.Jellyfin
+        val media = twelveEpisodes { "The Rather Long Episode Title Number $it" }
+        val name = formatter.formatEpisodePath(
+            strategy.tvShowFolderTemplate, strategy.seasonFolderTemplate, strategy.episodeFileTemplate,
+            media, parsedTwelve.copy(releaseGroup = "NTb"), twelveSource,
+        ).name
+
+        assertTrue(name.bytes <= 255, "${name.bytes} bytes: $name")
+        assertTrue(name.endsWith("… - [720p] [WEB-DL] [NTb].mkv"), name)
+    }
+
+    @Test
+    fun `drops the release group only when the name cannot fit it`() {
+        val strategy = NamingStrategy.Jellyfin
+        val media = twelveEpisodes { "The Rather Long Episode Title Number $it" }
+        val name = formatter.formatEpisodePath(
+            strategy.tvShowFolderTemplate, strategy.seasonFolderTemplate, strategy.episodeFileTemplate,
+            media, parsedTwelve.copy(releaseGroup = "G".repeat(240)), twelveSource,
+        ).name
+
+        assertTrue(name.bytes <= 255, "${name.bytes} bytes: $name")
+        assertTrue(name.endsWith("… - [720p] [WEB-DL].mkv"), name)
+        assertTrue(name.startsWith("Show (2020) - S01E01-E12 - The Rather Long"), name)
     }
 
     @Test
