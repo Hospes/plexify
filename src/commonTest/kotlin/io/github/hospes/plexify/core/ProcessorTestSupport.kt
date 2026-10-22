@@ -134,3 +134,16 @@ internal suspend fun runProcessor(
     }
     return ProcessorRun(provider, organizer, processor.stats)
 }
+
+/** Processes these source paths as given, with a fresh processor and a provider that finds nothing. */
+internal suspend fun processSource(vararg sources: Path, isTestMode: Boolean = true): MediaProcessor.Stats {
+    val processor = MediaProcessor(
+        metadataService = MetadataService(listOf(FakeTmdb(emptyList())), NamingStrategy.Jellyfin),
+        fileOrganizer = RecordingOrganizer(),
+        cache = MetadataCache(),
+    )
+    with(LoggingContext()) {
+        for (source in sources) processor.process(source, Path(SystemTemporaryDirectory, "plexify-library"), OperationMode.HARDLINK, isTestMode)
+    }
+    return processor.stats
+}
