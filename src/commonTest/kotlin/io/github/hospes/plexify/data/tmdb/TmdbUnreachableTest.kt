@@ -92,20 +92,23 @@ class TmdbUnreachableTest {
         var calls = 0
         val provider = provider {
             calls++
-            respond("", HttpStatusCode.ServiceUnavailable)
+            if (calls == 3) respond("", HttpStatusCode.ServiceUnavailable) else refused()
         }
 
         repeat(4) { provider.search("Ghosts", null) }
+        val fifth = provider.search("Ghosts", null).exceptionOrNull()
 
-        assertEquals(4, calls)
+        // Two failures, an HTTP 503, then two more: the 503 started the count again.
+        assertIs<MetadataConnectionException>(fifth)
+        assertEquals(5, calls)
     }
 
-    @Test
-    fun `a stalled alternative-titles lookup is cut short and ends the lookups of that search`() = capped {
-        // Three unconvincing results, so each would get an alternative-titles lookup.
-        val results = (1..3).joinToString(",") { """{"media_type": "tv", "id": $it, "name": "Unrelated $it", "original_name": "Unrelated $it", "first_air_date": "2020-01-01"}""" }
-        val altTitleCalls = mutableListOf<String>()
-        val provider = provider(timeouts.copy(requestMillis = 5_000, optionalRequestMillis = 200, retries = 1)) { request ->
+    private fun tvResult(id: Int, name: String) =
+        """{"media_type": "tv", "id": $id, "name": "$name", "original_name": "$name", "first_air_date": "2020-01-01"}"""
+
+    /** A search answering [results], whose alternative-titles lookups stall; records those lookups. */
+    private fun stalledAltTitles(results: String, altTitleCalls: MutableList<String>) =
+        provider(timeouts.copy(requestMillis = 5_000, optionalRequestMillis = 200, retries = 1)) { request ->
             if ("alternative_titles" in request.url.encodedPath) {
                 altTitleCalls += request.url.encodedPath
                 awaitCancellation()
@@ -113,13 +116,31 @@ class TmdbUnreachableTest {
             respond("""{"results": [$results]}""", HttpStatusCode.OK, jsonHeaders)
         }
 
+    @Test
+    fun `a stalled alternative-titles lookup is cut short and fails a search with no convincing result`() = capped {
+        // Three unconvincing results, so each would get an alternative-titles lookup; the alias may be the match.
+        val altTitleCalls = mutableListOf<String>()
+        val provider = stalledAltTitles((1..3).joinToString(",") { tvResult(it, "Unrelated $it") }, altTitleCalls)
+
         val start = TimeSource.Monotonic.markNow()
+        val error = provider.search("Kimetsu no Yaiba", null).exceptionOrNull()
+
+        assertIs<MetadataTimeoutException>(error)
+        assertEquals("TMDB request timed out fetching alternative titles of 'Unrelated 1'", error.message)
+        // One lookup with the short limit and no retry, not three with the full one.
+        assertEquals(1, altTitleCalls.size)
+        assertTrue(start.elapsedNow() < 2_000.milliseconds, "took ${start.elapsedNow()}")
+    }
+
+    @Test
+    fun `a stalled alternative-titles lookup leaves a search with a convincing result as it is`() = capped {
+        val altTitleCalls = mutableListOf<String>()
+        val provider = stalledAltTitles(tvResult(1, "Kimetsu no Yaiba") + "," + tvResult(2, "Unrelated 2") + "," + tvResult(3, "Unrelated 3"), altTitleCalls)
+
         val found = provider.search("Kimetsu no Yaiba", null).getOrThrow()
 
         assertEquals(3, found.size)
         assertTrue(found.all { it is MediaSearchResult.TvShow && it.alternativeTitles.isEmpty() })
-        // One lookup with the short limit and no retry, not three with the full one.
         assertEquals(1, altTitleCalls.size)
-        assertTrue(start.elapsedNow() < 2_000.milliseconds, "took ${start.elapsedNow()}")
     }
 }

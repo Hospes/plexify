@@ -35,7 +35,7 @@ class SeasonFromTitleTest {
         seasons = mapOf("85937" to mapOf(1 to 1..26, 2 to 1..7, 3 to 1..11, 5 to 1..8)),
     )
 
-    private fun ProcessorRun.placeOf(fileName: String): Pair<Int, Int>? = episodeOf(fileName)?.let { it.season to it.episode }
+    private fun ProcessorRun<*>.placeOf(fileName: String): Pair<Int, Int>? = episodeOf(fileName)?.let { it.season to it.episode }
 
     @Test
     fun `an arc release without season numbers goes to the season its title names`() = runTest {

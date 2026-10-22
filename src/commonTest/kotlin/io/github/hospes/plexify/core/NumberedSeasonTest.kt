@@ -20,7 +20,7 @@ class NumberedSeasonTest {
     private val devilMayCry = show("Devil May Cry", "2025", "235930")
     private val recordOfRagnarok = show("Record of Ragnarok", "2021", "114868", "Shuumatsu no Walkure")
 
-    private fun ProcessorRun.placeOf(fileName: String): Triple<String?, Int, Int>? =
+    private fun ProcessorRun<*>.placeOf(fileName: String): Triple<String?, Int, Int>? =
         episodeOf(fileName)?.let { Triple(it.show.tmdbId, it.season, it.episode) }
 
     @Test
