@@ -123,6 +123,31 @@ class FileSystemUtilsTest {
     }
 
     @Test
+    fun `walkFiles reports a dangling symlink`() {
+        val real = file(Path(root, "real.mkv"))
+        val dangling = Path(root, "dangling.mkv")
+        if (!createSymbolicLink(dangling, "missing.mkv")) return
+        val reported = mutableListOf<Path>()
+
+        val found = walkFiles(root) { path, _ -> reported += path }.toList()
+
+        assertEquals(listOf(real), found)
+        assertEquals(listOf(dangling), reported)
+    }
+
+    @Test
+    fun `kind follows a symlink and tells a dangling one from a missing path`() {
+        file(Path(root, "real.mkv"))
+        val link = Path(root, "link.mkv")
+        val dangling = Path(root, "dangling.mkv")
+        if (!createSymbolicLink(link, "real.mkv") || !createSymbolicLink(dangling, "missing.mkv")) return
+
+        assertEquals(FileKind.REGULAR_FILE, PlatformFileSystem.kind(link))
+        assertEquals(FileKind.DANGLING_LINK, PlatformFileSystem.kind(dangling))
+        assertNull(PlatformFileSystem.kind(Path(root, "missing.mkv")))
+    }
+
+    @Test
     fun `delete removes a symlink but not its target`() {
         val real = file(Path(root, "real.mkv"))
         val link = Path(root, "link.mkv")

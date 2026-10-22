@@ -79,14 +79,37 @@ actual val PlatformFileSystem: MediaFileSystem = WindowsFileSystem
 @OptIn(ExperimentalForeignApi::class)
 private object WindowsFileSystem : MediaFileSystem {
     override fun kind(path: Path): FileKind? = memScoped {
+        val win32Path = win32Path(path)
+        var attributes = entryAttributes(win32Path, path) ?: return null
+        // GetFileAttributesW reads a symlink or junction itself, so a file symlink would read as a regular file even
+        // when its target is gone. Like stat on Linux, follow it.
+        if (attributes and FILE_ATTRIBUTE_REPARSE_POINT.toUInt() != 0u && isLink(win32Path, path)) {
+            val target = alloc<DWORDVar>()
+            when (val errorCode = plexify_get_target_attributes(win32Path, target.ptr)) {
+                0u -> attributes = target.value
+                ERROR_FILE_NOT_FOUND.toUInt(), ERROR_PATH_NOT_FOUND.toUInt() -> return FileKind.DANGLING_LINK
+                else -> throw win32Error("Can't read '$path'", errorCode)
+            }
+        }
+        if (attributes and FILE_ATTRIBUTE_DIRECTORY.toUInt() != 0u) FileKind.DIRECTORY else FileKind.REGULAR_FILE
+    }
+
+    /** The attributes of the entry at [win32Path] itself, not following a link, or null if there is none. */
+    private fun entryAttributes(win32Path: String, path: Path): UInt? = memScoped {
         val attributes = alloc<DWORDVar>()
-        when (val errorCode = plexify_get_file_attributes(win32Path(path), attributes.ptr)) {
-            0u -> Unit
-            ERROR_FILE_NOT_FOUND.toUInt(), ERROR_PATH_NOT_FOUND.toUInt() -> return null
+        when (val errorCode = plexify_get_file_attributes(win32Path, attributes.ptr)) {
+            0u -> attributes.value
+            ERROR_FILE_NOT_FOUND.toUInt(), ERROR_PATH_NOT_FOUND.toUInt() -> null
             else -> throw win32Error("Can't read '$path'", errorCode)
         }
-        // Like stat on Linux, this follows a symlink or junction to a directory.
-        if (attributes.value and FILE_ATTRIBUTE_DIRECTORY.toUInt() != 0u) FileKind.DIRECTORY else FileKind.REGULAR_FILE
+    }
+
+    /** Whether the reparse point at [win32Path] is a symlink or junction, rather than e.g. a OneDrive placeholder. */
+    private fun isLink(win32Path: String, path: Path): Boolean = memScoped {
+        val tag = alloc<DWORDVar>()
+        val errorCode = plexify_get_reparse_tag(win32Path, tag.ptr)
+        if (errorCode != 0u) throw win32Error("Can't read '$path'", errorCode)
+        tag.value == IO_REPARSE_TAG_SYMLINK || tag.value == IO_REPARSE_TAG_MOUNT_POINT
     }
 
     override fun list(directory: Path): List<Path> = memScoped {
@@ -117,6 +140,7 @@ private object WindowsFileSystem : MediaFileSystem {
         when (kind(path)) {
             FileKind.DIRECTORY -> return
             null -> path.parent?.let { createDirectories(it) }
+            FileKind.DANGLING_LINK -> throw IOException("Can't create directory '$path': it is a broken symlink")
             else -> throw IOException("Can't create directory '$path': a file with that name exists")
         }
         val errorCode = plexify_create_directory(win32Path(path))
@@ -132,11 +156,11 @@ private object WindowsFileSystem : MediaFileSystem {
     }
 
     override fun delete(path: Path) {
-        val errorCode = when (kind(path)) {
-            null -> return
-            FileKind.DIRECTORY -> plexify_remove_directory(win32Path(path))
-            else -> plexify_delete_file(win32Path(path))
-        }
+        val win32Path = win32Path(path)
+        // The entry itself, not what a link points at: a symlink to a directory, dangling or not, is removed as one.
+        val attributes = entryAttributes(win32Path, path) ?: return
+        val errorCode = if (attributes and FILE_ATTRIBUTE_DIRECTORY.toUInt() != 0u) plexify_remove_directory(win32Path)
+        else plexify_delete_file(win32Path)
         if (errorCode != 0u) throw win32Error("Can't delete '$path'", errorCode)
     }
 }

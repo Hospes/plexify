@@ -96,6 +96,10 @@ class MediaProcessor(
             log("Error: Source path does not exist: $source")
             return
         }
+        if (kind == FileKind.DANGLING_LINK) {
+            log("Error: Source is a broken symlink, its target doesn't exist: $source")
+            return
+        }
 
         if (kind == FileKind.DIRECTORY) {
             val mediaFiles = walkFiles(source) { path, error ->

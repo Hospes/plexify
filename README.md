@@ -266,6 +266,8 @@ A source file can be a symbolic link (pointing at a download in another folder o
 -   **`HARDLINK`**: the library gets a hardlink to the file the symlink points at, not to the symlink itself, so it keeps working however the symlink was written. The symlink is left alone. The file it points at must be on the same volume as the library.
 -   **`MOVE`**: the symlink itself is moved into the library, the way a library made of symlinks (e.g. to a cloud or debrid mount) expects; the file it points at is not touched. Plexify checks that the moved symlink still leads to the same file. A relative symlink usually doesn't from its new folder: the move is then undone and reported as failed (`… won't resolve from the library`). Use `HARDLINK` mode for those, or recreate them as absolute links.
 
+A broken (dangling) symlink, one whose target doesn't exist (say, into a mount that isn't mounted), is reported and counted as skipped: `Warning: Skipping unreadable <path> (broken symlink: its target doesn't exist)`. This applies to every broken symlink in the source tree, not only to video files. A broken symlink already at a target counts as a different file there: it is left alone (`target already exists`), and replaced only with `--overwrite`.
+
 ## 📝 Naming Templates
 
 ### Built-in templates
@@ -367,6 +369,7 @@ Run with `--test --verbose` first. The log shows what was parsed from each filen
 | `Hardlink failed: … (source and destination must be on the same volume/partition)` | Put the library on the same drive as the downloads.                                                                  |
 | `Can't move '…' to '…': …`                                                  | With `--mode MOVE`, the source and the library must also be on the same drive.                                              |
 | `… is a symlink to … that won't resolve from the library …`                 | A relative symlink can't be moved. Use `HARDLINK` mode, or make the symlink absolute. See [Symlinked sources](#symlinked-sources). |
+| `Skipping unreadable … (broken symlink: its target doesn't exist)`          | The symlink points at a file that isn't there, often on a mount that isn't mounted. Mount it and run again. See [Symlinked sources](#symlinked-sources). |
 | `TMDB request timed out …` / `Warning: … TMDB may be unreachable.`          | TMDB didn't answer in time. Check your connection (and proxy) and run again; files that timed out count as failed.          |
 | `HTTP 5xx …` or another network error on a file                             | The TMDB search failed, which says nothing about the title. Run again later; those files count as failed.                   |
 | `TMDB rejected the built-in API key (HTTP 401)`                             | The shared key was revoked. [Use your own key](#3-recommended-use-your-own-tmdb-key).                                       |

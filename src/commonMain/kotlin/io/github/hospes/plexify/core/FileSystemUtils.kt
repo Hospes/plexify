@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.core
 
+import kotlinx.io.IOException
 import kotlinx.io.files.Path
 
 /**
@@ -40,7 +41,17 @@ expect fun resolveSymbolicLink(path: Path): Path?
 internal const val CROSS_VOLUME_HINT = " (source and destination must be on the same volume/partition)"
 
 /** What a path points at. */
-enum class FileKind { REGULAR_FILE, DIRECTORY, OTHER }
+enum class FileKind {
+    REGULAR_FILE,
+    DIRECTORY,
+    OTHER,
+
+    /**
+     * A symbolic link (or, on Windows, a junction) whose target doesn't exist, e.g. one into a mount that isn't
+     * mounted. The link itself is still an entry in its folder.
+     */
+    DANGLING_LINK,
+}
 
 /**
  * File operations on the user's media paths: the source tree and the library. Use [PlatformFileSystem].
@@ -52,7 +63,8 @@ enum class FileKind { REGULAR_FILE, DIRECTORY, OTHER }
  */
 interface MediaFileSystem {
     /**
-     * Returns what is at [path] (following symlinks), or null if nothing is.
+     * Returns what is at [path], following symlinks (and junctions on Windows): [FileKind.DANGLING_LINK] for a link
+     * whose target doesn't exist, null if nothing is at [path].
      *
      * @throws kotlinx.io.IOException If [path] can't be examined, e.g. a parent directory isn't readable.
      */
@@ -86,8 +98,8 @@ expect val PlatformFileSystem: MediaFileSystem
  * two files with the same target keeps it, and which show a season is placed in.
  *
  * Directories are not yielded, only traversed. A missing [root] yields nothing. A path that can't be examined,
- * or a directory that can't be listed, is passed to [onUnreadable] with the error and skipped, so the caller can
- * report it instead of losing it silently.
+ * a directory that can't be listed, or a dangling symlink is passed to [onUnreadable] with the error and skipped, so
+ * the caller can report it instead of losing it silently.
  */
 fun walkFiles(
     root: Path,
@@ -113,6 +125,7 @@ fun walkFiles(
             children.sortedWith(compareBy(FileNameOrder) { it.name })
                 .forEach { yieldAll(walkFiles(it, fileSystem, onUnreadable)) }
         }
+        FileKind.DANGLING_LINK -> onUnreadable(root, IOException("broken symlink: its target doesn't exist"))
         FileKind.OTHER, null -> Unit
     }
 }
