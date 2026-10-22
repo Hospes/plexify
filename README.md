@@ -221,7 +221,7 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 | `NxNN`                                                   | `Friends.1x01.mkv`, `Friends - 02x24 - Title.mkv`, `Friends.10x17-18.mkv` | the name        |
 | Fansub `Show - NN` (optional `v2`, absolute numbers)     | `[SubsPlease] Sousou no Frieren - 01 (1080p) [ABCD1234].mkv`, `Show - 01v2.mkv`, `[SubsPlease] One Piece - 1071 (1080p).mkv` | `S2` / `Season 2` / `2nd Season` closing the title, else the parent folder |
 | `Season N` / `SN` + `[NN]`                               | `Tsue_to_Tsurugi_no_Wistoria_Season_2_[01]_[HEVC].mkv`, `Gate_S2_[12].mkv` | the name       |
-| `[NN]` (square brackets only)                            | `Dungeon.Meshi.[13].[1080p].mkv`                                        | the parent folder (`Season 2`, `S02`, `S2`) |
+| `[NN]` (square brackets only)                            | `Dungeon.Meshi.[13].[1080p].mkv`                                        | the parent folder (`Season 2`, `S02`, `Show.S2`; not the "s" closing `(Episodes 13-24)`) |
 
 -   A name that starts with the episode (`S01E01 - Pilot.mkv`) has no show title; set it with `-t`.
 -   When no season is found, Season 1 is assumed (with a warning); use `-s` to set it. Two exceptions, both looked up on TMDB:

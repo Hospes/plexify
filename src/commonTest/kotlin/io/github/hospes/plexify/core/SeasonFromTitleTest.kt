@@ -53,6 +53,18 @@ class SeasonFromTitleTest {
         assertEquals(2 to 7, run.placeOf("Kimetsu_no_Yaiba_Mugen_Ressha-hen_(TV)_[07]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv"))
     }
 
+    // The "s" closing "Eps" is not a season: a folder season of 1 would stop the title lookup.
+    @Test
+    fun `an episode range in the folder name leaves the season to the title`() = runTest {
+        val run = runProcessor(
+            provider(),
+            "Kimetsu_no_Yaiba_-_Yuukaku-hen_[01]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv",
+            dirName = "Kimetsu no Yaiba - Yuukaku-hen (Eps 1-11)",
+        )
+
+        assertEquals(3 to 1, run.placeOf("Kimetsu_no_Yaiba_-_Yuukaku-hen_[01]_[AniLibria_TV]_[WEBRip_1080p_HEVC].mkv"))
+    }
+
     @Test
     fun `a release named after the whole show stays in season 1`() = runTest {
         val run = runProcessor(provider(), "Kimetsu_no_Yaiba_[01]_[AniLibria.TV]_[HDTVRip_1080p_HEVC].mkv")

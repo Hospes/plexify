@@ -104,13 +104,17 @@ internal class ProcessorRun<P : MetadataProvider>(val provider: P, val organizer
     fun episodeOf(fileName: String): CanonicalMedia.Episode? = organizer.organized[fileName] as? CanonicalMedia.Episode
 }
 
-/** Processes empty files with these names, from a fresh temporary directory, with a fresh processor. */
+/**
+ * Processes empty files with these names, from a fresh temporary directory (or a folder [dirName] in it),
+ * with a fresh processor.
+ */
 internal suspend fun <P : MetadataProvider> runProcessor(
     provider: P,
     vararg fileNames: String,
     namingStrategy: NamingStrategy = NamingStrategy.Jellyfin,
     seasonOverride: Int? = null,
     yearOverride: String? = null,
+    dirName: String? = null,
 ): ProcessorRun<P> {
     val organizer = RecordingOrganizer()
     val processor = MediaProcessor(
@@ -120,17 +124,19 @@ internal suspend fun <P : MetadataProvider> runProcessor(
         seasonOverride = seasonOverride,
         yearOverride = yearOverride,
     )
-    val dir = Path(SystemTemporaryDirectory, "plexify-processor-test-${Random.nextLong().toULong()}")
+    val root = Path(SystemTemporaryDirectory, "plexify-processor-test-${Random.nextLong().toULong()}")
+    val dir = dirName?.let { Path(root, it) } ?: root
     SystemFileSystem.createDirectories(dir)
     val files = fileNames.map { Path(dir, it) }
     try {
         files.forEach { SystemFileSystem.sink(it).buffered().close() }
         with(LoggingContext()) {
-            processor.process(dir, Path(dir, "library"), OperationMode.HARDLINK, isTestMode = true)
+            processor.process(dir, Path(root, "library"), OperationMode.HARDLINK, isTestMode = true)
         }
     } finally {
         files.forEach { SystemFileSystem.delete(it, mustExist = false) }
-        SystemFileSystem.delete(dir, mustExist = false)
+        if (dir != root) SystemFileSystem.delete(dir, mustExist = false)
+        SystemFileSystem.delete(root, mustExist = false)
     }
     return ProcessorRun(provider, organizer, processor.stats)
 }

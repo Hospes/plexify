@@ -50,8 +50,10 @@ object MediaFilenameParser {
     // adds to a second download of the same name.
     private val bracketEpisodeRegex = """\[(\d{1,3})(?:\s+END)?]""".toRegex(RegexOption.IGNORE_CASE)
 
-    // Tier 3: Season number from parent directory name ("Season 2", "S02", "S2")
-    private val seasonFromDirRegex = """(?:Season|S)\s*(\d{1,2})(?:\b|${'$'})""".toRegex(RegexOption.IGNORE_CASE)
+    // Tier 3: Season number from parent directory name ("Season 2", "S02", "Show.S2", "Gate_S2_[720p]"). The
+    // marker must start a Latin word: the "s" closing "(Episodes 13-24)" or "(Eps 1-8)" is not one, while
+    // one glued to a title in another script still is ("進撃の巨人S2").
+    private val seasonFromDirRegex = """(?<![A-Za-z0-9])(?:Season|S)\s*(\d{1,2})(?![\p{L}\p{N}])""".toRegex(RegexOption.IGNORE_CASE)
 
     // --- Regex for Year Extraction ---
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
