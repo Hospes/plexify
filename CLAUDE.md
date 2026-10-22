@@ -44,7 +44,8 @@ build/bin/windows/debugExecutable/plexify.exe --test <source-dir> <scratch-dest-
 ### Workflow
 
 - `main` is protected by two repo rulesets: changes land only through a pull request, and the `Build & test (Linux)` and `Build & test (Windows)` checks must pass. Work on a branch and open a PR; the maintainer reviews and merges.
-- Merge with **rebase** (history is linear, no merge commits); head branches are deleted automatically after merge.
+- `main – review` requires no approval: the maintainer is the only one with write access, so nothing merges without them, and GitHub doesn't let authors approve their own PRs. [.github/CODEOWNERS](.github/CODEOWNERS) still requests the maintainer's review on other people's PRs. If collaborators get write access, set required approvals to 1 with code owner review. `main – safety` (CI) has no bypass.
+- Merge with **rebase** (history is linear, no merge commits; the repo and the ruleset allow nothing else); head branches are deleted automatically after merge.
 - Release by pushing a tag on `main` once CI is green there (see below); never publish a GitHub Release by hand.
 
 ### API keys
