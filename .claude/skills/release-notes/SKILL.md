@@ -45,6 +45,7 @@ Commits follow **Conventional Commits** (`<type>(<scope>)?: <summary>`, scopes: 
 | `fix` | 🐛 Bug Fixes |
 | `perf` | ⚡ Performance |
 | `!` after type/scope, or `BREAKING CHANGE:` footer | ⚠️ Breaking Changes (listed **first**, in addition to its normal category) |
+| Not breaking, but the body has an `Existing libraries:` or `What changes for users:` paragraph | ⚠️ Upgrade Notes (listed right after Breaking Changes, in addition to its normal category) |
 | `refactor` | Excluded — unless the diff shows a user-visible change, then reclassify it as a bug fix or new feature |
 | `docs`, `test`, `build`, `ci`, `chore` (incl. `build(deps)` / `ci(deps)` dependency bumps) | Excluded from release notes |
 
@@ -57,6 +58,7 @@ Platform notes: the code is cross-platform from a single codebase, so changes ar
 3. **Synthesize, don't transcribe.** Combine related commits into one bullet (a feature plus its follow-up fixes is *one* feature). Rewrite into user impact: `fix(naming): strip trailing space when {version} placeholder is empty` → "Fixed file names ending with a stray space when no version tag applies."
 4. **No internal artifacts in the announcement.** Commit hashes, scopes, and code identifiers are fine on GitHub; the plain-text version gets none of that.
 5. **Breaking changes** must state what breaks and what the user must do (e.g. a renamed flag: old → new).
+6. **Upgrade notes** come only from those body paragraphs, never from guesses. Say what changes for existing users (renamed library folders or files, a removed or changed option), what happens on the next run (e.g. new names are created next to the old ones, or new episodes land in a second folder), and what to do about it. One bullet per commit, or one per kind of change when several commits do the same thing.
 
 ## STEP 4 — GitHub Release Notes (always)
 
@@ -66,7 +68,7 @@ Audience: users who install from GitHub — assume CLI-literate. In chat, wrap t
 
 1. **Title:** `# {{version}}` — the bare tag, no `v` prefix, as tags and release titles are (chat only; omitted in file mode)
 2. **`### Summary`** — 2–4 sentences on what this release brings and why it matters. Non-technical, no commit-speak.
-3. **Categories** (omit empty ones), in order: ⚠️ Breaking Changes · ✨ New Features · ⚡ Performance · 🐛 Bug Fixes. Highest user impact first within each.
+3. **Categories** (omit empty ones), in order: ⚠️ Breaking Changes · ⚠️ Upgrade Notes · ✨ New Features · ⚡ Performance · 🐛 Bug Fixes. Highest user impact first within each.
 4. **Bullets:** readable impact statements. New CLI flags shown as code (`` `-y/--year` ``) with a one-line example where it helps. Reference commits sparingly — only for changes a user might want to inspect.
 5. **Footer:** a `### Downloads` section reminding that binaries for **Windows**, **Linux x64**, and **Linux arm64** are attached below (the release workflow uploads them), plus a `**Full Changelog**: https://github.com/Hospes/plexify/compare/<from>...<to>` link.
 
@@ -87,6 +89,7 @@ Output as one fenced plain-text block so it can be copied verbatim.
 - [ ] Every line traces to a commit or diff hunk — nothing invented.
 - [ ] Excluded types (docs/test/build/ci/chore, non-user-visible refactor) appear in neither format.
 - [ ] Breaking changes listed first on GitHub and state the required user action.
+- [ ] Every commit body with an `Existing libraries:` or `What changes for users:` paragraph is reflected under ⚠️ Upgrade Notes.
 - [ ] GitHub notes include the Downloads footer and Full Changelog link.
 - [ ] Announcement (if present): plain text only, 80–150 words, ends with the release link.
 - [ ] File mode: Markdown only, starts with `### Summary`, validator run and passing.

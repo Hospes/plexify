@@ -79,6 +79,7 @@ Commits follow **Conventional Commits** — release notes are generated automati
   - `refactor:` — code change with no behavior change
   - `docs:`, `test:`, `build:`, `ci:`, `chore:` — excluded from release notes
 - **Breaking changes**: append `!` after the type/scope (`feat!:` or `feat(cli)!:`) and/or add a `BREAKING CHANGE:` footer → major bump.
+- **User-visible changes that aren't marked breaking** (renamed library folders or files, a removed or changed option): keep the type (`feat`/`fix`) and add a paragraph to the body that starts with `Existing libraries:` or `What changes for users:`, saying what changes, what the next run does, and what to do. The `release-notes` skill turns it into a ⚠️ Upgrade Notes entry. The 0.x releases use this instead of `!`, which would force 1.0.0.
 - **Scopes** (optional, lowercase): `parser`, `metadata`, `naming`, `cli`, `core`, `cache`, `build`, `ci`, `deps` (dependency bumps, as Dependabot writes them: `build(deps): …`, `ci(deps): …`).
 - Summary: imperative mood, lowercase after the colon, no trailing period, ≤ 72 chars.
 
