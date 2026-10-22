@@ -232,7 +232,7 @@ A file is treated as a **TV episode** when its name matches one of these forms (
 -   A multi-episode file is named with its range, `Show (2008) - S01E01-E02 - Pilot & Cat's in the Bag.mkv`, the form Plex and Jellyfin read as several episodes. When the episodes after the first aren't the next ones on TMDB (the range runs past the season, or TMDB merges them into one), the file is filed as its first episode with a warning.
 -   For movies, the year is taken from brackets when present (`Title (2024)`), otherwise from the last year before the technical tags, so `2001.A.Space.Odyssey.1968.mkv` is matched as *2001: A Space Odyssey (1968)*. The title ends at the year, so a word before it is part of the title even when it is also a tag (`Internal.Affairs.1990.1080p.mkv`), and anything after it is not (`Avatar (2009) Extended Collector's Edition.mkv`, Plex's `{edition-Final Cut}`). With no year, the title ends at the first technical tag.
 -   A leading release group (`[Judas] Suzume (2022).mkv`) is not part of a movie's title either, unless nothing else is left: `[REC] (2007).mkv` is *[REC]*.
--   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media, so a library can be re-run. ID tags like `[tmdbid-603]`, `[imdbid-tt0133093]` or `{tmdb-603}` are never treated as part of the title.
+-   Names Plexify writes itself (`Show (2015) - S01E13 - Title - [720p].mkv`, `Movie (2010) [tmdbid-27205].mkv`) parse back to the same media, so a library can be re-run. ID tags like `[tmdbid-603]`, `[imdbid-tt0133093]`, `{imdb-tt0133093}` or `{tmdb-603}` are never treated as part of the title.
 -   In an episode name with a title after the episode (`Show (2010) - S01E01 - Pilot`), the tags come from the whole name, as Sonarr writes them (`… - Pilot WEBDL-1080p.mkv`), except the edition: *The Final Cut* is as likely an episode title. In Plexify's own names, which end in the ` - [1080p] [BluRay]` suffix, only that suffix counts.
 
 ### Technical tags
@@ -293,13 +293,15 @@ Breaking Bad (2008) [tmdbid-1396]/Season 01/Breaking Bad (2008) - S01E01 - Pilot
 **Plex** (`-tp`):
 
 ```text
-The Matrix (1999) [imdbid-tt0133093]/The Matrix (1999) - [1080p] [BluRay].mkv
-Breaking Bad (2008) [imdbid-tt0903747]/Season 01/Breaking Bad (2008) - S01E01 - Pilot - [1080p].mkv
+The Matrix (1999) {imdb-tt0133093}/The Matrix (1999) - [1080p] [BluRay].mkv
+Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E01 - Pilot - [1080p].mkv
 ```
 
 Both name a multi-episode file with its range: `Breaking Bad (2008) - S01E01-E02 - Pilot & Cat's in the Bag... - [1080p].mkv`. When TMDB has no year for a title, the `(year)` part is left out. A name too long for the file system is shortened (see [Formatting](#formatting)).
 
-The Plex template uses IMDb IDs, which Plexify looks up on TMDB for each matched movie or show (one extra request per title, not per file). When TMDB has no IMDb ID, the `[imdbid-…]` tag is left out.
+The Plex template tags folders with IMDb IDs in `{imdb-…}` form, the curly-brace form Plex documents for IDs. Plexify looks them up on TMDB for each matched movie or show (one extra request per title, not per file). When TMDB has no IMDb ID, the `{imdb-…}` tag is left out.
+
+> **Upgrading from 0.5.1 or earlier:** those versions tagged Plex folders `[imdbid-tt…]`. Run into a Plex library made by them, including with new downloads, this version files titles you already have into a new `{imdb-tt…}` folder beside the old one: a new episode of a show lands in a second show folder, and re-running over the library makes Plex list a title twice (in the default `HARDLINK` mode the old folder keeps its link). Migrate before your next run: rename the old folders (`[imdbid-tt…]` → `{imdb-tt…}`), or run Plexify over the library itself with `--mode MOVE` (the library as both source and destination), then move what's left in the old folders (subtitles, artwork: Plexify only moves videos) and delete them.
 
 ### Custom templates
 
@@ -346,7 +348,11 @@ Because `{version}` brings its own leading ` - `, put it directly after the prec
     -   `{CleanTitle} ({year}) [imdbid-{imdbid}]` → `The Matrix (1999) [imdbid-tt0133093]`
     -   …or `The Matrix (1999)` when no IMDb ID was found.
     -   Use one plain placeholder per block: only the first placeholder in a block is checked, and padded placeholders such as `{season:2}` don't make a block optional.
--   Repeated spaces are collapsed, and leading and trailing spaces are trimmed from every folder and file name. Trailing dots are trimmed too: Windows can't keep them, and they are trimmed on Linux as well, so a library gets the same names on both. Only a name that ends in the dot changes: with no year and no IMDb ID, Plex puts `S.W.A.T.` in the folder `S.W.A.T`, while `S.W.A.T. (2017) [imdbid-…]` keeps its dots.
+-   **Optional tags in curly braces:** for tags like Plex's `{imdb-…}`, wrap text and a placeholder in literal curly braces. The braces are kept when the placeholder has a value, and the whole group is dropped when it hasn't. With several placeholders in one group, each one needs a value.
+    -   `{CleanTitle} ({year}) {imdb-{imdbid}}` → `The Matrix (1999) {imdb-tt0133093}`
+    -   …or `The Matrix (1999)` when no IMDb ID was found.
+    -   Only braces around a placeholder form a group: a placeholder on its own, like `{year}` or `{season:2}`, is never one.
+-   Repeated spaces are collapsed, and leading and trailing spaces are trimmed from every folder and file name. Trailing dots are trimmed too: Windows can't keep them, and they are trimmed on Linux as well, so a library gets the same names on both. Only a name that ends in the dot changes: with no year and no IMDb ID, Plex puts `S.W.A.T.` in the folder `S.W.A.T`, while `S.W.A.T. (2017) {imdb-…}` keeps its dots.
 -   **Long names:** a folder or file name is at most 255 bytes in UTF-8, the limit on Linux (it also fits Windows' limit of 255 characters). A longer name is shortened, usually a multi-episode file with many titles: the episode title is cut first, at a word and marked with `…`, then the title, so the season and episode, the `{version}` tags and the extension stay. Letters outside the Latin alphabet take 2 or 3 bytes each, so such titles are cut sooner.
 
 ## ⚙️ How It Works

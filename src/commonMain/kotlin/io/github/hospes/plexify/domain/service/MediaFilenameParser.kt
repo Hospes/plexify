@@ -67,8 +67,9 @@ object MediaFilenameParser {
     private fun String.isReleaseYear(): Boolean = toInt() <= latestReleaseYear
 
     // --- Names plexify itself writes ---
-    // Provider-ID tags: the [tmdbid-27205] / [imdbid-tt1375666] forms our templates produce, plus the
-    // {tmdb-27205} / [tmdbid=27205] forms Plex and Jellyfin also read. Never part of the title.
+    // Provider-ID tags: the [tmdbid-27205] / {imdb-tt1375666} forms our templates produce, [imdbid-tt1375666] from
+    // libraries made by 0.5.1 or earlier, plus the {tmdb-27205} / [tmdbid=27205] forms Plex and Jellyfin also read.
+    // Never part of the title.
     private val providerIdTagRegex = """[\[{](?:tmdb|imdb|tvdb)(?:id)?[-=][^\]}]*[\]}]""".toRegex(RegexOption.IGNORE_CASE)
     // Plex's edition tag: "Blade Runner (1982) {edition-Final Cut}"
     private val plexEditionTagRegex = """\{edition-[^}]*}""".toRegex(RegexOption.IGNORE_CASE)

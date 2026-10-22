@@ -31,16 +31,18 @@ sealed interface NamingStrategy {
 
     /**
      * Naming strategy compliant with Plex's recommended format.
+     * Tags movie and show folders with the IMDb ID in `{imdb-tt…}` form, the curly-brace form Plex documents for IDs
+     * (the `[imdbid-…]` tag of earlier versions isn't one of them). The tag is left out without an IMDb ID.
      */
     object Plex : NamingStrategy {
         override val name: String = "Plex"
         private const val BASE_NAME = "{CleanTitle} ({year})"
-        override val movieFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}]"
+        override val movieFolderTemplate: String = "$BASE_NAME {imdb-{imdbid}}"
         // No space before {version}: version string includes its own " - " prefix when non-empty, and is ""
         // when empty — a leading space in the template would leave "Title .ext" when version is absent.
         override val movieFileTemplate: String = "$BASE_NAME{version}.{ext}"
 
-        override val tvShowFolderTemplate: String = "$BASE_NAME [imdbid-{imdbid}]"
+        override val tvShowFolderTemplate: String = "$BASE_NAME {imdb-{imdbid}}"
         override val seasonFolderTemplate: String = "Season {season:2}"
         override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
 
