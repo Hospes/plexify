@@ -16,6 +16,20 @@ static inline DWORD plexify_get_file_attributes(LPCWSTR path, DWORD* attributes)
     return *attributes == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
 }
 
+// The attributes of the file a symlink or junction at path finally points at (GetFileAttributesW reads the link
+// itself). A link whose target doesn't exist fails with ERROR_FILE_NOT_FOUND or ERROR_PATH_NOT_FOUND, and one onto
+// a network share that can't be reached with ERROR_BAD_NETPATH or ERROR_BAD_NET_NAME.
+static inline DWORD plexify_get_target_attributes(LPCWSTR path, DWORD* attributes) {
+    HANDLE handle = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                                FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return GetLastError();
+    BY_HANDLE_FILE_INFORMATION info;
+    DWORD error = GetFileInformationByHandle(handle, &info) ? ERROR_SUCCESS : GetLastError();
+    if (error == ERROR_SUCCESS) *attributes = info.dwFileAttributes;
+    CloseHandle(handle);
+    return error;
+}
+
 static inline DWORD plexify_find_first_file(LPCWSTR pattern, WIN32_FIND_DATAW* data, HANDLE* handle) {
     *handle = FindFirstFileW(pattern, data);
     return *handle == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;

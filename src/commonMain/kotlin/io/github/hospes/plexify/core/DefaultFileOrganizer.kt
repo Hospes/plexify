@@ -66,7 +66,8 @@ class DefaultFileOrganizer(
 
         // Never replace the source itself: when plexify runs over its own library, the target can be the
         // source (or a hardlink to it), and replacing it would lose the only copy. Another file at the target
-        // is replaced only when overwrite is enabled.
+        // is replaced only when overwrite is enabled. A dangling symlink there is another file too: it is the
+        // library's entry for a file whose mount may just be offline.
         val targetExists = PlatformFileSystem.kind(finalPath) != null
         if (targetExists) {
             if (isSameFileOnDisk(sourceFile, finalPath)) {
