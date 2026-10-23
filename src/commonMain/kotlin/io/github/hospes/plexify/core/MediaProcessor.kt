@@ -916,7 +916,7 @@ private fun CanonicalMedia.describe(): String = when (this) {
     is CanonicalMedia.TvShow -> buildString {
         append("$title${year.inParens()}")
         tmdbId?.let { append(" [tmdbid-$it]") }
-        imdbId?.let { append(" [imdbid-$it]") }
+        imdbId?.let { append(" {imdb-$it}") }
     }
 }
 
