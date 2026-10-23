@@ -80,6 +80,19 @@ class EpisodeFallbackTest {
     }
 
     @Test
+    fun `falls back to a same-titled show of the same year`() = runTest {
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "Ghosts", year = "2019", tmdbId = "1", provider = "TMDb", matchConfidence = 100.0),
+            MediaSearchResult.TvShow(title = "Ghosts", year = "2019", tmdbId = "2", provider = "TMDb", matchConfidence = 100.0),
+        )
+        val provider = FakeTmdb(results, seasons = mapOf("1" to mapOf(1 to 1..6), "2" to mapOf(4 to 1..8)))
+
+        val run = runProcessor(provider, "Ghosts.S04E01.1080p.WEB.mkv")
+
+        assertEquals("2", run.showOf("Ghosts.S04E01.1080p.WEB.mkv"))
+    }
+
+    @Test
     fun `does not fall back to a show with a merely similar title`() = runTest {
         // "Gates" clears the confidence minimum for "Gate" on similarity and provider confidence,
         // and has the season the release numbers (split-cour anime, no episode group), but it is

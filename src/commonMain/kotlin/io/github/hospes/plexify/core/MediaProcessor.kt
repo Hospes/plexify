@@ -748,10 +748,7 @@ class MediaProcessor(
 
         debug("Consolidating ${results.size} results for title: '$parsedTitle' year: '$parsedYear'")
 
-        val groupedByMedia = results.groupBy {
-            val normalizedTitle = it.title.lowercase().replace(Regex("[^a-z0-9]"), "")
-            "$normalizedTitle:${it.year}"
-        }
+        val groupedByMedia = results.groupBy { it.candidateKey }
         debug("${groupedByMedia.size} unique media candidates found.")
 
         // Collected so a failed lookup can report *why* in the concise output.
@@ -883,6 +880,23 @@ class MediaProcessor(
         val showTitles = group.flatMap { it.allTitles }.filter { it !in seasonTitles }
         return showTitles.none { title -> ARC_ENDINGS.any { title.normalizedTitle().endsWith(it) } }
     }
+
+    /**
+     * The candidate a result is about: its TMDB ID, which another provider's result for the same title
+     * carries too, else its IMDb ID, else the provider's own record. Never the title alone: distinct
+     * titles look alike once folded (".hack" and "Hack", untranslated non-Latin titles), and a merged
+     * group is scored over all its titles but named by one of them.
+     */
+    private val MediaSearchResult.candidateKey: String
+        get() {
+            val type = when (this) {
+                is MediaSearchResult.Movie -> "movie"
+                is MediaSearchResult.TvShow -> "tv"
+            }
+            return tmdbId?.let { "$type:tmdb:$it" }
+                ?: imdbId?.let { "$type:imdb:$it" }
+                ?: "$type:$provider:$title:$year"
+        }
 
     /** Merges one candidate's results across providers into a golden record with all their IDs. */
     private fun consolidate(groupItems: List<MediaSearchResult>, parsedYear: String?): CanonicalMedia {

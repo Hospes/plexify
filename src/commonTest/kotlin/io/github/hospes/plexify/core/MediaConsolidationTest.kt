@@ -100,6 +100,70 @@ class MediaConsolidationTest {
     )
 
     @Test
+    fun `untranslated titles of the same year stay separate candidates`() = with(LoggingContext()) {
+        // TMDB has no English title for either, so neither has a Latin letter. The romaji query
+        // matches only the second show's alias.
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "破滅の王国", year = "2023", tmdbId = "1", provider = "TMDb", matchConfidence = 0.0),
+            MediaSearchResult.TvShow(
+                title = "滅びの都",
+                year = "2023",
+                tmdbId = "2",
+                provider = "TMDb",
+                matchConfidence = 100.0,
+                alternativeTitles = listOf("Horobi no Miyako"),
+            ),
+        )
+
+        val match = processor.findAndConsolidateBestMatch(results, "Horobi no Miyako", "2023")
+
+        assertIs<CanonicalMedia.TvShow>(match)
+        assertEquals("2", match.tmdbId)
+        assertEquals("滅びの都", match.title)
+    }
+
+    @Test
+    fun `titles differing only in punctuation stay separate candidates`() = with(LoggingContext()) {
+        // TMDB's live results for "Hack": the anime .hack//SIGN is listed first, under ".hack", and
+        // premiered the same year as CBS's Hack.
+        val results = listOf(
+            MediaSearchResult.TvShow(title = ".hack", year = "2002", tmdbId = "8864", provider = "TMDb", matchConfidence = 80.0),
+            MediaSearchResult.TvShow(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
+        )
+
+        val ranked = processor.rankMatches(results, "Hack", "2002")
+
+        assertEquals(listOf("10457", "8864"), ranked.map { (it.media as CanonicalMedia.TvShow).tmdbId })
+        assertEquals(listOf("Hack", ".hack"), ranked.map { (it.media as CanonicalMedia.TvShow).title })
+    }
+
+    @Test
+    fun `a movie and a show of the same title and year stay separate candidates`() = with(LoggingContext()) {
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
+            MediaSearchResult.Movie(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
+        )
+
+        val ranked = processor.rankMatches(results, "Hack", "2002")
+
+        assertEquals(listOf("TvShow", "Movie"), ranked.map { it.media::class.simpleName })
+    }
+
+    @Test
+    fun `results of one title from two providers are one candidate`() = with(LoggingContext()) {
+        val results = listOf(
+            MediaSearchResult.TvShow(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
+            MediaSearchResult.TvShow(title = "Hack", year = "2002", imdbId = "tt0320000", tmdbId = "10457", provider = "Other", matchConfidence = 100.0),
+        )
+
+        val ranked = processor.rankMatches(results, "Hack", "2002")
+
+        val show = assertIs<CanonicalMedia.TvShow>(ranked.single().media)
+        assertEquals("10457", show.tmdbId)
+        assertEquals("tt0320000", show.imdbId)
+    }
+
+    @Test
     fun `episode year after the show premiere still matches the show`() = with(LoggingContext()) {
         val match = processor.findAndConsolidateBestMatch(theBoysResults, "The Boys", "2022")
 
