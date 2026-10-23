@@ -158,6 +158,68 @@ class EpisodeGroupMapperTest {
         assertEquals(ep(1, 13), result.episode)
     }
 
+    // TMDB's Durarara!! (42410) "TV cour" group: x2 Ten and Ketsu are cours of TMDB's season 2, each with
+    // an x.5 special slotted in (as of 2026-10).
+    private val durararaCours = EpisodeGroup(
+        name = "TV cour",
+        type = EpisodeGroup.Type.PRODUCTION,
+        parts = listOf(
+            part(1, (1..12).map { ep(1, it) } + ep(0, 1) + (13..24).map { ep(1, it) } + ep(0, 2), name = "Durarara!!"),
+            part(2, (1..4).map { ep(2, it) } + ep(0, 3) + (5..12).map { ep(2, it) }, name = "Durarara!!x2 Shou"),
+            part(3, listOf(ep(2, 13), ep(0, 4)) + (14..24).map { ep(2, it) }, name = "Durarara!!x2 Ten"),
+            part(4, (25..31).map { ep(2, it) } + ep(0, 5) + (32..36).map { ep(2, it) }, name = "Durarara!!x2 Ketsu"),
+        ),
+    )
+
+    @Test
+    fun `specials inside a cour of a longer provider season are not counted`() {
+        fun resolved(season: Int, episode: Int) =
+            (EpisodeGroupMapper.resolve(listOf(durararaCours), season, episode, providerHasSeason = false) as? Resolution.Found)?.episode
+
+        assertEquals(ep(2, 13), resolved(3, 1))
+        assertEquals(ep(2, 14), resolved(3, 2))
+        assertEquals(ep(2, 24), resolved(3, 12))
+        assertEquals(null, resolved(3, 13))
+        assertEquals(ep(2, 31), resolved(4, 7))
+        assertEquals(ep(2, 32), resolved(4, 8))
+    }
+
+    @Test
+    fun `a special opening a cour of a longer provider season is not counted`() {
+        val withPrologue = tvCours.copy(parts = listOf(tvCours.parts[0], part(2, listOf(ep(0, 9)) + tvCours.parts[1].episodes)))
+
+        val result = EpisodeGroupMapper.resolve(listOf(withPrologue), season = 2, episode = 1, providerHasSeason = false)
+
+        assertIs<Resolution.Found>(result)
+        assertEquals(ep(1, 13), result.episode)
+    }
+
+    @Test
+    fun `a special closing a cour is counted on`() {
+        val withOva = tvCours.copy(parts = listOf(tvCours.parts[0], part(2, tvCours.parts[1].episodes + ep(0, 1))))
+
+        val result = EpisodeGroupMapper.resolve(listOf(withOva), season = 2, episode = 13, providerHasSeason = false)
+
+        assertIs<Resolution.Found>(result)
+        assertEquals(ep(0, 1), result.episode)
+    }
+
+    @Test
+    fun `specials inside a season the provider has are counted`() {
+        // TMDB's Texhnolyze (8838) "Animax Order": season 1 with the two DVD episodes TMDB keeps as specials.
+        // TheTVDB's season 1 counts them too, so a release's S01E21 is TMDB's S01E19.
+        val animaxOrder = EpisodeGroup(
+            name = "Animax Order",
+            type = EpisodeGroup.Type.PRODUCTION,
+            parts = listOf(part(1, (1..18).map { ep(1, it) } + ep(0, 2) + ep(0, 3) + (19..20).map { ep(1, it) })),
+        )
+
+        val result = EpisodeGroupMapper.resolve(listOf(animaxOrder), season = 1, episode = 21, providerHasSeason = true)
+
+        assertIs<Resolution.Found>(result)
+        assertEquals(ep(1, 19), result.episode)
+    }
+
     @Test
     fun `falls back to a less trusted type when the trusted one cannot place the episode`() {
         val shortTv = tvCours.copy(name = "Short", type = EpisodeGroup.Type.TV, parts = listOf(tvCours.parts.first()))

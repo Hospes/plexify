@@ -568,7 +568,7 @@ class MediaProcessor(
         if (match != null) return@indent Result.success(match)
 
         debug("Episode E${episode} not found in S${season} data. Trying episode groups...")
-        findViaEpisodeGroups(show, season, episode)
+        findViaEpisodeGroups(show, season, episode, providerHasSeason = cachedSeason.episodes.isNotEmpty())
     }
 
     /**
@@ -610,16 +610,22 @@ class MediaProcessor(
      * cours: the release's S2E01 is TMDB's S1E13. Episode groups (fetched once per show) record
      * that split; the episode found is the provider's own, so the file gets TMDB's numbering. Fails
      * when the groups could not be loaded; a failed lookup is not cached, so the next file tries again.
+     * [providerHasSeason] is false when the providers reported the season as nonexistent.
      */
     context(_: LoggingContext)
-    private suspend fun findViaEpisodeGroups(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode?> = indent {
+    private suspend fun findViaEpisodeGroups(
+        show: CanonicalMedia.TvShow,
+        season: Int,
+        episode: Int,
+        providerHasSeason: Boolean,
+    ): Result<CanonicalMedia.Episode?> = indent {
         val showId = show.tmdbId ?: show.imdbId ?: show.title
         val groups = cache.getEpisodeGroups(showId)
             ?: metadataService.getEpisodeGroups(show)
                 .onSuccess { cache.putEpisodeGroups(showId, it) }
                 .getOrElse { return@indent Result.failure(it) }
 
-        val match = when (val resolution = EpisodeGroupMapper.resolve(groups, season, episode)) {
+        val match = when (val resolution = EpisodeGroupMapper.resolve(groups, season, episode, providerHasSeason)) {
             is EpisodeGroupMapper.Resolution.Found -> {
                 val mapped = resolution.episode
                 if (episodeGroupNotices.add("$showId:$season")) {

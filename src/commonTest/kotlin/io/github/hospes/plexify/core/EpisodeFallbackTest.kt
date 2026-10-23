@@ -179,4 +179,55 @@ class EpisodeFallbackTest {
         // Once for the best match when the show is matched, once for the runner-up when it takes the season.
         assertEquals(listOf("1", "2"), run.provider.externalIdLookups)
     }
+
+    // TMDB's Durarara!! (42410): x2 Shou, Ten and Ketsu are one 36-episode season 2, and its "TV cour"
+    // group splits them into cours with the x.5 specials slotted in where they belong (as of 2026-10).
+    private val durarara = listOf(
+        MediaSearchResult.TvShow(title = "Durarara!!", year = "2010", tmdbId = "42410", provider = "TMDb", matchConfidence = 100.0),
+    )
+    private val durararaCours = { show: CanonicalMedia.TvShow ->
+        fun ep(season: Int, episode: Int) = CanonicalMedia.Episode(show, season, episode, "S${season}E$episode")
+        listOf(
+            CanonicalMedia.EpisodeGroup(
+                name = "TV cour",
+                type = CanonicalMedia.EpisodeGroup.Type.PRODUCTION,
+                parts = listOf(
+                    CanonicalMedia.EpisodeGroup.Part("Durarara!!", 1, (1..12).map { ep(1, it) } + ep(0, 1) + (13..24).map { ep(1, it) } + ep(0, 2)),
+                    CanonicalMedia.EpisodeGroup.Part("Durarara!!x2 Shou", 2, (1..4).map { ep(2, it) } + ep(0, 3) + (5..12).map { ep(2, it) }),
+                    CanonicalMedia.EpisodeGroup.Part("Durarara!!x2 Ten", 3, listOf(ep(2, 13), ep(0, 4)) + (14..24).map { ep(2, it) }),
+                    CanonicalMedia.EpisodeGroup.Part("Durarara!!x2 Ketsu", 4, (25..31).map { ep(2, it) } + ep(0, 5) + (32..36).map { ep(2, it) }),
+                ),
+            )
+        )
+    }
+
+    @Test
+    fun `a special inside a cour does not shift the cour's episodes`() = runTest {
+        val provider = FakeTmdb(durarara, seasons = mapOf("42410" to mapOf(1 to 1..24, 2 to 1..36)), episodeGroupsOf = durararaCours)
+
+        val run = runProcessor(provider, "Durarara!! - S03E01.mkv", "Durarara!! - S03E02.mkv", "Durarara!! - S04E08.mkv", "Durarara!! - S04E12.mkv")
+
+        // The release numbers a cour's broadcast episodes; "Romanticist's Chaka-Poko" (S00E04) and
+        // "Dufufufu!!" (S00E05) are x.5 specials with no number of their own.
+        assertEquals(listOf(2 to 13, 2 to 14, 2 to 32, 2 to 36), listOf("S03E01", "S03E02", "S04E08", "S04E12").map { run.tmdbNumberOf("Durarara!! - $it.mkv") })
+    }
+
+    @Test
+    fun `specials inside a season the provider has keep counting`() = runTest {
+        // TMDB's Texhnolyze (8838) has 20 episodes in season 1 and keeps two DVD episodes as specials; its
+        // "Animax Order" counts them, as TheTVDB's 22-episode season 1 does: S01E21 is TMDB's S01E19.
+        val texhnolyze = listOf(MediaSearchResult.TvShow(title = "Texhnolyze", year = "2003", tmdbId = "8838", provider = "TMDb", matchConfidence = 100.0))
+        val animaxOrder = { show: CanonicalMedia.TvShow ->
+            fun ep(season: Int, episode: Int) = CanonicalMedia.Episode(show, season, episode, "S${season}E$episode")
+            val part = (1..18).map { ep(1, it) } + ep(0, 2) + ep(0, 3) + (19..20).map { ep(1, it) }
+            listOf(CanonicalMedia.EpisodeGroup("Animax Order", CanonicalMedia.EpisodeGroup.Type.PRODUCTION, listOf(CanonicalMedia.EpisodeGroup.Part("Season 1", 1, part))))
+        }
+        val provider = FakeTmdb(texhnolyze, seasons = mapOf("8838" to mapOf(1 to 1..20)), episodeGroupsOf = animaxOrder)
+
+        val run = runProcessor(provider, "Texhnolyze - S01E21.mkv")
+
+        assertEquals(1 to 19, run.tmdbNumberOf("Texhnolyze - S01E21.mkv"))
+    }
+
+    private fun ProcessorRun<*>.tmdbNumberOf(fileName: String): Pair<Int, Int>? = episodeOf(fileName)?.let { it.season to it.episode }
 }
