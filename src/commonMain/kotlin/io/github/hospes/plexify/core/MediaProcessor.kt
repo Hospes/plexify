@@ -659,17 +659,17 @@ class MediaProcessor(
         return copy(imdbId = ids.imdbId)
     }
 
-    /** Fills the winning show's IMDb and TVDb IDs, which search results don't carry. See [findExternalIds]. */
+    /** Fills the winning show's IMDb ID, which search results don't carry. See [findExternalIds]. */
     context(_: LoggingContext)
     private suspend fun CanonicalMedia.TvShow.withExternalIds(): CanonicalMedia.TvShow {
-        if (imdbId != null && tvdbId != null) return this
+        if (imdbId != null) return this
         val ids = findExternalIds(this, tmdbId) ?: return this
-        return copy(imdbId = imdbId ?: ids.imdbId, tvdbId = tvdbId ?: ids.tvdbId)
+        return copy(imdbId = ids.imdbId)
     }
 
     /**
-     * Looked up once per TMDB record and run (the service skips it when the template uses neither
-     * `{imdbid}` nor `{tvdbid}`), so a season of episodes or several versions of a movie cost one call.
+     * Looked up once per TMDB record and run (the service skips it when the template doesn't use
+     * `{imdbid}`), so a season of episodes or several versions of a movie cost one call.
      */
     context(_: LoggingContext)
     private suspend fun findExternalIds(media: CanonicalMedia, tmdbId: String?): ExternalIds? {
@@ -890,7 +890,6 @@ class MediaProcessor(
 
         val imdbId = groupItems.firstNotNullOfOrNull { it.imdbId }
         val tmdbId = groupItems.firstNotNullOfOrNull { it.tmdbId }
-        val tvdbId = groupItems.firstNotNullOfOrNull { it.tvdbId }
 
         return when (bestItem) {
             is MediaSearchResult.Movie -> CanonicalMedia.Movie(
@@ -898,7 +897,6 @@ class MediaProcessor(
                 year = bestItem.year?.toIntOrNull(),
                 imdbId = imdbId,
                 tmdbId = tmdbId,
-                tvdbId = tvdbId
             )
 
             is MediaSearchResult.TvShow -> CanonicalMedia.TvShow(
@@ -906,7 +904,6 @@ class MediaProcessor(
                 year = bestItem.year?.toIntOrNull(),
                 imdbId = imdbId,
                 tmdbId = tmdbId,
-                tvdbId = tvdbId
             )
         }
     }
@@ -919,7 +916,6 @@ private fun CanonicalMedia.describe(): String = when (this) {
     is CanonicalMedia.TvShow -> buildString {
         append("$title${year.inParens()}")
         tmdbId?.let { append(" [tmdbid-$it]") }
-        tvdbId?.let { append(" [tvdbid-$it]") }
         imdbId?.let { append(" [imdbid-$it]") }
     }
 }

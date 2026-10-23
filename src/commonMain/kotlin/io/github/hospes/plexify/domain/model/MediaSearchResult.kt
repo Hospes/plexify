@@ -5,7 +5,6 @@ sealed interface MediaSearchResult {
     val year: String?
     val imdbId: String?
     val tmdbId: String?
-    val tvdbId: String?
     val provider: String
     val matchConfidence: Double
 
@@ -24,7 +23,6 @@ sealed interface MediaSearchResult {
         override val year: String?,
         override val imdbId: String? = null,
         override val tmdbId: String? = null,
-        override val tvdbId: String? = null,
         override val provider: String,
         override val matchConfidence: Double = 0.0,
         override val originalTitle: String? = null,
@@ -36,7 +34,6 @@ sealed interface MediaSearchResult {
         override val year: String?,
         override val imdbId: String? = null,
         override val tmdbId: String? = null,
-        override val tvdbId: String? = null,
         override val provider: String,
         override val matchConfidence: Double = 0.0,
         override val originalTitle: String? = null,

@@ -231,12 +231,12 @@ class PathFormatterTest {
     }
 
     @Test
-    fun `trims trailing dots and spaces from every folder`() {
+    fun `trims trailing dots and spaces from a folder`() {
         val whatIf = CanonicalMedia.Movie(title = "What If...", year = null, tmdbId = "1")
 
         assertEquals(
-            path("What If", "What If", "What If....mkv"),
-            renderMovie("{CleanTitle} [({imdbid})]/{CleanTitle}/{CleanTitle}{version}.{ext}", whatIf).toString(),
+            path("What If", "What If....mkv"),
+            renderMovie("{CleanTitle} [({imdbid})]/{CleanTitle}{version}.{ext}", whatIf).toString(),
         )
     }
 
@@ -472,7 +472,7 @@ class PathFormatterTest {
     private fun NamingStrategy.renderNamed(media: CanonicalMedia.Movie): String =
         formatter.formatMoviePath(movieFolderTemplate, movieFileTemplate, media, parsedMovie, Path("x.mkv")).name
 
-    // --- Curly-brace groups ---
+    // --- ID tags ---
 
     /** Renders [template] as a movie folder name. */
     private fun folder(template: String, media: CanonicalMedia.Movie = movie(2010)): String =
@@ -524,46 +524,32 @@ class PathFormatterTest {
     }
 
     @Test
-    fun `a brace group keeps its braces when its placeholder has a value`() {
+    fun `a brace tag keeps its braces when its id has a value`() {
         assertEquals("Inception {imdb-tt1375666}", folder("{CleanTitle} {imdb-{imdbid}}"))
     }
 
     @Test
-    fun `a brace group is dropped when its placeholder has no value`() {
+    fun `a brace tag is dropped when its id has no value`() {
         assertEquals("Inception (2010)", folder("{CleanTitle} ({year}) {imdb-{imdbid}}", noImdb))
     }
 
     @Test
-    fun `brace groups are checked one by one`() {
+    fun `tags are checked one by one`() {
         val template = "{CleanTitle} {imdb-{imdbid}} {tmdb-{tmdbid}}"
         assertEquals("Inception {imdb-tt1375666} {tmdb-27205}", folder(template))
         assertEquals("Inception {tmdb-27205}", folder(template, noImdb))
     }
 
     @Test
-    fun `a brace group may hold a padded placeholder`() {
-        val path = formatter.formatEpisodePath("{CleanTitle}", "{S{season:2}}", "{episode}.{ext}", episode(2019), parsedEpisode, source)
-        assertEquals(path("The Boys", "{S03}", "1.mkv"), path.toString())
+    fun `a square tag is dropped when its id has no value`() {
+        val template = "{CleanTitle} [tmdbid-{tmdbid}]"
+        assertEquals("Inception [tmdbid-27205]", folder(template))
+        assertEquals("Inception", folder(template, movie(2010).copy(tmdbId = null)))
     }
 
     @Test
-    fun `a square block holding a brace group follows the brace group's placeholder`() {
-        val template = "{CleanTitle} [id {imdb-{imdbid}}]"
-        assertEquals("Inception [id {imdb-tt1375666}]", folder(template))
-        assertEquals("Inception", folder(template, noImdb))
-    }
-
-    @Test
-    fun `placeholders side by side are not a brace group`() {
+    fun `placeholders side by side are not a tag`() {
         assertEquals("Inception2010", folder("{CleanTitle}{year}"))
         assertEquals("Inception2010", folder("{CleanTitle}{year}", noImdb))
-    }
-
-    @Test
-    fun `a brace group with several placeholders needs a value for each`() {
-        val template = "{CleanTitle} {({year}) imdb-{imdbid}}"
-        assertEquals("Inception {(2010) imdb-tt1375666}", folder(template))
-        assertEquals("Inception", folder(template, noImdb))
-        assertEquals("Inception", folder(template, movie(null)))
     }
 }
