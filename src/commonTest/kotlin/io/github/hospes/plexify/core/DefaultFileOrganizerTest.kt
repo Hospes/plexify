@@ -322,6 +322,40 @@ class DefaultFileOrganizerTest {
     }
 
     @Test
+    fun `keeps a moved symlink and says where it is when moving it back fails`() {
+        val real = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "movie")
+        val target = targetPath()
+
+        // A relative link fails the check from the library; an absolute one fails the rename onto the target.
+        for (relative in listOf(true, false)) {
+            val label = if (relative) "relative link" else "absolute link"
+            val link = symlink(Path(root, "links", real.name), if (relative) "../downloads/${real.name}" else absolute(real)) ?: return
+            // Renaming onto the target fails, and so does renaming the link back, e.g. its folder was made read-only.
+            val failing = object : MediaFileSystem by PlatformFileSystem {
+                override fun atomicMove(source: Path, destination: Path) {
+                    if (destination == target || destination == link) throw IOException("Access is denied")
+                    PlatformFileSystem.atomicMove(source, destination)
+                }
+            }
+
+            val error = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin, fileSystem = failing)
+                .organize(link, library, movie, parsed, OperationMode.MOVE, isTestMode = false).exceptionOrNull()
+
+            val moved = PlatformFileSystem.list(target.parent!!).single()
+            assertTrue(error?.message?.contains("'$moved'") == true, "$label: the error doesn't say where the link is: $error")
+            val why = if (relative) "won't resolve from the library" else "Moving '$link' to '$target' failed"
+            assertTrue(error.cause?.message?.contains(why) == true, "$label: the original error is lost: ${error.cause}")
+
+            // A later run writing to the same folder leaves the user's symlink alone.
+            val other = file(Path(root, "Inception.2010.REPACK.1080p.mkv"), "other")
+            assertIs<OrganizeOutcome.Organized>(organize(other, OperationMode.HARDLINK), label)
+            assertNotNull(PlatformFileSystem.kind(moved), "$label: the symlink was deleted")
+            deleteRecursively(library)
+            PlatformFileSystem.delete(other)
+        }
+    }
+
+    @Test
     fun `treats a symlink to the file at the target as already in place`() {
         val target = file(targetPath(), "movie")
         val source = symlink(Path(root, "links", "Inception.2010.1080p.mkv"), absolute(target)) ?: return

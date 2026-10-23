@@ -15,6 +15,7 @@ class DefaultFileOrganizer(
     private val namingStrategy: NamingStrategy,
     /** Replace a different file already at the target instead of skipping it. Never applies to the source itself, or to a target an earlier file of this run claimed. */
     private val overwrite: Boolean = false,
+    private val fileSystem: MediaFileSystem = PlatformFileSystem,
 ) : FileOrganizer {
 
     /** Folders already cleared of leftover temporary files in this run. */
@@ -68,7 +69,7 @@ class DefaultFileOrganizer(
         // source (or a hardlink to it), and replacing it would lose the only copy. Another file at the target
         // is replaced only when overwrite is enabled. A dangling symlink there is another file too: it is the
         // library's entry for a file whose mount may just be offline.
-        val targetExists = PlatformFileSystem.kind(finalPath) != null
+        val targetExists = fileSystem.kind(finalPath) != null
         if (targetExists) {
             if (isSameFileOnDisk(sourceFile, finalPath)) {
                 claimedTargets[finalPath] = sourceFile
@@ -86,7 +87,7 @@ class DefaultFileOrganizer(
         // Ensure the parent directory for the destination file exists
         val parentDir = finalPath.parent
         if (parentDir != null) {
-            PlatformFileSystem.createDirectories(parentDir)
+            fileSystem.createDirectories(parentDir)
         } else {
             throw IllegalStateException("Could not determine parent directory for $finalPath")
         }
@@ -97,7 +98,7 @@ class DefaultFileOrganizer(
             OperationMode.MOVE -> {
                 val linkTarget = resolveSymbolicLink(sourceFile)
                 if (linkTarget != null) moveSymbolicLink(sourceFile, linkTarget, finalPath)
-                else PlatformFileSystem.atomicMove(sourceFile, finalPath)
+                else fileSystem.atomicMove(sourceFile, finalPath)
             }
             // createHardLink links the file a symlink points at, never the symlink itself.
             OperationMode.HARDLINK -> if (targetExists) replaceWithHardLink(sourceFile, finalPath) else hardLink(sourceFile, finalPath)
@@ -124,9 +125,9 @@ class DefaultFileOrganizer(
         val temporary = temporaryPath(target)
         hardLink(source, temporary)
         try {
-            PlatformFileSystem.atomicMove(temporary, target)
+            fileSystem.atomicMove(temporary, target)
         } catch (e: Exception) {
-            PlatformFileSystem.delete(temporary)
+            fileSystem.delete(temporary)
             throw IOException("Replacing '$target' failed: ${e.message}", e)
         }
     }
@@ -138,34 +139,54 @@ class DefaultFileOrganizer(
      * file already at [target] in place.
      */
     private fun moveSymbolicLink(source: Path, linkTarget: Path, target: Path) {
-        val temporary = temporaryPath(target)
-        PlatformFileSystem.atomicMove(source, temporary)
-        if (!isSameFile(temporary, linkTarget)) {
-            PlatformFileSystem.atomicMove(temporary, source)
-            throw IOException(
-                "'$source' is a symlink to '$linkTarget' that won't resolve from the library (a relative link?). " +
-                    "Use hardlink mode, or make the link absolute."
+        val temporary = temporaryPath(target, MOVED_LINK_PREFIX)
+        fileSystem.atomicMove(source, temporary)
+        if (!isSameFile(temporary, linkTarget, fileSystem)) {
+            moveBack(
+                temporary, source,
+                IOException(
+                    "'$source' is a symlink to '$linkTarget' that won't resolve from the library (a relative link?). " +
+                        "Use hardlink mode, or make the link absolute."
+                ),
             )
         }
         try {
-            PlatformFileSystem.atomicMove(temporary, target)
+            fileSystem.atomicMove(temporary, target)
         } catch (e: Exception) {
-            PlatformFileSystem.atomicMove(temporary, source)
-            throw IOException("Moving '$source' to '$target' failed: ${e.message}", e)
+            moveBack(temporary, source, IOException("Moving '$source' to '$target' failed: ${e.message}", e))
         }
     }
 
     /**
+     * Moves the symlink at [temporary] back to [source], then throws [error]. If moving it back fails, the link stays
+     * at [temporary], and the error says so, with [error] as its cause. That name is not one
+     * [deleteLeftoverTemporaryFiles] removes, so the user's link is never lost.
+     */
+    private fun moveBack(temporary: Path, source: Path, error: IOException): Nothing {
+        try {
+            fileSystem.atomicMove(temporary, source)
+        } catch (e: Exception) {
+            throw IOException(
+                "Moving the symlink back to '$source' failed (${e.message?.trimEnd('.')}), so it is at '$temporary': " +
+                    "move it back by hand. ${error.message}",
+                error,
+            )
+        }
+        throw error
+    }
+
+    /**
      * Deletes temporary files left in [folder] by a run that was killed between creating one and renaming it into
-     * place: a hardlink to a source file (only that name is removed) or a symlink being moved. Files are organized one
-     * at a time and each operation removes its own temporary file, so any found here are leftovers. (A second plexify
-     * process writing to the same folder at that moment would lose its temporary file, and its replacement would fail
-     * with the old file kept.) Failures are ignored: the file is tried again on the next run.
+     * place: a hardlink to a source file, so only that name is removed. Files are organized one at a time and each
+     * operation removes its own temporary file, so any found here are leftovers. (A second plexify process writing to
+     * the same folder at that moment would lose its temporary file, and its replacement would fail with the old file
+     * kept.) A symlink being moved has a name of its own ([MOVED_LINK_PREFIX]) and is never deleted: it is the user's
+     * only link to its file. Failures are ignored: the file is tried again on the next run.
      */
     private fun deleteLeftoverTemporaryFiles(folder: Path) {
-        val entries = runCatching { PlatformFileSystem.list(folder) }.getOrDefault(emptyList())
+        val entries = runCatching { fileSystem.list(folder) }.getOrDefault(emptyList())
         entries.filter { TEMPORARY_NAME.matches(it.name) }.forEach { entry ->
-            runCatching { if (PlatformFileSystem.kind(entry) != FileKind.DIRECTORY) PlatformFileSystem.delete(entry) }
+            runCatching { if (fileSystem.kind(entry) != FileKind.DIRECTORY) fileSystem.delete(entry) }
         }
     }
 
@@ -174,16 +195,21 @@ class DefaultFileOrganizer(
      * (Windows MAX_PATH) that the target itself fits in. It has no video extension, so a media server scanning the
      * library doesn't take it for a video.
      */
-    private fun temporaryPath(target: Path): Path =
-        Path(target.parent!!, ".plexify-${Random.nextInt().toUInt().toString(16).padStart(8, '0')}.tmp")
+    private fun temporaryPath(target: Path, prefix: String = TEMPORARY_PREFIX): Path =
+        Path(target.parent!!, "$prefix${Random.nextInt().toUInt().toString(16).padStart(8, '0')}.tmp")
 
     // kotlinx-io's resolve fails on Windows paths past MAX_PATH; isSameFile also recognizes the same path.
     private fun isSameFileOnDisk(source: Path, target: Path): Boolean =
         runCatching { SystemFileSystem.resolve(source) == SystemFileSystem.resolve(target) }.getOrDefault(false) ||
-            isSameFile(source, target)
+            isSameFile(source, target, fileSystem)
 
     private companion object {
-        /** Names from [temporaryPath], and nothing else a user might keep in the library. */
+        const val TEMPORARY_PREFIX = ".plexify-"
+
+        /** For a symlink being moved, which [deleteLeftoverTemporaryFiles] must not delete. */
+        const val MOVED_LINK_PREFIX = ".plexify-link-"
+
+        /** Names from [temporaryPath] with [TEMPORARY_PREFIX], and nothing else a user might keep in the library. */
         val TEMPORARY_NAME = Regex("""\.plexify-[0-9a-f]{8}\.tmp""")
     }
 }
