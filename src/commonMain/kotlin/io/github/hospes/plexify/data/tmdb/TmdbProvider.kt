@@ -261,10 +261,13 @@ class TmdbProvider(
     }
 
     // Every result leaves through here, so no caller can print a credential from an error message.
+    // A cancelled lookup is not a failed one: cancellation goes on to the caller, unless it is
+    // Ktor's own timeout in disguise.
     private inline fun <T> tmdbCatching(block: () -> T): Result<T> =
         try {
             Result.success(block())
         } catch (e: Throwable) {
+            if (e is CancellationException && !e.isTimeout()) throw e
             Result.failure(credentials.redact(e))
         }
 
