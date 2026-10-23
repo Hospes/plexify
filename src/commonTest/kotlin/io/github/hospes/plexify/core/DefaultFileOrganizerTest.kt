@@ -459,6 +459,20 @@ class DefaultFileOrganizerTest {
     }
 
     @Test
+    fun `keeps a symlink left under a temporary name by an older version`() {
+        val real = file(Path(root, "downloads", "Inception.2010.1080p.mkv"), "movie")
+        val folder = targetPath().parent!!
+        // Before 0.6.1 a symlink being moved was staged under this name, and kept there when moving it back failed.
+        val link = symlink(Path(folder, ".plexify-0123abcd.tmp"), absolute(real)) ?: return
+        val dangling = symlink(Path(folder, ".plexify-4567cdef.tmp"), "missing.mkv")!!
+
+        assertIs<OrganizeOutcome.Organized>(organize(file(Path(root, "Inception.2010.REPACK.1080p.mkv"), "other"), OperationMode.HARDLINK))
+
+        assertEquals(FileKind.REGULAR_FILE, PlatformFileSystem.kind(link), "the symlink was deleted")
+        assertEquals(FileKind.DANGLING_LINK, PlatformFileSystem.kind(dangling), "the dangling symlink was deleted")
+    }
+
+    @Test
     fun `skips a second file for a target claimed earlier in the run`() {
         for (mode in OperationMode.entries) for (overwrite in listOf(false, true)) {
             val label = "mode $mode, overwrite $overwrite"
