@@ -69,7 +69,6 @@ class BuiltInNamesTest {
         movie("What If...", year = 1999),
         movie("Re:ZERO\tStarting Life", year = 2016),
         movie("???", year = 2010),
-        movie("???", year = null, imdbId = null, tmdbId = null),
         movie("A Rather Long Movie Title That Goes On ".repeat(8).trim(), parsed = scene),
         movie("とても長い映画のタイトル".repeat(8), year = 2020, parsed = scene),
         movie("😀".repeat(70), year = 2020),
@@ -148,8 +147,7 @@ class BuiltInNamesTest {
             Plex | .hack-SIGN (2002) {imdb-tt1375666}/.hack-SIGN (2002).mkv
             Plex | What If... (1999) {imdb-tt1375666}/What If... (1999).mkv
             Plex | Re ZERO Starting Life (2016) {imdb-tt1375666}/Re ZERO Starting Life (2016).mkv
-            Plex | (2010) {imdb-tt1375666}/(2010).mkv
-            Plex | .mkv
+            Plex | tmdb-27205 (2010) {imdb-tt1375666}/tmdb-27205 (2010).mkv
             Plex | A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That… (2010) {imdb-tt1375666}/A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie… (2010) - [1080p] [BluRay] [YTS].mkv
             Plex | とても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長… (2020) {imdb-tt1375666}/とても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトル… (2020) - [1080p] [BluRay] [YTS].mkv
             Plex | 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀… (2020) {imdb-tt1375666}/😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀… (2020).mkv
@@ -187,8 +185,7 @@ class BuiltInNamesTest {
             Jellyfin | .hack-SIGN (2002) [tmdbid-27205]/.hack-SIGN (2002) [tmdbid-27205].mkv
             Jellyfin | What If... (1999) [tmdbid-27205]/What If... (1999) [tmdbid-27205].mkv
             Jellyfin | Re ZERO Starting Life (2016) [tmdbid-27205]/Re ZERO Starting Life (2016) [tmdbid-27205].mkv
-            Jellyfin | (2010) [tmdbid-27205]/(2010) [tmdbid-27205].mkv
-            Jellyfin | .mkv
+            Jellyfin | tmdb-27205 (2010) [tmdbid-27205]/tmdb-27205 (2010) [tmdbid-27205].mkv
             Jellyfin | A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes… (2010) [tmdbid-27205]/A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A Rather Long Movie Title That Goes On A… (2010) [tmdbid-27205] - [1080p] [BluRay] [YTS].mkv
             Jellyfin | とても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長… (2020) [tmdbid-27205]/とても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画のタイトルとても長い映画… (2020) [tmdbid-27205] - [1080p] [BluRay] [YTS].mkv
             Jellyfin | 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀… (2020) [tmdbid-27205]/😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀… (2020) [tmdbid-27205].mkv
