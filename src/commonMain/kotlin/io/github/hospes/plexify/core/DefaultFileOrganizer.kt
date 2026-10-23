@@ -21,6 +21,9 @@ class DefaultFileOrganizer(
     /** Folders already cleared of leftover temporary files in this run. */
     private val cleanedFolders = mutableSetOf<Path>()
 
+    /** The volume of each folder [folderVolume] read in this run, null where it couldn't be read. */
+    private val folderVolumes = mutableMapOf<Path, ULong?>()
+
     /**
      * Targets that a file of this run was organized to (or, in test mode, would be) or already was at, each with that
      * source. Nothing is written in test mode, so only this tells a dry run that a later file maps to the same target.
@@ -79,6 +82,9 @@ class DefaultFileOrganizer(
         }
         val outcome = if (targetExists) OrganizeOutcome.Replaced(finalPath) else OrganizeOutcome.Organized(finalPath)
 
+        // Before test mode returns, so a dry run fails what the real run would, and before any folder is created.
+        checkSameVolume(sourceFile, finalPath, mode)
+
         if (isTestMode) {
             claimedTargets[finalPath] = sourceFile
             return@runCatching outcome
@@ -107,6 +113,41 @@ class DefaultFileOrganizer(
         // Claimed only once in place: after a failure, a later file may still take the target.
         claimedTargets[finalPath] = sourceFile
         outcome
+    }
+
+    /**
+     * Fails when [source] and [target] are on different volumes: neither a hardlink nor a rename can cross them, and
+     * plexify doesn't copy. A hardlink links the file a symlink points at, a move renames the link itself, so that is
+     * the file whose volume counts. Folders are compared, not files: on overlayfs (Docker) a file can report the device
+     * of the layer it comes from while every folder reports the overlay's. Volumes that can't be read pass the check,
+     * and the operation itself reports any failure.
+     */
+    private fun checkSameVolume(source: Path, target: Path, mode: OperationMode) {
+        val file = when (mode) {
+            OperationMode.HARDLINK -> runCatching { resolveSymbolicLink(source) }.getOrNull() ?: source
+            OperationMode.MOVE -> source
+        }
+        val sourceVolume = folderVolume(file) ?: return
+        val targetVolume = folderVolume(target) ?: return
+        if (sourceVolume == targetVolume) return
+        val operation = when (mode) {
+            OperationMode.HARDLINK -> "Can't hardlink to another volume"
+            OperationMode.MOVE -> "Can't move to another volume: plexify renames files and doesn't copy them"
+        }
+        throw IOException(operation + CROSS_VOLUME_HINT)
+    }
+
+    /**
+     * The volume of the folder holding [path], read from its nearest existing ancestor (a library folder may not exist
+     * yet), or null if none can be read. Each folder is read once per run.
+     */
+    private fun folderVolume(path: Path): ULong? {
+        val folder = path.parent ?: Path(".")
+        return folderVolumes.getOrPut(folder) {
+            val ancestors = generateSequence(folder) { it.parent } + listOfNotNull(Path(".").takeUnless { folder.isAbsolute })
+            ancestors.firstOrNull { runCatching { fileSystem.kind(it) == FileKind.DIRECTORY }.getOrDefault(false) }
+                ?.let { fileSystem.identity(it)?.volume }
+        }
     }
 
     private fun hardLink(source: Path, target: Path) {
