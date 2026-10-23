@@ -162,7 +162,7 @@ class PathFormatter {
             is CanonicalMedia.Movie -> {
                 commonPlaceholders.putAll(
                     mapOf(
-                        "cleantitle" to cleanName(media.title),
+                        "cleantitle" to cleanTitle(media.title, media.tmdbId, media.imdbId),
                         "year" to media.year?.toString(),
                         "imdbid" to media.imdbId,
                         "tmdbid" to media.tmdbId,
@@ -173,7 +173,7 @@ class PathFormatter {
             is CanonicalMedia.Episode -> {
                 commonPlaceholders.putAll(
                     mapOf(
-                        "cleantitle" to cleanName(media.show.title),
+                        "cleantitle" to cleanTitle(media.show.title, media.show.tmdbId, media.show.imdbId),
                         "year" to media.show.year?.toString(),
                         "season" to media.season.toString(),
                         "episode" to media.episode.toString(),
@@ -202,6 +202,16 @@ class PathFormatter {
         .replace(droppedCharsRegex, "")
         .replace(Regex("""\s{2,}"""), " ")
         .trim()
+
+    // 1c. The {cleantitle} of a movie or show. A title with nothing usable in a name ("?", "//", or dots, which
+    // finishSegment trims) would leave the folder without a name: with no year or ID tag, the file would land in the
+    // library root. Such a title is named by its ID instead ("tmdb-603", else "imdb-tt0133093").
+    private fun cleanTitle(title: String, tmdbId: String?, imdbId: String?): String {
+        val cleaned = cleanName(title)
+        if (cleaned.any { it != '.' && !it.isWhitespace() }) return cleaned
+        return tmdbId?.let { "tmdb-$it" } ?: imdbId?.let { "imdb-$it" }
+            ?: throw IllegalArgumentException("The title \"$title\" has nothing usable in a file name, and no ID to name it by")
+    }
 
     // 2. Drop an ID tag whose ID is missing: "[tmdbid-{tmdbid}]" or "{imdb-{imdbid}}" without a value goes whole.
     private fun dropEmptyIdTags(template: String, placeholders: Map<String, String?>): String {

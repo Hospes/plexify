@@ -371,10 +371,8 @@ class PathFormatterTest {
 
     @Test
     fun `fails with a reason when the file name renders empty`() {
-        val nothing = CanonicalMedia.Movie(title = "???", year = null, tmdbId = "1")
-
         val error = assertFailsWith<IllegalArgumentException> {
-            formatter.formatMoviePath(NamingStrategy.Plex.movieFolderTemplate, NamingStrategy.Plex.movieFileTemplate, nothing, parsedMovie, Path("noext"))
+            formatter.formatMoviePath("{CleanTitle}", "{year}.{ext}", movie(null), parsedMovie, Path("noext"))
         }
         assertEquals("The naming template renders an empty file name", error.message)
     }
@@ -551,5 +549,115 @@ class PathFormatterTest {
     fun `placeholders side by side are not a tag`() {
         assertEquals("Inception2010", folder("{CleanTitle}{year}"))
         assertEquals("Inception2010", folder("{CleanTitle}{year}", noImdb))
+    }
+
+    // --- Titles with nothing usable in a name ---
+
+    // Real TMDB titles: movie 1721501 is "?" (2026, found by its alternative titles), show 315175 is "." (2012).
+    private fun questionMark(year: Int?) = CanonicalMedia.Movie(title = "?", year = year, tmdbId = "1721501")
+    private fun dot(year: Int?) = CanonicalMedia.Episode(
+        show = CanonicalMedia.TvShow(title = ".", year = year, tmdbId = "315175"),
+        season = 1,
+        episode = 1,
+        title = "Pilot",
+    )
+
+    private fun NamingStrategy.render(media: CanonicalMedia.Movie): String =
+        formatter.formatMoviePath(movieFolderTemplate, movieFileTemplate, media, parsedMovie, source).toString()
+
+    private fun NamingStrategy.render(media: CanonicalMedia.Episode): String =
+        formatter.formatEpisodePath(tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate, media, parsedEpisode, source).toString()
+
+    @Test
+    fun `plex names a movie without a usable title by its tmdb id`() {
+        assertEquals(path("tmdb-1721501", "tmdb-1721501.mkv"), NamingStrategy.Plex.render(questionMark(null)))
+        assertEquals(path("tmdb-1721501 (2026)", "tmdb-1721501 (2026).mkv"), NamingStrategy.Plex.render(questionMark(2026)))
+    }
+
+    @Test
+    fun `plex names a show without a usable title by its tmdb id`() {
+        assertEquals(path("tmdb-315175", "Season 01", "tmdb-315175 - S01E01 - Pilot.mkv"), NamingStrategy.Plex.render(dot(null)))
+        assertEquals(
+            path("tmdb-315175 (2012)", "Season 01", "tmdb-315175 (2012) - S01E01 - Pilot.mkv"),
+            NamingStrategy.Plex.render(dot(2012)),
+        )
+    }
+
+    @Test
+    fun `jellyfin names a movie without a usable title by its tmdb id`() {
+        assertEquals(
+            path("tmdb-1721501 [tmdbid-1721501]", "tmdb-1721501 [tmdbid-1721501].mkv"),
+            NamingStrategy.Jellyfin.render(questionMark(null)),
+        )
+        assertEquals(
+            path("tmdb-1721501 (2026) [tmdbid-1721501]", "tmdb-1721501 (2026) [tmdbid-1721501].mkv"),
+            NamingStrategy.Jellyfin.render(questionMark(2026)),
+        )
+    }
+
+    @Test
+    fun `jellyfin names a show without a usable title by its tmdb id`() {
+        assertEquals(
+            path("tmdb-315175 [tmdbid-315175]", "Season 01", "tmdb-315175 - S01E01 - Pilot.mkv"),
+            NamingStrategy.Jellyfin.render(dot(null)),
+        )
+        assertEquals(
+            path("tmdb-315175 (2012) [tmdbid-315175]", "Season 01", "tmdb-315175 (2012) - S01E01 - Pilot.mkv"),
+            NamingStrategy.Jellyfin.render(dot(2012)),
+        )
+    }
+
+    @Test
+    fun `a title of dots spaces and dropped characters is not usable`() {
+        for (title in listOf("...", ". .", "//", "::::::", "\" * \"", "?.", "|||")) {
+            val media = CanonicalMedia.Movie(title = title, year = null, tmdbId = "1")
+            assertEquals(path("tmdb-1", "tmdb-1.mkv"), NamingStrategy.Plex.render(media), title)
+        }
+    }
+
+    @Test
+    fun `falls back to the imdb id without a tmdb id`() {
+        val media = CanonicalMedia.Movie(title = "?", year = null, imdbId = "tt23643874")
+        assertEquals(path("imdb-tt23643874 {imdb-tt23643874}", "imdb-tt23643874.mkv"), NamingStrategy.Plex.render(media))
+    }
+
+    @Test
+    fun `fails with a reason when a title has nothing usable and no id`() {
+        val error = assertFailsWith<IllegalArgumentException> { NamingStrategy.Plex.render(CanonicalMedia.Movie(title = "?", year = 2026)) }
+        assertEquals("The title \"?\" has nothing usable in a file name, and no ID to name it by", error.message)
+    }
+
+    @Test
+    fun `titles with something usable keep their names`() {
+        // Byte for byte the names these titles got before the fallback, including titles made of symbols alone.
+        val names = listOf("$", "★", "!", "#", "()", "--", "_ _", "What If...?", "M*A*S*H", "Se7en", "Avatar: The Way of Water").map { title ->
+            val media = CanonicalMedia.Movie(title = title, year = 2011, imdbId = "tt1", tmdbId = "1")
+            val episode = CanonicalMedia.Episode(CanonicalMedia.TvShow(title = title, year = null, tmdbId = "2"), season = 1, episode = 2, title = "Two")
+            listOf(NamingStrategy.Plex.render(media), NamingStrategy.Jellyfin.render(media), NamingStrategy.Plex.render(episode))
+        }
+        assertEquals(
+            listOf(
+                listOf(path("$ (2011) {imdb-tt1}", "$ (2011).mkv"), path("$ (2011) [tmdbid-1]", "$ (2011) [tmdbid-1].mkv"), path("$", "Season 01", "$ - S01E02 - Two.mkv")),
+                listOf(path("★ (2011) {imdb-tt1}", "★ (2011).mkv"), path("★ (2011) [tmdbid-1]", "★ (2011) [tmdbid-1].mkv"), path("★", "Season 01", "★ - S01E02 - Two.mkv")),
+                listOf(path("! (2011) {imdb-tt1}", "! (2011).mkv"), path("! (2011) [tmdbid-1]", "! (2011) [tmdbid-1].mkv"), path("!", "Season 01", "! - S01E02 - Two.mkv")),
+                listOf(path("# (2011) {imdb-tt1}", "# (2011).mkv"), path("# (2011) [tmdbid-1]", "# (2011) [tmdbid-1].mkv"), path("#", "Season 01", "# - S01E02 - Two.mkv")),
+                listOf(path("() (2011) {imdb-tt1}", "() (2011).mkv"), path("() (2011) [tmdbid-1]", "() (2011) [tmdbid-1].mkv"), path("()", "Season 01", "() - S01E02 - Two.mkv")),
+                listOf(path("-- (2011) {imdb-tt1}", "-- (2011).mkv"), path("-- (2011) [tmdbid-1]", "-- (2011) [tmdbid-1].mkv"), path("--", "Season 01", "-- - S01E02 - Two.mkv")),
+                listOf(path("_ _ (2011) {imdb-tt1}", "_ _ (2011).mkv"), path("_ _ (2011) [tmdbid-1]", "_ _ (2011) [tmdbid-1].mkv"), path("_ _", "Season 01", "_ _ - S01E02 - Two.mkv")),
+                listOf(
+                    path("What If... (2011) {imdb-tt1}", "What If... (2011).mkv"),
+                    path("What If... (2011) [tmdbid-1]", "What If... (2011) [tmdbid-1].mkv"),
+                    path("What If", "Season 01", "What If... - S01E02 - Two.mkv"),
+                ),
+                listOf(path("MASH (2011) {imdb-tt1}", "MASH (2011).mkv"), path("MASH (2011) [tmdbid-1]", "MASH (2011) [tmdbid-1].mkv"), path("MASH", "Season 01", "MASH - S01E02 - Two.mkv")),
+                listOf(path("Se7en (2011) {imdb-tt1}", "Se7en (2011).mkv"), path("Se7en (2011) [tmdbid-1]", "Se7en (2011) [tmdbid-1].mkv"), path("Se7en", "Season 01", "Se7en - S01E02 - Two.mkv")),
+                listOf(
+                    path("Avatar The Way of Water (2011) {imdb-tt1}", "Avatar The Way of Water (2011).mkv"),
+                    path("Avatar The Way of Water (2011) [tmdbid-1]", "Avatar The Way of Water (2011) [tmdbid-1].mkv"),
+                    path("Avatar The Way of Water", "Season 01", "Avatar The Way of Water - S01E02 - Two.mkv"),
+                ),
+            ),
+            names,
+        )
     }
 }
