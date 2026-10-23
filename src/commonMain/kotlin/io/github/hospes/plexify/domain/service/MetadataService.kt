@@ -119,21 +119,16 @@ class MetadataService(
     }
 
     /**
-     * IMDb and TVDb IDs of a matched movie or show, from the first provider that supplies one.
-     * Null without a lookup when the naming template uses neither (TVDb counts for shows only),
+     * IMDb ID of a matched movie or show, from the first provider that supplies one.
+     * Null without a lookup when the naming template doesn't use it (Jellyfin's doesn't),
      * so the extra call is only made when its result is used.
      */
     context(_: LoggingContext)
     suspend fun getExternalIds(media: CanonicalMedia): ExternalIds? {
-        val applicable = when (media) {
-            is CanonicalMedia.Movie -> setOf(IMDB_ID)
-            is CanonicalMedia.TvShow -> setOf(IMDB_ID, TVDB_ID)
-            else -> emptySet()
-        }
-        val wanted = applicable intersect namingStrategy.requiredMetadataFields()
-        if (wanted.isEmpty()) return null
+        if (media !is CanonicalMedia.Movie && media !is CanonicalMedia.TvShow) return null
+        if (IMDB_ID !in namingStrategy.requiredMetadataFields()) return null
         return indent {
-            for (provider in resolveActiveProviders().filter { p -> p.supportedIds.any { it in wanted } }) {
+            for (provider in resolveActiveProviders().filter { IMDB_ID in it.supportedIds }) {
                 val ids = provider.externalIds(media)
                     .onFailure { error ->
                         when (error) {
@@ -143,8 +138,8 @@ class MetadataService(
                         }
                     }
                     .getOrNull()
-                if (ids != null && (ids.imdbId != null || ids.tvdbId != null)) {
-                    debug("External IDs fetched from ${provider.id}: imdb=${ids.imdbId}, tvdb=${ids.tvdbId}")
+                if (ids?.imdbId != null) {
+                    debug("External IDs fetched from ${provider.id}: imdb=${ids.imdbId}")
                     return@indent ids
                 }
             }
@@ -178,6 +173,5 @@ class MetadataService(
     }
 }
 
-// Template placeholders (lowercased, as requiredMetadataFields() reports them) for external IDs.
+// The template placeholder (lowercased, as requiredMetadataFields() reports it) for the IMDb ID.
 private const val IMDB_ID = "imdbid"
-private const val TVDB_ID = "tvdbid"

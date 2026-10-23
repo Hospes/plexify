@@ -18,7 +18,7 @@ class ExternalIdsLookupTest {
     private class FakeProvider(
         private val ids: Result<ExternalIds>,
         override val id: String = "tmdb",
-        override val supportedIds: Set<String> = setOf("tmdbid", "imdbid", "tvdbid"),
+        override val supportedIds: Set<String> = setOf("tmdbid", "imdbid"),
     ) : MetadataProvider {
         var lookups = 0
 
@@ -33,7 +33,7 @@ class ExternalIdsLookupTest {
 
     private val matrix = CanonicalMedia.Movie(title = "The Matrix", year = 1999, tmdbId = "603")
     private val breakingBad = CanonicalMedia.TvShow(title = "Breaking Bad", year = 2008, tmdbId = "1396")
-    private val breakingBadIds = ExternalIds(imdbId = "tt0903747", tvdbId = "81189")
+    private val breakingBadIds = ExternalIds(imdbId = "tt0903747")
 
     @Test
     fun `looks up the imdb id when the template uses it`() = runTest {

@@ -12,7 +12,7 @@ sealed interface NamingStrategy {
     /** The template for the movie's parent folder. */
     val movieFolderTemplate: String
 
-    /** The template for the movie file itself. Should not contain path separators. */
+    /** The template for the movie file itself. Every template renders one file or folder name. */
     val movieFileTemplate: String
 
     // TV Show Templates
@@ -62,7 +62,7 @@ sealed interface NamingStrategy {
     /**
      * Naming strategy compliant with Jellyfin's recommended format.
      * Tags movies and shows with the TMDb ID only: TMDB is our metadata provider and Jellyfin's
-     * default one, so a TVDb tag adds nothing (and would cost an extra lookup per show).
+     * default one, so a TVDb tag adds nothing.
      */
     object Jellyfin : NamingStrategy {
         override val name: String = "Jellyfin"

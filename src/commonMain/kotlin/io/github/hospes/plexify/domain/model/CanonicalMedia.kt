@@ -8,7 +8,6 @@ sealed interface CanonicalMedia {
         val year: Int?, // null when the provider has no date yet (announced titles)
         val imdbId: String? = null,
         val tmdbId: String? = null,
-        val tvdbId: String? = null,
     ) : CanonicalMedia
 
     data class Episode(
@@ -25,7 +24,6 @@ sealed interface CanonicalMedia {
         val year: Int?, // null when the provider has no date yet (announced titles)
         val imdbId: String? = null,
         val tmdbId: String? = null,
-        val tvdbId: String? = null,
     ) : CanonicalMedia
 
     data class Season(

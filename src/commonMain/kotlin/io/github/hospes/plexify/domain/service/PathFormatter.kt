@@ -6,15 +6,12 @@ import kotlinx.io.files.Path
 
 class PathFormatter {
 
-    // Regex to find placeholders like {title}, {year}, etc.
+    // Regex to find placeholders like {cleantitle}, {season:2}, etc.
     private val placeholderRegex = Regex("""\{(\w+)(?::(\d+))?}""", RegexOption.IGNORE_CASE)
 
-    // Regex to find conditional blocks like [imdbid-{imdbid}]
-    private val conditionalBlockRegex = Regex("""\[([^\[\]]*?\{(\w+)}[^\[\]]*?)]""")
-
-    // Regex to find conditional groups in literal curly braces like {imdb-{imdbid}} (Plex's ID tag form): braces
-    // around text and at least one placeholder. A placeholder on its own, like {year}, is not a group.
-    private val conditionalBraceGroupRegex = Regex("""\{((?:[^{}]|\{\w+(?::\d+)?})*?\{\w+(?::\d+)?}(?:[^{}]|\{\w+(?::\d+)?})*?)}""")
+    // Regex to find an ID tag that holds one placeholder: Jellyfin's [tmdbid-{tmdbid}] or Plex's {imdb-{imdbid}}.
+    // A placeholder on its own, like {year}, is not a tag.
+    private val idTagRegex = Regex("""\[[^\[\]{}]*\{(\w+)}[^\[\]{}]*]|\{[^{}]*\{(\w+)}[^{}]*}""")
 
     // Regex to find a lone placeholder in parentheses like ({year}), with the whitespace before it
     private val parenthesizedPlaceholderRegex = Regex("""\s*\(\{(\w+)(?::\d+)?}\)""")
@@ -32,9 +29,9 @@ class PathFormatter {
         parsedInfo: ParsedMediaInfo,
         sourceFile: Path
     ): Path {
-        val folders = format(folderTemplate, media, parsedInfo, sourceFile)
+        val folder = format(folderTemplate, media, parsedInfo, sourceFile)
         val file = format(fileTemplate, media, parsedInfo, sourceFile)
-        return path(folders, file)
+        return path(listOf(folder), file)
     }
 
     fun formatEpisodePath(
@@ -45,31 +42,32 @@ class PathFormatter {
         parsedInfo: ParsedMediaInfo,
         sourceFile: Path
     ): Path {
-        val showFolders = format(showFolderTemplate, media, parsedInfo, sourceFile)
-        val seasonFolders = format(seasonFolderTemplate, media, parsedInfo, sourceFile)
+        val showFolder = format(showFolderTemplate, media, parsedInfo, sourceFile)
+        val seasonFolder = format(seasonFolderTemplate, media, parsedInfo, sourceFile)
         val episodeFile = format(episodeFileTemplate, media, parsedInfo, sourceFile)
-        return path(showFolders + seasonFolders, episodeFile)
+        return path(listOf(showFolder, seasonFolder), episodeFile)
     }
 
-    private fun path(folders: List<String>, file: List<String>): Path {
+    /** The path of [folders] and [file], leaving out a folder that renders empty. */
+    private fun path(folders: List<String>, file: String): Path {
         // E.g. a title with nothing usable in a name, and no year, version or extension to go with it.
         require(file.isNotEmpty()) { "The naming template renders an empty file name" }
-        val segments = folders + file
+        val segments = folders.filter { it.isNotEmpty() } + file
         return Path(segments.first(), *segments.drop(1).toTypedArray())
     }
 
 
-    /** The path segments [template] renders to: one per `/`-separated part that isn't empty once rendered. */
+    /** The file or folder name [template] renders to. */
     private fun format(
         template: String,
         media: CanonicalMedia,
         parsedInfo: ParsedMediaInfo,
         sourceFile: Path
-    ): List<String> {
+    ): String {
         val placeholders = buildPlaceholderMap(media, parsedInfo, sourceFile)
-        var result = processConditionalBlocks(template, placeholders)
+        var result = dropEmptyIdTags(template, placeholders)
         result = dropEmptyParentheses(result, placeholders)
-        return result.split('/').map { formatSegment(it, placeholders) }.filter { it.isNotEmpty() }
+        return formatSegment(result, placeholders)
     }
 
     // 4. Render one path segment, shortened to MAX_SEGMENT_BYTES if needed.
@@ -154,12 +152,7 @@ class PathFormatter {
             ?.takeIf { group -> group.any { it.isLetterOrDigit() } && versionTags.none { it.equals(group, ignoreCase = true) } }
         fun version(tags: List<String>) = if (tags.isNotEmpty()) " - ${tags.joinToString(" ") { "[$it]" }}" else ""
 
-        val commonPlaceholders = mutableMapOf(
-            "resolution" to parsedInfo.resolution,
-            "quality" to parsedInfo.quality,
-            "hdr" to parsedInfo.hdr,
-            "releasegroup" to releaseGroup,
-            "edition" to parsedInfo.edition,
+        val commonPlaceholders = mutableMapOf<String, String?>(
             "version" to version(versionTags + listOfNotNull(releaseGroup)),
             VERSION_WITHOUT_GROUP to version(versionTags),
             "ext" to sourceFile.name.substringAfterLast('.', "")
@@ -169,12 +162,10 @@ class PathFormatter {
             is CanonicalMedia.Movie -> {
                 commonPlaceholders.putAll(
                     mapOf(
-                        "title" to media.title,
                         "cleantitle" to cleanName(media.title),
                         "year" to media.year?.toString(),
                         "imdbid" to media.imdbId,
                         "tmdbid" to media.tmdbId,
-                        "tvdbid" to media.tvdbId,
                     )
                 )
             }
@@ -182,7 +173,6 @@ class PathFormatter {
             is CanonicalMedia.Episode -> {
                 commonPlaceholders.putAll(
                     mapOf(
-                        "title" to media.show.title,
                         "cleantitle" to cleanName(media.show.title),
                         "year" to media.show.year?.toString(),
                         "season" to media.season.toString(),
@@ -192,7 +182,6 @@ class PathFormatter {
                         "episodetitle" to cleanName(media.title),
                         "imdbid" to media.show.imdbId,
                         "tmdbid" to media.show.tmdbId,
-                        "tvdbid" to media.show.tvdbId,
                     )
                 )
             }
@@ -214,22 +203,11 @@ class PathFormatter {
         .replace(Regex("""\s{2,}"""), " ")
         .trim()
 
-    // 2. Process conditional blocks first.
-    // E.g., for "[imdbid-{imdbid}]", if {imdbid} is not available, the whole block is removed.
-    // A curly-brace group like "{imdb-{imdbid}}" is removed when any placeholder in it has no value. Square blocks go
-    // first and keep their rule (the first placeholder decides), so one can hold a brace group.
-    private fun processConditionalBlocks(template: String, placeholders: Map<String, String?>): String {
-        val withBlocks = conditionalBlockRegex.replace(template) { matchResult ->
-            val placeholderKey = matchResult.groupValues[2].lowercase()
-            if (placeholders.containsKey(placeholderKey)) {
-                matchResult.value
-            } else {
-                ""
-            }
-        }
-        return conditionalBraceGroupRegex.replace(withBlocks) { matchResult ->
-            val keys = placeholderRegex.findAll(matchResult.groupValues[1]).map { it.groupValues[1].lowercase() }
-            if (keys.all { placeholders.containsKey(it) }) matchResult.value else ""
+    // 2. Drop an ID tag whose ID is missing: "[tmdbid-{tmdbid}]" or "{imdb-{imdbid}}" without a value goes whole.
+    private fun dropEmptyIdTags(template: String, placeholders: Map<String, String?>): String {
+        return idTagRegex.replace(template) { matchResult ->
+            val key = matchResult.groupValues[1].ifEmpty { matchResult.groupValues[2] }.lowercase()
+            if (placeholders.containsKey(key)) matchResult.value else ""
         }
     }
 
@@ -259,7 +237,7 @@ class PathFormatter {
         const val MAX_SEGMENT_BYTES = 255
 
         /** Placeholders cut to fit a segment, in this order. */
-        val SHORTENED_FIRST = listOf("episodetitle", "cleantitle", "title")
+        val SHORTENED_FIRST = listOf("episodetitle", "cleantitle")
 
         const val ELLIPSIS = "…"
 

@@ -36,7 +36,7 @@ internal class FakeTmdb(
     private val resultsByTitle: Map<String, List<MediaSearchResult>> = emptyMap(),
 ) : MetadataProvider {
     override val id = "tmdb"
-    override val supportedIds = setOf("tmdbid", "imdbid", "tvdbid")
+    override val supportedIds = setOf("tmdbid", "imdbid")
     val seasonFetches = mutableListOf<String>()
     val episodeGroupFetches = mutableListOf<String>()
     val externalIdLookups = mutableListOf<String>()

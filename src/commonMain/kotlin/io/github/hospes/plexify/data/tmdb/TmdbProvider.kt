@@ -41,7 +41,7 @@ class TmdbProvider(
     private val engineFactory: () -> HttpClientEngine = ::createHttpClientEngine,
 ) : MetadataProvider {
     override val id: String = "tmdb"
-    override val supportedIds: Set<String> = setOf("tmdbid", "imdbid", "tvdbid")
+    override val supportedIds: Set<String> = setOf("tmdbid", "imdbid")
 
     private val httpClient by lazy {
         HttpClient(engineFactory()) {
@@ -257,10 +257,7 @@ class TmdbProvider(
         requireNotNull(tmdbId) { "TMDb ID is required to fetch external IDs." }
         val response = get("$kind/$tmdbId/external_ids") { "fetching external IDs of '$title'" }
         val dto = response.body<TmdbExternalIdsDto>()
-        ExternalIds(
-            imdbId = dto.imdbId?.ifBlank { null },
-            tvdbId = dto.tvdbId?.takeIf { it > 0 }?.toString(),
-        )
+        ExternalIds(imdbId = dto.imdbId?.ifBlank { null })
     }
 
     // Every result leaves through here, so no caller can print a credential from an error message.
