@@ -27,9 +27,9 @@ expect fun createHardLink(source: Path, destination: Path)
  * Returns true when [first] and [second] are the same file on disk: the same path, or two hardlinks to the same data
  * (the same [FileIdentity]). Returns false if either path can't be read.
  */
-fun isSameFile(first: Path, second: Path): Boolean {
-    val firstIdentity = PlatformFileSystem.identity(first) ?: return false
-    return firstIdentity == PlatformFileSystem.identity(second)
+fun isSameFile(first: Path, second: Path, fileSystem: MediaFileSystem = PlatformFileSystem): Boolean {
+    val firstIdentity = fileSystem.identity(first) ?: return false
+    return firstIdentity == fileSystem.identity(second)
 }
 
 /**
