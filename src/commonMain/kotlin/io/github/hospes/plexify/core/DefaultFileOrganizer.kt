@@ -222,12 +222,17 @@ class DefaultFileOrganizer(
      * operation removes its own temporary file, so any found here are leftovers. (A second plexify process writing to
      * the same folder at that moment would lose its temporary file, and its replacement would fail with the old file
      * kept.) A symlink being moved has a name of its own ([MOVED_LINK_PREFIX]) and is never deleted: it is the user's
-     * only link to its file. Failures are ignored: the file is tried again on the next run.
+     * only link to its file. Versions before 0.6.1 moved it under this name, so a symlink here is never deleted either
+     * (the hardlink is to the file a source symlink points at, never a symlink itself). Failures are ignored: the file
+     * is tried again on the next run.
      */
     private fun deleteLeftoverTemporaryFiles(folder: Path) {
         val entries = runCatching { fileSystem.list(folder) }.getOrDefault(emptyList())
         entries.filter { TEMPORARY_NAME.matches(it.name) }.forEach { entry ->
-            runCatching { if (fileSystem.kind(entry) != FileKind.DIRECTORY) fileSystem.delete(entry) }
+            // resolveSymbolicLink also fails on a dangling symlink, which is kept too.
+            runCatching {
+                if (fileSystem.kind(entry) != FileKind.DIRECTORY && resolveSymbolicLink(entry) == null) fileSystem.delete(entry)
+            }
         }
     }
 
