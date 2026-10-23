@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.domain.service
 
+import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -134,20 +135,20 @@ class MovieFilenameParserTest {
         // Jellyfin template: "{CleanTitle} ({year}) [tmdbid-{tmdbid}]{version}.{ext}"
         TestCase(
             filename = "Inception (2010) [tmdbid-27205] - [1080p] [BluRay].mkv",
-            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay")
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", mediaId = MediaId(MediaId.Database.TMDB, "27205"))
         ),
         TestCase(
             filename = "Inception (2010) [tmdbid-27205].mkv",
-            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", mediaId = MediaId(MediaId.Database.TMDB, "27205"))
         ),
         TestCase(
             filename = "Blade Runner 2049 (2017) [tmdbid-335984] - [2160p] [BluRay] [HDR10].mkv",
-            expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = "2017", resolution = "2160p", quality = "BluRay", hdr = "HDR10")
+            expected = ParsedMediaInfo.Movie(title = "blade runner 2049", year = "2017", resolution = "2160p", quality = "BluRay", hdr = "HDR10", mediaId = MediaId(MediaId.Database.TMDB, "335984"))
         ),
         // Invalid characters replaced: "Fate/stay night: Heaven's Feel" -> "Fate-stay night Heaven's Feel"
         TestCase(
             filename = "Fate-stay night Heaven's Feel I. presage flower (2017) [tmdbid-390634] - [1080p] [BluRay].mkv",
-            expected = ParsedMediaInfo.Movie(title = "fate stay night heaven's feel i presage flower", year = "2017", resolution = "1080p", quality = "BluRay")
+            expected = ParsedMediaInfo.Movie(title = "fate stay night heaven's feel i presage flower", year = "2017", resolution = "1080p", quality = "BluRay", mediaId = MediaId(MediaId.Database.TMDB, "390634"))
         ),
         // Plex template: "{CleanTitle} ({year}){version}.{ext}"
         TestCase(
@@ -162,24 +163,24 @@ class MovieFilenameParserTest {
         // A release group closing the {version} suffix (Plexify 0.6+); without one (0.5.x) the cases above
         TestCase(
             filename = "Inception (2010) [tmdbid-27205] - [1080p] [BluRay] [YTS.MX].mkv",
-            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS.MX")
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "1080p", quality = "BluRay", releaseGroup = "YTS.MX", mediaId = MediaId(MediaId.Database.TMDB, "27205"))
         ),
         TestCase(
             filename = "Blade Runner (1982) [tmdbid-78] - [Final Cut] [SPARKS].mkv",
-            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", edition = "Final Cut", releaseGroup = "SPARKS")
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", edition = "Final Cut", releaseGroup = "SPARKS", mediaId = MediaId(MediaId.Database.TMDB, "78"))
         ),
         // Other ID tag forms Plex and Jellyfin read
         TestCase(
             filename = "Inception (2010) {tmdb-27205}.mkv",
-            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", mediaId = MediaId(MediaId.Database.TMDB, "27205"))
         ),
         TestCase(
             filename = "Inception (2010) {imdb-tt1375666} - [2160p] [DV].mkv",
-            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "2160p", hdr = "DV")
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", resolution = "2160p", hdr = "DV", mediaId = MediaId(MediaId.Database.IMDB, "tt1375666"))
         ),
         TestCase(
             filename = "Inception (2010) [imdbid=tt1375666].mkv",
-            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010")
+            expected = ParsedMediaInfo.Movie(title = "inception", year = "2010", mediaId = MediaId(MediaId.Database.IMDB, "tt1375666"))
         ),
 
         // --- Years that are part of the title ---

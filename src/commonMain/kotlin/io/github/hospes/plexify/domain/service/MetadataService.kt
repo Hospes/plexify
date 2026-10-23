@@ -4,6 +4,7 @@ import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
+import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import io.github.hospes.plexify.logging.LoggingContext
@@ -57,6 +58,32 @@ class MetadataService(
             }
             Result.success(results)
         }
+    }
+
+    /** The movie [id] names, from the first provider that has it; null when none has. Fails as [getSeason] does. */
+    context(_: LoggingContext)
+    suspend fun findMovie(id: MediaId): Result<MediaSearchResult.Movie?> = findById { movie(id) }
+
+    /** The show [id] names, from the first provider that has it; null when none has. Fails as [getSeason] does. */
+    context(_: LoggingContext)
+    suspend fun findShow(id: MediaId): Result<MediaSearchResult.TvShow?> = findById { show(id) }
+
+    context(_: LoggingContext)
+    private suspend fun <T : MediaSearchResult> findById(lookup: suspend MetadataProvider.() -> Result<T>): Result<T?> = indent {
+        var failure: Throwable? = null
+        for (provider in resolveActiveProviders()) {
+            provider.lookup()
+                .onSuccess { found -> return@indent Result.success(found) }
+                .onFailure { error ->
+                    // The caller reports a failed lookup with the file it fails, and a missing record as a miss.
+                    debug("${provider.id}: ${error.message}")
+                    when (error) {
+                        is MetadataNotFoundException, is UnsupportedOperationException -> Unit
+                        else -> if (failure == null) failure = error
+                    }
+                }
+        }
+        failure?.let { Result.failure(it) } ?: Result.success(null)
     }
 
     /**

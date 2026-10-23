@@ -25,6 +25,17 @@ class ParsedMediaInfoOverridesTest {
     }
 
     @Test
+    fun `a title or year override drops the ID the path names`() {
+        val id = MediaId(MediaId.Database.TMDB, "8864")
+        val tagged = episode.copy(mediaId = id)
+        val taggedMovie = movie.copy(mediaId = id)
+
+        assertEquals(null, tagged.withOverrides(title = "hack", season = null).mediaId)
+        assertEquals(null, taggedMovie.withOverrides(title = null, season = null, year = "2002").mediaId)
+        assertEquals(id, tagged.withOverrides(title = null, season = 2, episodeOffset = 12).mediaId)
+    }
+
+    @Test
     fun `episode offset shifts the parsed episode number`() {
         val result = episode.withOverrides(title = null, season = 1, episodeOffset = 12) as ParsedMediaInfo.Episode
 
