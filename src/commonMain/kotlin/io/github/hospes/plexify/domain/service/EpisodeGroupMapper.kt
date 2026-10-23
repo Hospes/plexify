@@ -33,14 +33,20 @@ object EpisodeGroupMapper {
         data object NotFound : Resolution
     }
 
-    fun resolve(groups: List<EpisodeGroup>, season: Int, episode: Int): Resolution {
+    /**
+     * The provider's episode for the release's [season] and [episode]. [providerHasSeason] says whether the
+     * provider has that season at all: when it doesn't, the matching part is a cour split out of a longer
+     * provider season, and the specials before or between its episodes don't count (see [courEpisodes]).
+     */
+    fun resolve(groups: List<EpisodeGroup>, season: Int, episode: Int, providerHasSeason: Boolean = true): Resolution {
         if (season < 1 || episode < 1) return Resolution.NotFound
 
         val candidates = groups
             .filter { it.type in SEASON_LIKE_TYPES }
             .mapNotNull { group ->
                 val part = group.seasonParts().getOrNull(season - 1) ?: return@mapNotNull null
-                val target = part.episodes.getOrNull(episode - 1) ?: return@mapNotNull null
+                val episodes = if (providerHasSeason) part.episodes else part.courEpisodes()
+                val target = episodes.getOrNull(episode - 1) ?: return@mapNotNull null
                 Resolution.Found(target, group, part)
             }
         if (candidates.isEmpty()) return if (season == 1) resolveAbsolute(groups, episode) else Resolution.NotFound
@@ -82,4 +88,17 @@ object EpisodeGroupMapper {
     private fun EpisodeGroup.seasonParts(): List<EpisodeGroup.Part> = parts
         .filterNot { part -> part.episodes.isNotEmpty() && part.episodes.all { it.season == 0 } }
         .sortedBy { it.order }
+
+    /**
+     * A cour's episodes as releases number them, without the specials before or between its episodes: Durarara!!x2
+     * Ten is "S03E01-E12" while TMDB's cour slots the x.5 special "Romanticist's Chaka-Poko" in after its first
+     * episode, and a prologue special opening a cour has no number either. Specials after the last regular
+     * episode stay, as releases count those on (web episodes or an OVA closing the run). In a season the
+     * provider has, specials keep counting: there they are episodes the provider moved out of it (Texhnolyze's
+     * two DVD episodes), which releases number with the rest.
+     */
+    private fun EpisodeGroup.Part.courEpisodes(): List<CanonicalMedia.Episode> {
+        val lastRegular = episodes.indexOfLast { it.season != 0 }
+        return episodes.filterIndexed { index, it -> it.season != 0 || index > lastRegular }
+    }
 }
