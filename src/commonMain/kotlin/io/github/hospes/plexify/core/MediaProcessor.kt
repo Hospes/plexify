@@ -1,8 +1,10 @@
 package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.data.MetadataCache
+import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
+import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
@@ -10,6 +12,7 @@ import io.github.hospes.plexify.domain.model.withOverrides
 import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.MetadataService
+import io.github.hospes.plexify.domain.service.isNamedById
 import io.github.hospes.plexify.logging.LoggingContext
 import io.github.hospes.plexify.logging.debug
 import io.github.hospes.plexify.logging.indent
@@ -148,7 +151,8 @@ class MediaProcessor(
     private suspend fun processFile(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) = indent {
         debug("Processing: $source")
         val parentDirName = source.parent?.name
-        when (val parsedInfo = MediaFilenameParser.parse(source.name, parentDirName).withOverrides(titleOverride, seasonOverride, yearOverride, episodeOffset)) {
+        val parsed = MediaFilenameParser.parse(source.name, parentDirName, source.parent?.parent?.name)
+        when (val parsedInfo = parsed.withOverrides(titleOverride, seasonOverride, yearOverride, episodeOffset)) {
             is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
             is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
         }
@@ -163,6 +167,13 @@ class MediaProcessor(
         isTestMode: Boolean,
     ) = indent {
         debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
+
+        val movieById = findMovieById(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }
+        if (movieById != null) {
+            debug("Found match: $movieById")
+            organizeFile(source, destination, movieById, parsedInfo, mode, isTestMode)
+            return@indent
+        }
 
         val title = parsedInfo.title
         val (results, ranking) = lookUpMovie(title, parsedInfo.year)
@@ -259,9 +270,12 @@ class MediaProcessor(
         debug("Parsed as TV Show: Show='${parsed.showTitle}', Season: ${parsed.season}, Episode: ${parsed.episode}")
         val parsedInfo = withSeasonFromTitle(parsed).getOrElse { error -> return@indent lookupFailed(source, error) }
 
-        // Step 1: Find the candidate shows, best first, using the cache first.
-        val candidates = findOrFetchShows(parsedInfo.showTitle, parsedInfo.year, parsedInfo.bareShowYear)
-            .getOrElse { error -> return@indent lookupFailed(source, error) }
+        // Step 1: Find the candidate shows, best first, using the cache first. The show the path's ID names
+        // is the only one: it has no runner-ups to take a season it lacks.
+        val showById = findShowById(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }
+        val candidates = showById?.let { listOf(it) }
+            ?: findOrFetchShows(parsedInfo.showTitle, parsedInfo.year, parsedInfo.bareShowYear)
+                .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (candidates.isEmpty()) {
             status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
             stats.skipped++
@@ -270,8 +284,9 @@ class MediaProcessor(
         debug("Found show: ${candidates.first()}")
 
         // A release named after one season's own title (an anime arc, numbered from 1 with no
-        // season in the filenames) is that season, not season 1.
-        val showKey = "${parsedInfo.showTitle}:${parsedInfo.year}"
+        // season in the filenames) is that season, not season 1. A show found by its ID is keyed by
+        // the ID too, as two shows may share their cleaned titles.
+        val showKey = if (showById != null) parsedInfo.idShowKey() else "${parsedInfo.showTitle}:${parsedInfo.year}"
         val season = parsedInfo.season ?: titleSeasons[showKey]?.let { named ->
             if (titleSeasonNotices.add(showKey)) {
                 status("No season number in filenames; '${named.title}' is Season ${named.season} of ${candidates.first().describe()}")
@@ -290,7 +305,7 @@ class MediaProcessor(
         }
 
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
-        val seasonKey = "${parsedInfo.showTitle}:${parsedInfo.year}:$season"
+        val seasonKey = "$showKey:$season"
         val firstEpisodeMatch = findEpisode(candidates, seasonKey, season, parsedInfo.episode)
             .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (firstEpisodeMatch == null) {
@@ -469,6 +484,88 @@ class MediaProcessor(
         }
 
         return@indent Result.success(shows)
+    }
+
+    /**
+     * The movie the ID in the path names ([ParsedMediaInfo.mediaId]), with its external IDs; null when the path names
+     * none or it isn't this file's movie (see [rankById]), so the title is searched. Fails when the lookup failed.
+     */
+    context(_: LoggingContext)
+    private suspend fun findMovieById(parsed: ParsedMediaInfo.Movie): Result<CanonicalMedia.Movie?> = indent {
+        val id = parsed.mediaId ?: return@indent Result.success(null)
+        debug("Looking up the movie $id in the path")
+        val record = metadataService.findMovie(id).getOrElse { return@indent Result.failure(it) }
+        val movie = (rankById(id, record, "movie", parsed.title, parsed.year)?.media as? CanonicalMedia.Movie)?.withExternalIds()
+        if (movie != null) status("Matched movie by the ID in its path: ${movie.describe()}")
+        Result.success(movie)
+    }
+
+    /**
+     * The show the ID in the path names, with its external IDs, looked up once per ID, title and year; null as for
+     * [findMovieById]. The season its title names (an anime arc) is kept under [idShowKey], as [findOrFetchShows]
+     * keeps a searched show's. A failed lookup is not cached, so the next file of the show tries again.
+     */
+    context(_: LoggingContext)
+    private suspend fun findShowById(parsed: ParsedMediaInfo.Episode): Result<CanonicalMedia.TvShow?> = indent {
+        val id = parsed.mediaId ?: return@indent Result.success(null)
+        val cacheKey = parsed.idShowKey()
+        cache.getShows(cacheKey)?.let { return@indent Result.success(it.first()) }
+        if (cache.isShowFailed(cacheKey)) return@indent Result.success(null)
+
+        debug("Looking up the show $id in the path")
+        val record = metadataService.findShow(id).getOrElse { return@indent Result.failure(it) }
+        val match = rankById(id, record, "show", parsed.showTitle, parsed.year)
+        val show = (match?.media as? CanonicalMedia.TvShow)?.withExternalIds()
+        if (match == null || show == null) {
+            cache.markShowFailed(cacheKey)
+        } else {
+            titleSeasons[cacheKey] = match.titleSeason
+            if (match.namesUnplacedArc) unplacedArcTitles += cacheKey
+            cache.putShows(cacheKey, listOf(show))
+            status("Matched show by the ID in its path: ${show.describe()}")
+        }
+        Result.success(show)
+    }
+
+    /** The key of a show found by the ID in the path: the ID, with the title and year it was ranked for. */
+    private fun ParsedMediaInfo.Episode.idShowKey(): String = "id:$mediaId:$showTitle:$year"
+
+    /**
+     * [record], the [kind] the ID in the path names, ranked as a search result for the parsed title and year is (by
+     * every title it is known by, the year, the confidence minimum), so a tag that isn't this file's (a show's tag on a
+     * movie, a wrong one) gives way to the title search. A title named by its ID ("tmdb-1721501") has no title to rank:
+     * the ID holds when the record's title is one plexify names by its ID and its year doesn't contradict the name's.
+     * Null, with the reason reported, when the ID doesn't hold or names nothing (a merged or deleted record).
+     */
+    context(_: LoggingContext)
+    private fun rankById(id: MediaId, record: MediaSearchResult?, kind: String, parsedTitle: String, parsedYear: String?): RankedMatch? {
+        if (record == null) {
+            status("No $kind has the ID $id in the path; matching by title")
+            return null
+        }
+        val found = "'${record.title}'${record.year?.let { " ($it)" } ?: ""}"
+        if (!id.fromTitle) {
+            val confidence = record.allTitles.maxOf { calculateTitleConfidence(parsedTitle, it) }
+            val ranked = when (record) {
+                is MediaSearchResult.Movie -> record.copy(matchConfidence = confidence)
+                is MediaSearchResult.TvShow -> record.copy(matchConfidence = confidence)
+            }
+            return rankMatches(listOf(ranked), parsedTitle, parsedYear, reportMiss = false).firstOrNull() ?: run {
+                status("Warning: the ID $id in the path is the $kind $found, not '$parsedTitle'${parsedYear?.let { " ($it)" } ?: ""}; matching by title")
+                null
+            }
+        }
+        if (!isNamedById(record.title)) {
+            debug("'$id' is a title: the $kind $id is $found")
+            return null
+        }
+        val parsedY = parsedYear?.toIntOrNull()
+        val recordY = record.year?.toIntOrNull()
+        if (parsedY != null && recordY != null && yearScore(parsedY, recordY, isShow = record is MediaSearchResult.TvShow) < 0) {
+            status("Warning: the ID $id in the path is the $kind $found, not from $parsedY; matching by title")
+            return null
+        }
+        return RankedMatch(consolidate(listOf(record), parsedYear), titleSimilarity = 1.0, yearScore = null)
     }
 
     /**

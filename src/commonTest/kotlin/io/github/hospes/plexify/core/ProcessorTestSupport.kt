@@ -5,6 +5,7 @@ import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
+import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
@@ -23,6 +24,7 @@ import kotlin.random.Random
  * [episodeGroupsOf] gives a show's episode groups; the first [episodeGroupFailures] lookups fail.
  * [moviesByYear] answers the search with a year, empty for any other year; [yearSearchFailure] fails it.
  * [resultsByTitle] answers the general search for those titles instead of [results].
+ * A lookup by ID finds any of these results, or of [idRecords], by its TMDB ID or "tt" + TMDB ID; [idLookupFailure] fails it.
  */
 internal class FakeTmdb(
     private val results: List<MediaSearchResult>,
@@ -34,6 +36,8 @@ internal class FakeTmdb(
     private val moviesByYear: Map<String, List<MediaSearchResult>> = emptyMap(),
     private val yearSearchFailure: Throwable? = null,
     private val resultsByTitle: Map<String, List<MediaSearchResult>> = emptyMap(),
+    private val idRecords: List<MediaSearchResult> = emptyList(),
+    private val idLookupFailure: Throwable? = null,
 ) : MetadataProvider {
     override val id = "tmdb"
     override val supportedIds = setOf("tmdbid", "imdbid")
@@ -42,6 +46,7 @@ internal class FakeTmdb(
     val externalIdLookups = mutableListOf<String>()
     val yearSearches = mutableListOf<String>()
     val searchedTitles = mutableListOf<String>()
+    val idLookups = mutableListOf<String>()
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> {
         searchedTitles += title
@@ -53,6 +58,27 @@ internal class FakeTmdb(
         yearSearchFailure?.let { return Result.failure(it) }
         return Result.success(moviesByYear[year].orEmpty())
     }
+
+    override suspend fun movie(id: MediaId): Result<MediaSearchResult.Movie> =
+        lookUp<MediaSearchResult.Movie>(id).map { it.copy(imdbId = it.imdbIdFor(id), matchConfidence = 0.0) }
+
+    override suspend fun show(id: MediaId): Result<MediaSearchResult.TvShow> =
+        lookUp<MediaSearchResult.TvShow>(id).map { it.copy(imdbId = it.imdbIdFor(id), matchConfidence = 0.0) }
+
+    private inline fun <reified T : MediaSearchResult> lookUp(id: MediaId): Result<T> {
+        idLookups += id.toString()
+        idLookupFailure?.let { return Result.failure(it) }
+        val known = results + resultsByTitle.values.flatten() + moviesByYear.values.flatten() + idRecords
+        val found = known.filterIsInstance<T>().firstOrNull {
+            when (id.database) {
+                MediaId.Database.TMDB -> it.tmdbId == id.id
+                MediaId.Database.IMDB -> "tt${it.tmdbId}" == id.id
+            }
+        }
+        return found?.let { Result.success(it) } ?: Result.failure(MetadataNotFoundException("HTTP 404 looking up $id"))
+    }
+
+    private fun MediaSearchResult.imdbIdFor(id: MediaId) = id.id.takeIf { id.database == MediaId.Database.IMDB } ?: imdbId
 
     override suspend fun season(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> {
         val key = "${show.tmdbId}:$season"
@@ -105,8 +131,8 @@ internal class ProcessorRun<P : MetadataProvider>(val provider: P, val organizer
 }
 
 /**
- * Processes empty files with these names, from a fresh temporary directory (or a folder [dirName] in it),
- * with a fresh processor.
+ * Processes empty files with these names, which may lead through folders ("Show/Season 01/Show - S01E01.mkv"), from
+ * a fresh temporary directory (or a folder [dirName] in it), with a fresh processor.
  */
 internal suspend fun <P : MetadataProvider> runProcessor(
     provider: P,
@@ -114,6 +140,7 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     namingStrategy: NamingStrategy = NamingStrategy.Jellyfin,
     seasonOverride: Int? = null,
     yearOverride: String? = null,
+    titleOverride: String? = null,
     dirName: String? = null,
 ): ProcessorRun<P> {
     val organizer = RecordingOrganizer()
@@ -121,20 +148,26 @@ internal suspend fun <P : MetadataProvider> runProcessor(
         metadataService = MetadataService(listOf(provider), namingStrategy),
         fileOrganizer = organizer,
         cache = MetadataCache(),
+        titleOverride = titleOverride,
         seasonOverride = seasonOverride,
         yearOverride = yearOverride,
     )
     val root = Path(SystemTemporaryDirectory, "plexify-processor-test-${Random.nextLong().toULong()}")
     val dir = dirName?.let { Path(root, it) } ?: root
     SystemFileSystem.createDirectories(dir)
-    val files = fileNames.map { Path(dir, it) }
+    val files = fileNames.map { name -> name.split('/').fold(dir) { parent, segment -> Path(parent, segment) } }
+    // The folders of names in folders ("Show (2002) [tmdbid-1]/Season 01/Show - S01E01.mkv"), deepest first
+    val folders = files.flatMap { file -> generateSequence(file.parent) { it.parent }.takeWhile { it.toString().length > dir.toString().length } }
+        .distinctBy { it.toString() }.sortedByDescending { it.toString().length }
     try {
+        folders.forEach { SystemFileSystem.createDirectories(it) }
         files.forEach { SystemFileSystem.sink(it).buffered().close() }
         with(LoggingContext()) {
             processor.process(dir, Path(root, "library"), OperationMode.HARDLINK, isTestMode = true)
         }
     } finally {
         files.forEach { SystemFileSystem.delete(it, mustExist = false) }
+        folders.forEach { SystemFileSystem.delete(it, mustExist = false) }
         if (dir != root) SystemFileSystem.delete(dir, mustExist = false)
         SystemFileSystem.delete(root, mustExist = false)
     }

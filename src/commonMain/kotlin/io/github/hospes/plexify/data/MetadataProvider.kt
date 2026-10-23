@@ -3,6 +3,7 @@ package io.github.hospes.plexify.data
 import io.github.hospes.plexify.core.levenshtein
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
+import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlin.math.max
 
@@ -18,6 +19,17 @@ interface MetadataProvider {
      * already filters by year returns nothing.
      */
     suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = Result.success(emptyList())
+
+    /**
+     * The movie [id] names, with every title it is known by and its IMDb ID when the provider has them; its
+     * [MediaSearchResult.matchConfidence] is 0. Fails with [MetadataNotFoundException] when there is no such movie.
+     */
+    suspend fun movie(id: MediaId): Result<MediaSearchResult.Movie> =
+        Result.failure(UnsupportedOperationException("movie() not supported by provider '${this.id}'"))
+
+    /** The show [id] names, as [movie] does a movie, with the titles its seasons have of their own. */
+    suspend fun show(id: MediaId): Result<MediaSearchResult.TvShow> =
+        Result.failure(UnsupportedOperationException("show() not supported by provider '${this.id}'"))
 
     suspend fun episode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode> =
         Result.failure(UnsupportedOperationException("episode() not supported by provider '$id'"))

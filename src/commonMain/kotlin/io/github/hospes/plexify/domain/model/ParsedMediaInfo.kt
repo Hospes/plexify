@@ -7,6 +7,9 @@ sealed interface ParsedMediaInfo {
     val releaseGroup: String?
     val edition: String?
 
+    /** The movie or show ID the path names, which picks the match instead of a title search when it holds. */
+    val mediaId: MediaId?
+
     data class Movie(
         val title: String,
         val year: String?,
@@ -15,6 +18,7 @@ sealed interface ParsedMediaInfo {
         override val hdr: String? = null,
         override val releaseGroup: String? = null,
         override val edition: String? = null,
+        override val mediaId: MediaId? = null,
     ) : ParsedMediaInfo
 
     data class Episode(
@@ -40,6 +44,7 @@ sealed interface ParsedMediaInfo {
          * No. 8"), so it is a second reading, not the parse.
          */
         val numberedSeason: NumberedSeason? = null,
+        override val mediaId: MediaId? = null,
     ) : ParsedMediaInfo
 
     /** A show title without its closing number, and that number as a season. */
@@ -47,8 +52,22 @@ sealed interface ParsedMediaInfo {
 }
 
 /**
+ * A movie or show ID named in a path: an ID tag (`[tmdbid-8864]`, `{imdb-tt0361140}`), or the ID plexify names a
+ * title by when it has nothing usable in a name (`tmdb-1721501 (2026)`). [fromTitle] marks an ID found where the
+ * name's title is such an ID: there is no title to check the record by, so the ID holds only when the record's title
+ * is one plexify would name so (a release may be titled like that).
+ */
+data class MediaId(val database: Database, val id: String, val fromTitle: Boolean = false) {
+    enum class Database { TMDB, IMDB }
+
+    /** As plexify names a title by it: "tmdb-8864", "imdb-tt0361140". */
+    override fun toString(): String = "${database.name.lowercase()}-$id"
+}
+
+/**
  * Applies user-provided CLI overrides on top of what was parsed from the filename.
  * Season and episode-offset overrides only make sense for episodes and are ignored for movies.
+ * A title or year override drops the ID the path names: the search runs as the user set it.
  */
 fun ParsedMediaInfo.withOverrides(
     title: String?,
@@ -59,6 +78,7 @@ fun ParsedMediaInfo.withOverrides(
     is ParsedMediaInfo.Movie -> copy(
         title = title ?: this.title,
         year = year ?: this.year,
+        mediaId = mediaId.takeIf { title == null && year == null },
     )
     is ParsedMediaInfo.Episode -> copy(
         showTitle = title ?: showTitle,
@@ -66,5 +86,6 @@ fun ParsedMediaInfo.withOverrides(
         episode = episode + (episodeOffset ?: 0),
         lastEpisode = lastEpisode?.plus(episodeOffset ?: 0),
         year = year ?: this.year,
+        mediaId = mediaId.takeIf { title == null && year == null },
     )
 }

@@ -13,12 +13,16 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbExternalIdsDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbFindResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbMovieDetailsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMovieSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
+import io.github.hospes.plexify.data.tmdb.dto.TmdbTvDetailsDto
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
+import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.ktor.client.*
@@ -181,6 +185,49 @@ class TmdbProvider(
             }
         }
     }
+
+    // One request brings the record with what a search result gets in extra calls: its alternative titles (and the
+    // seasons they name) and its IMDb ID. An IMDb ID is first found among TMDB's movies or shows.
+    override suspend fun movie(id: MediaId): Result<MediaSearchResult.Movie> = tmdbCatching {
+        val tmdbId = when (id.database) {
+            MediaId.Database.TMDB -> id.id
+            MediaId.Database.IMDB -> find(id).movies.firstOrNull()?.id ?: throw MetadataNotFoundException("No movie found for $id")
+        }
+        val dto = get("movie/$tmdbId", { parameter("append_to_response", "alternative_titles") }) { "looking up movie $id" }
+            .body<TmdbMovieDetailsDto>()
+        MediaSearchResult.Movie(
+            title = dto.title,
+            year = dto.releaseDate?.substringBefore("-")?.ifBlank { null },
+            imdbId = dto.imdbId?.ifBlank { null },
+            tmdbId = dto.id,
+            provider = "TMDb",
+            originalTitle = dto.originalTitle,
+            alternativeTitles = dto.alternativeTitles.all.map { it.title },
+        )
+    }
+
+    override suspend fun show(id: MediaId): Result<MediaSearchResult.TvShow> = tmdbCatching {
+        val tmdbId = when (id.database) {
+            MediaId.Database.TMDB -> id.id
+            MediaId.Database.IMDB -> find(id).shows.firstOrNull()?.id ?: throw MetadataNotFoundException("No show found for $id")
+        }
+        val dto = get("tv/$tmdbId", { parameter("append_to_response", "alternative_titles,external_ids") }) { "looking up show $id" }
+            .body<TmdbTvDetailsDto>()
+        MediaSearchResult.TvShow(
+            title = dto.title,
+            year = dto.firstAirDate?.substringBefore("-")?.ifBlank { null },
+            imdbId = dto.externalIds.imdbId?.ifBlank { null },
+            tmdbId = dto.id,
+            provider = "TMDb",
+            originalTitle = dto.originalTitle,
+            alternativeTitles = dto.alternativeTitles.all.map { it.title },
+            // The show's own titles name it as a whole, whatever season a tag gives them.
+            seasonTitles = dto.alternativeTitles.seasonTitles() - setOfNotNull(dto.title, dto.originalTitle),
+        )
+    }
+
+    private suspend fun find(id: MediaId): TmdbFindResponseDto =
+        get("find/${id.id}", { parameter("external_source", "imdb_id") }) { "looking up $id" }.body()
 
     override suspend fun episode(
         show: CanonicalMedia.TvShow,
