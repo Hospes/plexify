@@ -248,6 +248,130 @@ class PathFormatterTest {
         )
     }
 
+    // --- Leading dots ---
+
+    private val dotHack = CanonicalMedia.TvShow(title = ".hack//SIGN", year = 2002, imdbId = "tt0000002", tmdbId = "2")
+    private val parsedDotHack = ParsedMediaInfo.Episode(showTitle = "hack sign", season = 1, episode = 1, year = null, resolution = "1080p")
+    private val dotHackSource = Path(".hack SIGN - S01E01 [1080p].mkv")
+
+    private fun NamingStrategy.renderDotHack(title: String = "Role Play"): List<String> {
+        val episode = CanonicalMedia.Episode(dotHack, season = 1, episode = 1, title = title)
+        val path = formatter.formatEpisodePath(tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate, episode, parsedDotHack, dotHackSource)
+        return generateSequence(path) { it.parent }.map { it.name }.toList().reversed()
+    }
+
+    private val justice = CanonicalMedia.Movie(title = "...And Justice for All", year = 1979, imdbId = "tt0078718", tmdbId = "17443")
+
+    private fun NamingStrategy.renderJustice(media: CanonicalMedia.Movie = justice): List<String> {
+        val path = formatter.formatMoviePath(movieFolderTemplate, movieFileTemplate, media, parsedMovie, source)
+        return generateSequence(path) { it.parent }.map { it.name }.toList().reversed()
+    }
+
+    @Test
+    fun `trims the leading dot of a show title from the folder and the file`() {
+        assertEquals(
+            listOf("hack-SIGN (2002) [tmdbid-2]", "Season 01", "hack-SIGN (2002) - S01E01 - Role Play - [1080p].mkv"),
+            NamingStrategy.Jellyfin.renderDotHack(),
+        )
+        assertEquals(
+            listOf("hack-SIGN (2002) {imdb-tt0000002}", "Season 01", "hack-SIGN (2002) - S01E01 - Role Play - [1080p].mkv"),
+            NamingStrategy.Plex.renderDotHack(),
+        )
+    }
+
+    @Test
+    fun `trims the leading dots of a movie title from the folder and the file`() {
+        assertEquals(
+            listOf("And Justice for All (1979) [tmdbid-17443]", "And Justice for All (1979) [tmdbid-17443].mkv"),
+            NamingStrategy.Jellyfin.renderJustice(),
+        )
+        assertEquals(
+            listOf("And Justice for All (1979) {imdb-tt0078718}", "And Justice for All (1979).mkv"),
+            NamingStrategy.Plex.renderJustice(),
+        )
+        assertEquals(
+            listOf("And Justice for All {imdb-tt0078718}", "And Justice for All.mkv"),
+            NamingStrategy.Plex.renderJustice(justice.copy(year = null)),
+        )
+    }
+
+    @Test
+    fun `a title made only of dots leaves no empty or hidden name beside a year`() {
+        for (strategy in listOf(NamingStrategy.Jellyfin, NamingStrategy.Plex)) {
+            for (segment in strategy.renderJustice(justice.copy(title = "..."))) {
+                assertTrue(segment.isNotEmpty() && !segment.startsWith('.'), "${strategy.name}: '$segment'")
+            }
+        }
+    }
+
+    @Test
+    fun `trims spaces left behind by the leading dots`() {
+        assertEquals("Hidden Title", cleanMovieTitle(". . . Hidden Title"))
+    }
+
+    @Test
+    fun `keeps dots inside a name and a dot that starts an episode title`() {
+        assertEquals(
+            listOf("hack-SIGN (2002) [tmdbid-2]", "Season 01", "hack-SIGN (2002) - S01E01 - .hack - [1080p].mkv"),
+            NamingStrategy.Jellyfin.renderDotHack(title = ".hack"),
+        )
+    }
+
+    @Test
+    fun `no folder or file name starts with a dot`() {
+        for (strategy in listOf(NamingStrategy.Jellyfin, NamingStrategy.Plex)) {
+            for (segment in strategy.renderDotHack() + strategy.renderJustice()) {
+                assertTrue(!segment.startsWith('.'), "${strategy.name}: $segment")
+            }
+        }
+    }
+
+    @Test
+    fun `a name without its leading dot parses back to the same show`() {
+        for (strategy in listOf(NamingStrategy.Jellyfin, NamingStrategy.Plex)) {
+            val (folder, season, file) = strategy.renderDotHack()
+            val reparsed = MediaFilenameParser.parse(file, season) as ParsedMediaInfo.Episode
+
+            assertEquals("hack sign", reparsed.showTitle, file)
+            assertEquals("2002", reparsed.year, file)
+            assertEquals(1, reparsed.season, file)
+            assertEquals(1, reparsed.episode, file)
+            assertEquals("1080p", reparsed.resolution, file)
+            assertEquals(file, strategy.renderDotHack().last(), "re-rendered from $file")
+            assertEquals("hack sign", (MediaFilenameParser.parse(folder) as ParsedMediaInfo.Movie).title, folder)
+        }
+    }
+
+    @Test
+    fun `a movie name without its leading dots parses back to the same movie`() {
+        for (strategy in listOf(NamingStrategy.Jellyfin, NamingStrategy.Plex)) {
+            for (name in strategy.renderJustice()) {
+                val reparsed = MediaFilenameParser.parse(name) as ParsedMediaInfo.Movie
+
+                assertEquals("and justice for all", reparsed.title, name)
+                assertEquals("1979", reparsed.year, name)
+            }
+        }
+    }
+
+    @Test
+    fun `names without a leading dot are unchanged`() {
+        val names = listOf(
+            "S.W.A.T." to "S.W.A.T. (2017) [tmdbid-1]/S.W.A.T. (2017) [tmdbid-1].mkv",
+            "What If..." to "What If... (2017) [tmdbid-1]/What If... (2017) [tmdbid-1].mkv",
+            "Mr. Robot" to "Mr. Robot (2017) [tmdbid-1]/Mr. Robot (2017) [tmdbid-1].mkv",
+            "Fate/stay night: Heaven's Feel I. presage flower" to
+                "Fate-stay night Heaven's Feel I. presage flower (2017) [tmdbid-1]/Fate-stay night Heaven's Feel I. presage flower (2017) [tmdbid-1].mkv",
+            "M*A*S*H" to "MASH (2017) [tmdbid-1]/MASH (2017) [tmdbid-1].mkv",
+            "9-1-1" to "9-1-1 (2017) [tmdbid-1]/9-1-1 (2017) [tmdbid-1].mkv",
+            "Re:ZERO" to "Re ZERO (2017) [tmdbid-1]/Re ZERO (2017) [tmdbid-1].mkv",
+        )
+        for ((title, expected) in names) {
+            val media = CanonicalMedia.Movie(title = title, year = 2017, tmdbId = "1")
+            assertEquals(expected.split('/'), NamingStrategy.Jellyfin.renderJustice(media))
+        }
+    }
+
     // --- Names over 255 bytes ---
 
     private val show = CanonicalMedia.TvShow(title = "Show", year = 2020, tmdbId = "3")
@@ -377,6 +501,16 @@ class PathFormatterTest {
         assertEquals("The naming template renders an empty file name", error.message)
     }
 
+    @Test
+    fun `fails with a reason when only the extension is left of the file name`() {
+        // ".mkv" without the guard would be trimmed to "mkv", a file without an extension. The built-in templates
+        // never get here (a title with nothing usable is named by its ID), so a template of its own reaches it.
+        val error = assertFailsWith<IllegalArgumentException> {
+            renderMovie("Movies/{year}.{ext}", movie(null))
+        }
+        assertEquals("The naming template renders an empty file name", error.message)
+    }
+
     // --- Characters invalid in file names ---
 
     private fun movieNamed(title: String) = CanonicalMedia.Movie(title = title, year = 2011, tmdbId = "1")
@@ -400,7 +534,7 @@ class PathFormatterTest {
 
     @Test
     fun `slashes in a row become one hyphen`() {
-        assertEquals(".hack-SIGN", cleanMovieTitle(".hack//SIGN"))
+        assertEquals("hack-SIGN", cleanMovieTitle(".hack//SIGN"))
         assertEquals("a-b", cleanEpisodeTitle("""a/\b"""))
     }
 
