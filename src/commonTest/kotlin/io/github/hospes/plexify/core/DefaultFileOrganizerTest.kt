@@ -6,6 +6,7 @@ import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.io.IOException
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -13,6 +14,7 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.files.SystemTemporaryDirectory
 import kotlinx.io.readString
 import kotlinx.io.writeString
+import platform.posix.getenv
 import kotlin.random.Random
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -35,7 +37,10 @@ class DefaultFileOrganizerTest {
     private val library = Path(root, "library")
 
     @AfterTest
-    fun cleanUp() = deleteRecursively(root)
+    fun cleanUp() {
+        deleteRecursively(root)
+        otherVolumeLibraries.filter { PlatformFileSystem.kind(it) != null }.forEach { deleteRecursively(it) }
+    }
 
     @Test
     fun `hardlinks a new file`() {
@@ -240,6 +245,47 @@ class DefaultFileOrganizerTest {
         val cause = error?.cause?.message
         assertTrue(cause != null && cause.isNotBlank(), "expected a platform error, got $error")
         assertEquals("Hardlink failed: $cause", error.message)
+    }
+
+    @Test
+    fun `test mode fails a file for a library on another volume as the real run does`() {
+        val otherLibrary = libraryOnAnotherVolume() ?: return
+
+        for (mode in OperationMode.entries) {
+            val source = file(Path(root, "Inception.2010.1080p.mkv"), "movie")
+
+            val dryRun = organizer().organize(source, otherLibrary, movie, parsed, mode, isTestMode = true).exceptionOrNull()
+            val run = organizer().organize(source, otherLibrary, movie, parsed, mode, isTestMode = false).exceptionOrNull()
+
+            assertNotNull(run, "mode $mode: organized across volumes")
+            assertEquals(run.message, dryRun?.message, "mode $mode: test mode disagrees with the real run")
+            assertTrue(run.message?.contains("another volume") == true, "mode $mode: got $run")
+            assertEquals("movie", read(source), "mode $mode")
+            assertNull(PlatformFileSystem.kind(otherLibrary), "mode $mode: created folders in the library")
+        }
+    }
+
+    @Test
+    fun `checks the volume of the file a symlink points at for a hardlink and of the link for a move`() {
+        val elsewhere = Path(root, "elsewhere")
+        val real = file(Path(elsewhere, "Inception.2010.1080p.mkv"), "movie")
+        val link = symlink(Path(root, "links", real.name), absolute(real)) ?: return
+        PlatformFileSystem.createDirectories(library)
+        // The library and the folder the link points into read as another volume than the link's own folder.
+        val fileSystem = object : MediaFileSystem by PlatformFileSystem {
+            override fun identity(path: Path): FileIdentity? = PlatformFileSystem.identity(path)?.let { identity ->
+                val onOtherVolume = generateSequence(path) { it.parent }.any { it.name == library.name || it.name == elsewhere.name }
+                if (onOtherVolume) identity.copy(volume = identity.volume + 1u) else identity
+            }
+        }
+        fun organize(mode: OperationMode) = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin, fileSystem = fileSystem)
+            .organize(link, library, movie, parsed, mode, isTestMode = true)
+
+        val hardlink = organize(OperationMode.HARDLINK)
+        val move = organize(OperationMode.MOVE)
+
+        assertIs<OrganizeOutcome.Organized>(hardlink.getOrThrow())
+        assertTrue(move.exceptionOrNull()?.message?.contains("another volume") == true, "got $move")
     }
 
     @Test
@@ -587,6 +633,27 @@ class DefaultFileOrganizerTest {
         println("Skipped: this system doesn't allow creating symlinks")
         return null
     }
+
+    /**
+     * A library folder (not created) on another volume than [root], or null where there is none, and the test is
+     * skipped; on CI it fails instead. The Windows runners keep the temporary directory on C: and the project on D:;
+     * /dev/shm is a tmpfs on Linux.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun libraryOnAnotherVolume(): Path? {
+        val volume = PlatformFileSystem.identity(root)?.volume
+        val folder = listOf(Path("build"), Path("/dev/shm")).firstOrNull {
+            PlatformFileSystem.kind(it) == FileKind.DIRECTORY && PlatformFileSystem.identity(it)?.volume != volume
+        }
+        if (folder == null) {
+            check(getenv("CI") == null) { "No folder on another volume than '$root' on CI" }
+            println("Skipped: no folder on another volume than '$root'")
+            return null
+        }
+        return Path(folder, "plexify-organizer-test-${Random.nextLong().toULong()}").also { otherVolumeLibraries += it }
+    }
+
+    private val otherVolumeLibraries = mutableListOf<Path>()
 
     /** [path] as an absolute path. [root] is relative on Linux when TMPDIR is unset, as on the CI runners. */
     private fun absolute(path: Path): String = SystemFileSystem.resolve(path).toString()
