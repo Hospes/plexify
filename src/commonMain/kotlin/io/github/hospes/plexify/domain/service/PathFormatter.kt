@@ -76,6 +76,9 @@ class PathFormatter {
     private fun formatSegment(template: String, placeholders: Map<String, String?>): String {
         val uses = placeholderRegex.findAll(template).groupingBy { it.groupValues[1].lowercase() }.eachCount()
         var segment = fitSegment(template, placeholders, uses)
+        // Nothing before the extension (".mkv", left as "mkv" by finishSegment): the name is empty, not "mkv". Only a
+        // defense: the built-in templates always put a title there, and cleanTitle() never leaves it empty.
+        if (template.endsWith(".{ext}", ignoreCase = true) && segment == placeholders["ext"]) return ""
         val versionWithoutGroup = placeholders[VERSION_WITHOUT_GROUP]
         if (segment.utf8Size() > MAX_SEGMENT_BYTES && "version" in uses && versionWithoutGroup != placeholders["version"]) {
             segment = fitSegment(template, placeholders + ("version" to versionWithoutGroup), uses)
@@ -104,9 +107,11 @@ class PathFormatter {
 
     // 5. Collapse repeated spaces and trim the ends. Windows can't keep a name that ends in a dot or a space: it drops
     // them from some segments of a path but not others, so the folder created and the path used for the file differ.
-    // They are trimmed on every platform, so the library has the same names on Linux and Windows.
+    // A name that starts with a dot is hidden on Linux and macOS, and Plex and Jellyfin skip hidden files and folders,
+    // so leading dots go too (".hack//SIGN" -> "hack-SIGN", "...And Justice for All" -> "And Justice for All").
+    // Both are trimmed on every platform, so the library has the same names on Linux and Windows.
     private fun finishSegment(segment: String): String =
-        segment.replace(Regex("""\s{2,}"""), " ").trim().trimEnd('.', ' ')
+        segment.replace(Regex("""\s{2,}"""), " ").trim().trimEnd('.', ' ').trimStart { it == '.' || it.isWhitespace() }
 
     /**
      * [value] cut to at most [maxBytes] in UTF-8, at a word boundary if one is close, and marked with an ellipsis. With

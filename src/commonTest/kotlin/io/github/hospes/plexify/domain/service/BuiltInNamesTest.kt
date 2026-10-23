@@ -144,7 +144,7 @@ class BuiltInNamesTest {
             Plex | Avatar The Way of Water (2022) {imdb-tt1375666}/Avatar The Way of Water (2022).mkv
             Plex | MASH Pilot Part 1-2 (1972) {imdb-tt1375666}/MASH Pilot Part 1-2 (1972).mkv
             Plex | Fate-Zero (2011) {imdb-tt1375666}/Fate-Zero (2011).mkv
-            Plex | .hack-SIGN (2002) {imdb-tt1375666}/.hack-SIGN (2002).mkv
+            Plex | hack-SIGN (2002) {imdb-tt1375666}/hack-SIGN (2002).mkv
             Plex | What If... (1999) {imdb-tt1375666}/What If... (1999).mkv
             Plex | Re ZERO Starting Life (2016) {imdb-tt1375666}/Re ZERO Starting Life (2016).mkv
             Plex | tmdb-27205 (2010) {imdb-tt1375666}/tmdb-27205 (2010).mkv
@@ -182,7 +182,7 @@ class BuiltInNamesTest {
             Jellyfin | Avatar The Way of Water (2022) [tmdbid-27205]/Avatar The Way of Water (2022) [tmdbid-27205].mkv
             Jellyfin | MASH Pilot Part 1-2 (1972) [tmdbid-27205]/MASH Pilot Part 1-2 (1972) [tmdbid-27205].mkv
             Jellyfin | Fate-Zero (2011) [tmdbid-27205]/Fate-Zero (2011) [tmdbid-27205].mkv
-            Jellyfin | .hack-SIGN (2002) [tmdbid-27205]/.hack-SIGN (2002) [tmdbid-27205].mkv
+            Jellyfin | hack-SIGN (2002) [tmdbid-27205]/hack-SIGN (2002) [tmdbid-27205].mkv
             Jellyfin | What If... (1999) [tmdbid-27205]/What If... (1999) [tmdbid-27205].mkv
             Jellyfin | Re ZERO Starting Life (2016) [tmdbid-27205]/Re ZERO Starting Life (2016) [tmdbid-27205].mkv
             Jellyfin | tmdb-27205 (2010) [tmdbid-27205]/tmdb-27205 (2010) [tmdbid-27205].mkv
