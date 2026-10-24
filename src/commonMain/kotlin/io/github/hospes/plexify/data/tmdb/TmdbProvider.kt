@@ -5,7 +5,6 @@ import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.data.MetadataUnreachableException
-import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
 import io.github.hospes.plexify.data.tmdb.dto.TmdbAlternativeTitlesDto
@@ -20,6 +19,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbTvDetailsDto
 import io.github.hospes.plexify.domain.matching.MatchScoring
+import io.github.hospes.plexify.domain.matching.calculateTitleConfidence
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaId

@@ -4,7 +4,6 @@ import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.core.yearScore
 import io.github.hospes.plexify.data.MetadataCache
-import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.PathFormatter
