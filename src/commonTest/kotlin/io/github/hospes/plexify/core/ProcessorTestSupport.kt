@@ -114,7 +114,8 @@ internal class FakeTmdb(
     }
 }
 
-internal class RecordingOrganizer : FileOrganizer {
+/** Records the media each file is filed as. With a [delegate], that organizer decides the outcome (and its path). */
+internal class RecordingOrganizer(private val delegate: FileOrganizer? = null) : FileOrganizer {
     val organized = mutableMapOf<String, CanonicalMedia>()
 
     override fun organize(
@@ -126,11 +127,21 @@ internal class RecordingOrganizer : FileOrganizer {
         isTestMode: Boolean,
     ): Result<OrganizeOutcome> {
         organized[sourceFile.name] = media
-        return Result.success(OrganizeOutcome.Organized(destinationRoot))
+        return delegate?.organize(sourceFile, destinationRoot, media, parsedInfo, mode, isTestMode)
+            ?: Result.success(OrganizeOutcome.Organized(destinationRoot))
     }
 }
 
-internal class ProcessorRun<P : MetadataProvider>(val provider: P, val organizer: RecordingOrganizer, val stats: MediaProcessor.Stats) {
+/**
+ * [output] is every line the processor printed, with the run's temporary folders as `<source>` and `<library>`, so it
+ * reads the same on every platform and run.
+ */
+internal class ProcessorRun<P : MetadataProvider>(
+    val provider: P,
+    val organizer: RecordingOrganizer,
+    val stats: MediaProcessor.Stats,
+    val output: List<String>,
+) {
     fun showOf(fileName: String): String? = episodeOf(fileName)?.show?.tmdbId
 
     fun movieOf(fileName: String): String? = (organizer.organized[fileName] as? CanonicalMedia.Movie)?.tmdbId
@@ -140,7 +151,8 @@ internal class ProcessorRun<P : MetadataProvider>(val provider: P, val organizer
 
 /**
  * Processes empty files with these names, which may lead through folders ("Show/Season 01/Show - S01E01.mkv"), from
- * a fresh temporary directory (or a folder [dirName] in it), with a fresh processor.
+ * a fresh temporary directory (or a folder [dirName] in it), with a fresh processor. Its output is captured, at the
+ * [verbose] level, into [ProcessorRun.output]. Pass [organizer] to file through a real one (see [RecordingOrganizer]).
  */
 internal suspend fun <P : MetadataProvider> runProcessor(
     provider: P,
@@ -150,8 +162,9 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     yearOverride: String? = null,
     titleOverride: String? = null,
     dirName: String? = null,
+    verbose: Boolean = false,
+    organizer: RecordingOrganizer = RecordingOrganizer(),
 ): ProcessorRun<P> {
-    val organizer = RecordingOrganizer()
     val processor = MediaProcessor(
         metadataService = MetadataService(listOf(provider), namingStrategy),
         fileOrganizer = organizer,
@@ -162,6 +175,8 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     )
     val root = Path(SystemTemporaryDirectory, "plexify-processor-test-${Random.nextLong().toULong()}")
     val dir = dirName?.let { Path(root, it) } ?: root
+    val library = Path(root, "library")
+    val output = mutableListOf<String>()
     SystemFileSystem.createDirectories(dir)
     val files = fileNames.map { name -> name.split('/').fold(dir) { parent, segment -> Path(parent, segment) } }
     // The folders of names in folders ("Show (2002) [tmdbid-1]/Season 01/Show - S01E01.mkv"), deepest first
@@ -170,8 +185,8 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     try {
         folders.forEach { SystemFileSystem.createDirectories(it) }
         files.forEach { SystemFileSystem.sink(it).buffered().close() }
-        with(LoggingContext()) {
-            processor.process(dir, Path(root, "library"), OperationMode.HARDLINK, isTestMode = true)
+        with(LoggingContext(verbose = verbose, output = { output += it })) {
+            processor.process(dir, library, OperationMode.HARDLINK, isTestMode = true)
         }
     } finally {
         files.forEach { SystemFileSystem.delete(it, mustExist = false) }
@@ -179,7 +194,11 @@ internal suspend fun <P : MetadataProvider> runProcessor(
         if (dir != root) SystemFileSystem.delete(dir, mustExist = false)
         SystemFileSystem.delete(root, mustExist = false)
     }
-    return ProcessorRun(provider, organizer, processor.stats)
+    // The library first: the source folder contains it, or is it (dirName = "library").
+    val normalized = output.map { line ->
+        line.replace(library.toString(), "<library>").replace(dir.toString(), "<source>")
+    }
+    return ProcessorRun(provider, organizer, processor.stats, normalized)
 }
 
 /** Processes these source paths as given, with a fresh processor and a provider that finds nothing. */
