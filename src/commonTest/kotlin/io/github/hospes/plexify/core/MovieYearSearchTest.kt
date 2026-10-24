@@ -1,7 +1,6 @@
 package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.data.MetadataTimeoutException
-import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,13 +10,10 @@ import kotlin.test.assertNull
 // 1974 and 2012 films, which only the search with the year returns.
 class MovieYearSearchTest {
 
-    private fun movie(title: String, year: String, tmdbId: String) =
-        MediaSearchResult.Movie(title = title, year = year, tmdbId = tmdbId, provider = "TMDb", matchConfidence = 100.0)
-
-    private val dracula = listOf(movie("Dracula", "1931", "138"), movie("Dracula", "2025", "1246049"))
+    private val dracula = listOf(movieResult("Dracula", "1931", "138"), movieResult("Dracula", "2025", "1246049"))
     private val dracula1974 = listOf(
-        movie("Countess Dracula", "1971", "39043").copy(matchConfidence = 50.0),
-        movie("Dracula", "1974", "86889"),
+        movieResult("Countess Dracula", "1971", "39043", matchConfidence = 50.0),
+        movieResult("Dracula", "1974", "86889"),
     )
 
     @Test
@@ -31,8 +27,8 @@ class MovieYearSearchTest {
     @Test
     fun `the film from the filename year beats one a year off`() = runTest {
         val provider = FakeTmdb(
-            results = listOf(movie("Pinocchio", "2013", "246790")),
-            moviesByYear = mapOf("2012" to listOf(movie("Pinocchio", "1940", "10895"), movie("Pinocchio", "2012", "136619"))),
+            results = listOf(movieResult("Pinocchio", "2013", "246790")),
+            moviesByYear = mapOf("2012" to listOf(movieResult("Pinocchio", "1940", "10895"), movieResult("Pinocchio", "2012", "136619"))),
         )
 
         val run = runProcessor(provider, "Pinocchio.2012.1080p.BluRay.mkv")
@@ -42,7 +38,7 @@ class MovieYearSearchTest {
 
     @Test
     fun `no second search when the first results have the film from that year`() = runTest {
-        val run = runProcessor(FakeTmdb(listOf(movie("Hamlet", "1996", "10549"), movie("Hamlet", "1990", "10264"))), "Hamlet.1990.1080p.mkv")
+        val run = runProcessor(FakeTmdb(listOf(movieResult("Hamlet", "1996", "10549"), movieResult("Hamlet", "1990", "10264"))), "Hamlet.1990.1080p.mkv")
 
         assertEquals("10264", run.movieOf("Hamlet.1990.1080p.mkv"))
         assertEquals(emptyList(), run.provider.yearSearches)
@@ -50,7 +46,7 @@ class MovieYearSearchTest {
 
     @Test
     fun `no second search without a year`() = runTest {
-        val run = runProcessor(FakeTmdb(listOf(movie("Hamlet", "1996", "10549"))), "Hamlet.1080p.mkv")
+        val run = runProcessor(FakeTmdb(listOf(movieResult("Hamlet", "1996", "10549"))), "Hamlet.1080p.mkv")
 
         assertEquals("10549", run.movieOf("Hamlet.1080p.mkv"))
         assertEquals(emptyList(), run.provider.yearSearches)
@@ -58,7 +54,7 @@ class MovieYearSearchTest {
 
     @Test
     fun `a film of the same title from another year is skipped when no search finds that year`() = runTest {
-        val provider = FakeTmdb(listOf(movie("Blade Runner", "1982", "78")))
+        val provider = FakeTmdb(listOf(movieResult("Blade Runner", "1982", "78")))
 
         val run = runProcessor(provider, "Blade.Runner.1980.1080p.mkv")
 
@@ -72,7 +68,7 @@ class MovieYearSearchTest {
     @Test
     fun `a failed year search keeps the match from the first results`() = runTest {
         val provider = FakeTmdb(
-            results = listOf(movie("Pinocchio", "2013", "246790")),
+            results = listOf(movieResult("Pinocchio", "2013", "246790")),
             yearSearchFailure = MetadataTimeoutException("TMDB request timed out searching"),
         )
 
@@ -95,11 +91,11 @@ class MovieYearSearchTest {
     // "Wonder.Woman.1984.1080p": the 1984 is the title's, and no Wonder Woman film is from 1984. The
     // year-less "WONDER WOMAN 1944" resembles "wonder woman" enough to pass on its own.
     private val wonderWoman = listOf(
-        movie("Wonder Woman", "2017", "297762"),
-        movie("Wonder Woman", "1974", "161620"),
-        MediaSearchResult.Movie(title = "WONDER WOMAN 1944", year = null, tmdbId = "1782318", provider = "TMDb", matchConfidence = 73.3),
+        movieResult("Wonder Woman", "2017", "297762"),
+        movieResult("Wonder Woman", "1974", "161620"),
+        movieResult("WONDER WOMAN 1944", null, "1782318", matchConfidence = 73.3),
     )
-    private val wonderWoman1984 = listOf(movie("Wonder Woman 1984", "2020", "464052"))
+    private val wonderWoman1984 = listOf(movieResult("Wonder Woman 1984", "2020", "464052"))
 
     @Test
     fun `a year that belongs to the title is matched as part of it`() = runTest {
@@ -113,7 +109,7 @@ class MovieYearSearchTest {
 
     @Test
     fun `the title is not searched with the year when a film from that year matches`() = runTest {
-        val provider = FakeTmdb(listOf(movie("Alien", "1979", "348")), resultsByTitle = mapOf("alien 1979" to listOf(movie("Alien 1979", "2020", "1"))))
+        val provider = FakeTmdb(listOf(movieResult("Alien", "1979", "348")), resultsByTitle = mapOf("alien 1979" to listOf(movieResult("Alien 1979", "2020", "1"))))
 
         val run = runProcessor(provider, "Alien.1979.1080p.mkv")
 
@@ -125,8 +121,8 @@ class MovieYearSearchTest {
     fun `the title reading does not replace a better match`() = runTest {
         // Pinocchio (2013) is a year off but matches far better than an unrelated "Pinocchio 2012".
         val provider = FakeTmdb(
-            results = listOf(movie("Pinocchio", "2013", "246790")),
-            resultsByTitle = mapOf("pinocchio 2012" to listOf(movie("Pinocchio 2012 Behind the Scenes", "2013", "2").copy(matchConfidence = 50.0))),
+            results = listOf(movieResult("Pinocchio", "2013", "246790")),
+            resultsByTitle = mapOf("pinocchio 2012" to listOf(movieResult("Pinocchio 2012 Behind the Scenes", "2013", "2", matchConfidence = 50.0))),
         )
 
         val run = runProcessor(provider, "Pinocchio.2012.1080p.BluRay.mkv")

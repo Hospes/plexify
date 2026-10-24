@@ -6,10 +6,7 @@ import io.github.hospes.plexify.data.MetadataUnreachableException
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -20,21 +17,14 @@ import kotlin.time.TimeSource
 // Real time, as in TmdbTimeoutTest. No retry after a timeout here, so each request costs one timeout.
 class TmdbUnreachableTest {
 
-    private val credentials = TmdbCredentials(apiKey = "secret-key", accessToken = null, source = TmdbCredentials.Source.USER)
     private val timeouts = TmdbTimeouts(connectMillis = 200, requestMillis = 200, retries = 0, optionalRequestMillis = 200, unreachableAfter = 3)
-    private val jsonHeaders = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-
-    private fun provider(timeouts: TmdbTimeouts = this.timeouts, handler: MockRequestHandler) =
-        TmdbProvider(credentials, timeouts) { MockEngine(handler) }
-
-    private fun capped(block: suspend CoroutineScope.() -> Unit) = runBlocking { withTimeout(10_000, block) }
 
     private fun refused(): Nothing = throw IllegalStateException("Connection failed for request: <request>. Reason: Could not connect to server")
 
     @Test
     fun `after three requests in a row time out the next fails without a request`() = capped {
         var calls = 0
-        val provider = provider {
+        val provider = mockProvider(timeouts) {
             calls++
             awaitCancellation()
         }
@@ -59,7 +49,7 @@ class TmdbUnreachableTest {
     @Test
     fun `connection failures count as no answer`() = capped {
         var calls = 0
-        val provider = provider {
+        val provider = mockProvider(timeouts) {
             calls++
             refused()
         }
@@ -74,9 +64,9 @@ class TmdbUnreachableTest {
     @Test
     fun `an answer in between starts the count again`() = capped {
         var calls = 0
-        val provider = provider {
+        val provider = mockProvider(timeouts) {
             calls++
-            if (calls == 3) respond("""{"results": []}""", HttpStatusCode.OK, jsonHeaders) else refused()
+            if (calls == 3) respondJson("""{"results": []}""") else refused()
         }
 
         repeat(5) { provider.search("Ghosts", null) }
@@ -90,7 +80,7 @@ class TmdbUnreachableTest {
     @Test
     fun `an HTTP error is an answer`() = capped {
         var calls = 0
-        val provider = provider {
+        val provider = mockProvider(timeouts) {
             calls++
             if (calls == 3) respond("", HttpStatusCode.ServiceUnavailable) else refused()
         }
@@ -108,12 +98,12 @@ class TmdbUnreachableTest {
 
     /** A search answering [results], whose alternative-titles lookups stall; records those lookups. */
     private fun stalledAltTitles(results: String, altTitleCalls: MutableList<String>) =
-        provider(timeouts.copy(requestMillis = 5_000, optionalRequestMillis = 200, retries = 1)) { request ->
+        mockProvider(timeouts.copy(requestMillis = 5_000, optionalRequestMillis = 200, retries = 1)) { request ->
             if ("alternative_titles" in request.url.encodedPath) {
                 altTitleCalls += request.url.encodedPath
                 awaitCancellation()
             }
-            respond("""{"results": [$results]}""", HttpStatusCode.OK, jsonHeaders)
+            respondJson("""{"results": [$results]}""")
         }
 
     @Test

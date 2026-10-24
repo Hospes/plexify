@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -9,14 +8,11 @@ import kotlin.test.assertEquals
 // title ("Space.1999.S01E01").
 class ShowYearSearchTest {
 
-    private fun show(title: String, year: String, tmdbId: String) =
-        MediaSearchResult.TvShow(title = title, year = year, tmdbId = tmdbId, provider = "TMDb", matchConfidence = 100.0)
-
     private val seasons = mapOf("57243" to mapOf(1 to 1..13), "121" to mapOf(1 to 1..42), "1" to mapOf(1 to 1..24))
 
     @Test
     fun `a bare year picks the show from that year`() = runTest {
-        val provider = FakeTmdb(listOf(show("Doctor Who", "1963", "121"), show("Doctor Who", "2005", "57243")), seasons = seasons)
+        val provider = FakeTmdb(listOf(showResult("Doctor Who", "1963", "121"), showResult("Doctor Who", "2005", "57243")), seasons = seasons)
 
         val run = runProcessor(provider, "Doctor.Who.2005.S01E01.Rose.1080p.mkv")
 
@@ -29,7 +25,7 @@ class ShowYearSearchTest {
         val provider = FakeTmdb(
             results = emptyList(),
             seasons = seasons,
-            resultsByTitle = mapOf("space" to listOf(show("Space: 1999", "1975", "1")), "space 1999" to listOf(show("Space: 1999", "1975", "1"))),
+            resultsByTitle = mapOf("space" to listOf(showResult("Space: 1999", "1975", "1")), "space 1999" to listOf(showResult("Space: 1999", "1975", "1"))),
         )
 
         val run = runProcessor(provider, "Space.1999.S01E01.Breakaway.mkv", "Space.1999.S01E02.Matter.of.Life.and.Death.mkv")
@@ -45,7 +41,7 @@ class ShowYearSearchTest {
         val provider = FakeTmdb(
             results = emptyList(),
             seasons = seasons,
-            resultsByTitle = mapOf("space 1999" to listOf(show("Space", "2001", "1"))),
+            resultsByTitle = mapOf("space 1999" to listOf(showResult("Space", "2001", "1"))),
         )
 
         val run = runProcessor(provider, "Space.1999.S01E01.Breakaway.mkv")
@@ -56,7 +52,7 @@ class ShowYearSearchTest {
 
     @Test
     fun `a year after the episode marker is never read as part of the title`() = runTest {
-        val provider = FakeTmdb(listOf(show("The Boys", "2019", "1")), seasons = mapOf("1" to mapOf(3 to 1..8)))
+        val provider = FakeTmdb(listOf(showResult("The Boys", "2019", "1")), seasons = mapOf("1" to mapOf(3 to 1..8)))
 
         val run = runProcessor(provider, "The.Boys.S03E01.2022.720p.mkv")
 
@@ -69,7 +65,7 @@ class ShowYearSearchTest {
         val provider = FakeTmdb(
             results = emptyList(),
             seasons = seasons,
-            resultsByTitle = mapOf("space 1999" to listOf(show("Space: 1999", "1975", "1"))),
+            resultsByTitle = mapOf("space 1999" to listOf(showResult("Space: 1999", "1975", "1"))),
         )
 
         val run = runProcessor(provider, "Space.1999.S01E01.Breakaway.mkv", yearOverride = "1999")

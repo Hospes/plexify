@@ -1,7 +1,6 @@
 package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.domain.model.CanonicalMedia
-import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -9,7 +8,6 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,15 +22,9 @@ import kotlin.test.assertTrue
  */
 class TmdbCancellationTest {
 
-    private val credentials = TmdbCredentials(apiKey = "secret-key", accessToken = null, source = TmdbCredentials.Source.USER)
     // Long enough that Ktor's own timeout never fires before the test cancels.
     private val timeouts = TmdbTimeouts(connectMillis = 5_000, requestMillis = 5_000, retries = 0, optionalRequestMillis = 5_000, unreachableAfter = 3)
-    private val jsonHeaders = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
     private val show = CanonicalMedia.TvShow(title = "Ghosts", year = 2019, tmdbId = "1")
-
-    private fun provider(handler: MockRequestHandler) = TmdbProvider(credentials, timeouts) { MockEngine(handler) }
-
-    private fun capped(block: suspend CoroutineScope.() -> Unit) = runBlocking { withTimeout(10_000, block) }
 
     private val lookups: Map<String, suspend TmdbProvider.() -> Result<*>> = mapOf(
         "verifyCredentials" to { verifyCredentials() },
@@ -61,7 +53,7 @@ class TmdbCancellationTest {
     fun `cancelling any lookup cancels it instead of returning a failure`() = capped {
         for ((name, lookup) in lookups) {
             val requestStarted = CompletableDeferred<Unit>()
-            val provider = provider {
+            val provider = mockProvider(timeouts) {
                 requestStarted.complete(Unit)
                 awaitCancellation()
             }
@@ -74,7 +66,7 @@ class TmdbCancellationTest {
 
     @Test
     fun `a timeout around a search ends it with that timeout`() = capped {
-        val provider = provider { awaitCancellation() }
+        val provider = mockProvider(timeouts) { awaitCancellation() }
         var returned: Result<*>? = null
 
         assertFailsWith<TimeoutCancellationException> {
@@ -87,11 +79,10 @@ class TmdbCancellationTest {
     @Test
     fun `cancelling an alternative titles lookup cancels the search`() = capped {
         val requestStarted = CompletableDeferred<Unit>()
-        val provider = provider { request ->
+        val provider = mockProvider(timeouts) { request ->
             if (request.url.encodedPath.endsWith("search/multi")) {
-                respond(
+                respondJson(
                     """{"results": [{"media_type": "tv", "id": 85937, "name": "Demon Slayer", "original_name": "鬼滅の刃", "first_air_date": "2019-04-06"}]}""",
-                    HttpStatusCode.OK, jsonHeaders,
                 )
             } else {
                 requestStarted.complete(Unit)
@@ -109,9 +100,9 @@ class TmdbCancellationTest {
         var answering = false
         var requests = 0
         var requestStarted = CompletableDeferred<Unit>()
-        val provider = provider {
+        val provider = mockProvider(timeouts) {
             requests++
-            if (answering) return@provider respond("""{"results": []}""", HttpStatusCode.OK, jsonHeaders)
+            if (answering) return@mockProvider respondJson("""{"results": []}""")
             requestStarted.complete(Unit)
             awaitCancellation()
         }

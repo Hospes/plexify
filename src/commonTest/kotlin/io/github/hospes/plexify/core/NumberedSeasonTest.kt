@@ -1,24 +1,13 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class NumberedSeasonTest {
 
-    private fun show(title: String, year: String, tmdbId: String, vararg alternativeTitles: String) =
-        MediaSearchResult.TvShow(
-            title = title,
-            year = year,
-            tmdbId = tmdbId,
-            provider = "TMDb",
-            matchConfidence = 100.0,
-            alternativeTitles = alternativeTitles.toList(),
-        )
-
-    private val devilMayCry = show("Devil May Cry", "2025", "235930")
-    private val recordOfRagnarok = show("Record of Ragnarok", "2021", "114868", "Shuumatsu no Walkure")
+    private val devilMayCry = showResult("Devil May Cry", "2025", "235930")
+    private val recordOfRagnarok = showResult("Record of Ragnarok", "2021", "114868", alternativeTitles = listOf("Shuumatsu no Walkure"))
 
     private fun ProcessorRun<*>.placeOf(fileName: String): Triple<String?, Int, Int>? =
         episodeOf(fileName)?.let { Triple(it.show.tmdbId, it.season, it.episode) }
@@ -54,7 +43,7 @@ class NumberedSeasonTest {
 
     @Test
     fun `a number the show has no season for is part of the title`() = runTest {
-        val kaiju = show("Kaiju No. 8", "2024", "207468")
+        val kaiju = showResult("Kaiju No. 8", "2024", "207468")
         val provider = FakeTmdb(listOf(kaiju), seasons = mapOf("207468" to mapOf(1 to 1..12)))
 
         val run = runProcessor(provider, "Kaiju_No_8_[01]_[1080p].mkv")
@@ -64,8 +53,8 @@ class NumberedSeasonTest {
 
     @Test
     fun `a number is part of the title when the whole title is another show`() = runTest {
-        val lupin = show("Lupin", "2021", "96677")
-        val lupinTheThird = show("Lupin the 3rd", "1971", "31572", "Lupin III")
+        val lupin = showResult("Lupin", "2021", "96677")
+        val lupinTheThird = showResult("Lupin the 3rd", "1971", "31572", alternativeTitles = listOf("Lupin III"))
         val provider = FakeTmdb(
             results = emptyList(),
             resultsByTitle = mapOf("lupin" to listOf(lupin), "lupin iii" to listOf(lupinTheThird)),
