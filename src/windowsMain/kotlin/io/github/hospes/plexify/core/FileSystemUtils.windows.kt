@@ -67,6 +67,22 @@ actual fun resolveSymbolicLink(path: Path): Path? = memScoped {
 
 actual val PlatformFileSystem: MediaFileSystem = WindowsFileSystem
 
+private val TARGET_UNREACHABLE = setOf(
+    ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND,
+    ERROR_BAD_NETPATH, ERROR_BAD_NET_NAME, ERROR_REM_NOT_LIST, ERROR_DEV_NOT_EXIST, ERROR_UNEXP_NET_ERR,
+    ERROR_NETNAME_DELETED, ERROR_SEM_TIMEOUT, ERROR_CONNECTION_UNAVAIL, ERROR_NO_NET_OR_BAD_PATH, ERROR_NO_NETWORK,
+    ERROR_CONNECTION_REFUSED, ERROR_NETWORK_UNREACHABLE, ERROR_HOST_UNREACHABLE, ERROR_CONNECTION_ABORTED,
+    ERROR_HOST_DOWN, ERROR_NOT_CONNECTED,
+).mapTo(mutableSetOf()) { it.toUInt() }
+
+/**
+ * Whether opening a link's target failed with [errorCode] because it can't be reached: it doesn't exist, or it is on
+ * a network share whose host doesn't resolve, is offline or doesn't answer in time. Which error a UNC path gets
+ * depends on the network: an unknown host is usually ERROR_BAD_NETPATH, but not always. Errors such as access denied
+ * or a failed logon are not among them: the target is there, and the user should see why it can't be read.
+ */
+internal fun isUnreachableTarget(errorCode: UInt): Boolean = errorCode in TARGET_UNREACHABLE
+
 @OptIn(ExperimentalForeignApi::class)
 private object WindowsFileSystem : MediaFileSystem {
     override fun kind(path: Path): FileKind? = memScoped {
@@ -76,11 +92,10 @@ private object WindowsFileSystem : MediaFileSystem {
         // when its target is gone. Like stat on Linux, follow it.
         if (attributes and FILE_ATTRIBUTE_REPARSE_POINT.toUInt() != 0u && isLink(win32Path, path)) {
             val target = alloc<DWORDVar>()
-            when (val errorCode = plexify_get_target_attributes(win32Path, target.ptr)) {
-                0u -> attributes = target.value
-                // A target on a network share that is offline or gone fails with the last two.
-                ERROR_FILE_NOT_FOUND.toUInt(), ERROR_PATH_NOT_FOUND.toUInt(),
-                ERROR_BAD_NETPATH.toUInt(), ERROR_BAD_NET_NAME.toUInt() -> return FileKind.DANGLING_LINK
+            val errorCode = plexify_get_target_attributes(win32Path, target.ptr)
+            when {
+                errorCode == 0u -> attributes = target.value
+                isUnreachableTarget(errorCode) -> return FileKind.DANGLING_LINK
                 else -> throw win32Error("Can't read '$path'", errorCode)
             }
         }
@@ -187,7 +202,8 @@ internal fun win32Path(path: Path): String {
     return if (full.startsWith("\\\\")) "\\\\?\\UNC\\" + full.removePrefix("\\\\") else "\\\\?\\$full"
 }
 
-private fun win32Error(context: String, errorCode: UInt) = IOException("$context: ${win32ErrorMessage(errorCode)}")
+private fun win32Error(context: String, errorCode: UInt) =
+    IOException("$context: ${win32ErrorMessage(errorCode)} (error $errorCode)")
 
 @OptIn(ExperimentalForeignApi::class)
 private fun win32ErrorMessage(errorCode: UInt): String = memScoped {
