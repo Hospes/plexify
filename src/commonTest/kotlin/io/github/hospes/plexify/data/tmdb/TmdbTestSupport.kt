@@ -60,7 +60,8 @@ internal suspend fun stalledBody(start: String): ByteChannel {
 
 /**
  * A TMDB that answers each request by its path from [bodies] (`"/3/movie/603"` to its JSON) and any other with a
- * 404, and records every request in order. Pass [handler] to [mockProvider].
+ * 404, and records every request in order. Pass [handler] to [mockProvider]. A search is answered by its query (and
+ * year) too, when [bodies] has that key: `"/3/search/multi?query=gate"`, `"/3/search/movie?query=dracula&year=1974"`.
  */
 internal class TmdbResponder(private val bodies: Map<String, String> = emptyMap()) {
     // A provider may send requests in parallel (a search's alternative-titles lookups).
@@ -74,7 +75,11 @@ internal class TmdbResponder(private val bodies: Map<String, String> = emptyMap(
 
     val handler: MockRequestHandler = { request ->
         lock.withLock { recorded += request }
-        val body = bodies[request.url.encodedPath]
+        val url = request.url
+        val search = url.parameters["query"]?.let { query ->
+            "${url.encodedPath}?query=$query" + (url.parameters["year"]?.let { "&year=$it" } ?: "")
+        }
+        val body = search?.let { bodies[it] } ?: bodies[url.encodedPath]
         if (body != null) respondJson(body) else respondJson(TMDB_NOT_FOUND, HttpStatusCode.NotFound)
     }
 }
