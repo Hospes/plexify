@@ -1,0 +1,98 @@
+package io.github.hospes.plexify.core.corpus
+
+import io.github.hospes.plexify.core.runProcessor
+import io.github.hospes.plexify.data.tmdb.TmdbResponder
+import io.github.hospes.plexify.data.tmdb.capped
+import io.github.hospes.plexify.data.tmdb.mockProvider
+import io.github.hospes.plexify.data.tmdb.tokenCredentials
+import io.github.hospes.plexify.domain.strategy.NamingStrategy
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/**
+ * What a few typical runs ask TMDB, by endpoint: corpus names through the real processor and TmdbProvider, against
+ * [corpusTmdb]. CorpusTest pins the sums over whole corpora; these pin one scenario each, so a change to what plexify
+ * requests (a cache added or lost, a lookup moved) shows up here as a diff with its reason. Each comment says why the
+ * count is what it is; a change that is meant to save requests updates the numbers and the comment together.
+ */
+class RequestBudgetTest {
+
+    // One search for the show, then the episodes find it in the show cache (by title and year). The search looks up
+    // the alternative titles of the three results whose titles don't resemble "breaking bad" (El Camino, Breaking Bad
+    // Fortune Teller, ISMO – Breaking Bad English). The season is fetched whole for the first episode and cached for
+    // the other two.
+    @Test
+    fun `one season of a show`() = budget(
+        sceneNames.filter { it.startsWith("Breaking Bad S01/") },
+        "2 movie/{id}/alternative_titles, 1 search/multi, 1 tv/{id}/alternative_titles, 1 tv/{id}/season/{id}",
+    )
+
+    // Four release folders of one show, three episodes each (four in Yuukaku-hen): each folder's title is its own
+    // search, since shows are cached by the title searched, so the same show is searched four times. Its title
+    // ("Demon Slayer: Kimetsu no Yaiba") doesn't resemble any of the four queries, so each search looks up its
+    // alternative titles again, which also name the arc's season ("Kimetsu no Yaiba: Yuukaku-hen", "Season 3
+    // Romaji"); the first search also looks up those of the two films it returns. One fetch per season (1, 2, 3, 5),
+    // cached for the folder's other episodes.
+    @Test
+    fun `an arc show`() = budget(
+        animeNames.filter { it.startsWith("Kimetsu") },
+        "2 movie/{id}/alternative_titles, 4 search/multi, 4 tv/{id}/alternative_titles, 4 tv/{id}/season/{id}",
+    )
+
+    // The general search doesn't return the 1974 Dracula (TMDB has many), so the movie is searched again with its year.
+    // Each search looks up the alternative titles of its first three results whose titles don't resemble "dracula".
+    @Test
+    fun `a movie with a year retry`() = budget(
+        listOf("Dracula.1974.720p.BluRay.mkv"),
+        "4 movie/{id}/alternative_titles, 1 search/movie, 1 search/multi, 2 tv/{id}/alternative_titles",
+    )
+
+    // The second version searches again, alternative-titles lookups and all: movie searches aren't cached (P3-2 will
+    // change this). Each search looks up the alternative titles of the three results that don't resemble "inception".
+    @Test
+    fun `a movie in two versions`() = budget(
+        listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
+        "6 movie/{id}/alternative_titles, 2 search/multi",
+    )
+
+    // The two runs above with the Plex template, which names the IMDb ID: the searches and season are the same, plus
+    // one external_ids lookup per show and per movie. Those are cached by media, so the show's other episodes and the
+    // film's second version don't ask again (though the second version's search does, as above).
+    @Test
+    fun `a plex run`() = budget(
+        sceneNames.filter { it.startsWith("Breaking Bad S01/") } +
+            listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
+        "8 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 3 search/multi, 1 tv/{id}/alternative_titles, " +
+            "1 tv/{id}/external_ids, 1 tv/{id}/season/{id}",
+        NamingStrategy.Plex,
+    )
+
+    // What the Plex run writes, run again: no search. Each IMDb tag is resolved once (find/{imdb}), and the record
+    // fetched once with its alternative titles and IMDb ID in the same request (append_to_response), so there is no
+    // external_ids lookup; shows found by ID are cached too, so the episodes share one find, one record and one
+    // season fetch.
+    @Test
+    fun `a plex library run again`() = budget(
+        listOf(
+            "Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E01 - Episode 1 - [720p] [BluRay].mkv",
+            "Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E02 - Episode 2 - [720p] [BluRay].mkv",
+            "Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E07 - Episode 7 - [720p] [BluRay].mkv",
+            "Inception (2010) {imdb-tt1375666}/Inception (2010) - [1080p] [BluRay] [YTS].mkv",
+        ),
+        "2 find/{id}, 1 movie/{id}, 1 tv/{id}, 1 tv/{id}/season/{id}",
+        NamingStrategy.Plex,
+    )
+
+    private fun budget(names: List<String>, expected: String, template: NamingStrategy = NamingStrategy.Jellyfin) = capped {
+        val tmdb = TmdbResponder(corpusTmdb.bodies, corpusTmdb.notFound)
+        val stats = runProcessor(mockProvider(credentials = tokenCredentials, handler = tmdb.handler), *names.toTypedArray(), namingStrategy = template).stats
+        assertEquals(emptyList(), tmdb.unanswered, "Requests CorpusTmdb.kt has no answer for")
+        assertEquals("${names.size} organized, 0 skipped, 0 failed", "${stats.organized} organized, ${stats.skipped} skipped, ${stats.failed} failed")
+        assertEquals(expected, requestsByEndpoint(tmdb.paths))
+    }
+}
+
+/** The requests to these paths, counted by endpoint: "2 search/multi, 1 tv/{id}/season/{id}". */
+internal fun requestsByEndpoint(paths: List<String>): String = paths
+    .groupingBy { path -> path.removePrefix("/3/").split('/').joinToString("/") { if (it.any(Char::isDigit)) "{id}" else it } }
+    .eachCount().entries.sortedBy { it.key }.joinToString(", ") { (endpoint, count) -> "$count $endpoint" }
