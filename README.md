@@ -32,7 +32,7 @@ downloads/                                        library/
 -   **Safe to re-run**: Existing files in the library are never deleted or overwritten unless you pass `--overwrite`, and Plexify recognizes the names it writes itself, IDs included, so running it over an existing library leaves files that are already in place alone.
 -   **Dry run**: `--test` lists every folder and file it would create, without touching a single file.
 -   **Readable output**: One line per file showing where it goes in the library, and a final summary. `--verbose` shows the whole pipeline: parsing, cache, TMDB calls and match scores.
--   **Fast on whole seasons**: Show and season lookups are cached per run, so a season of episodes costs one search and one season fetch.
+-   **Fast on whole seasons**: Show and season lookups are cached per run, so a season of episodes costs about as many TMDB requests as one episode: the show is searched once and the season fetched once.
 -   **Long paths on Windows**: Paths of 260 characters or more work without changing any system setting.
 
 ## 🚀 Getting Started
@@ -318,7 +318,7 @@ Plexify goes through the source folder one file at a time, in name order: each f
 Every file goes through the same pipeline:
 
 1.  **Parse:** The filename (and, for the season, its parent folder) is broken down into title, year, season, episode and technical tags, and the folders for an ID tag. Overrides from the command line are applied on top.
-2.  **Search:** When the path names a TMDB or IMDb ID, that movie or show is looked up on TMDB and is the match (see [Filename patterns](#filename-patterns)); the next step is skipped. Otherwise TMDB is searched for the title. When a result doesn't resemble the parsed title by its display or original title, its alternative titles are fetched too. Every TMDB request has a time limit and is retried when TMDB is busy (HTTP 429), so a stalled connection can't hang the run.
+2.  **Search:** When the path names a TMDB or IMDb ID, that movie or show is looked up on TMDB instead, and is the match if it passes the next step for the title in the name (see [Filename patterns](#filename-patterns)). Otherwise, including when TMDB has no such record or it doesn't pass, TMDB is searched for the title. When a result doesn't resemble the parsed title by its display or original title, its alternative titles are fetched too, for up to three results per search. Every TMDB request has a time limit and is retried when TMDB is busy (HTTP 429), so a stalled connection can't hang the run.
 3.  **Match:** Every candidate is scored. Title similarity is checked against every title the candidate is known by, and the year adds or subtracts points. For a TV show, a filename year later than the show's first-air year is normal (it's usually the season's year) and isn't penalized. Candidates below a minimum score are dropped; if none is left, the file is skipped with the reason.
 4.  **Episode lookup:** For episodes, the whole season is fetched once and cached. If the episode isn't in that season, TMDB's episode groups and absolute order are tried, so releases numbered differently from TMDB still land on TMDB's episode. If the best-matching show has no such season at all, other candidates are tried, but only ones that match the release title at least as well and whose year doesn't contradict the filename. The show that places a season is used for all of that season's files.
 5.  **IDs:** With the Plex template, the IMDb ID of the matched movie or show is looked up on TMDB. If that lookup fails, so does the file.

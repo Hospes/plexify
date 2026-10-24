@@ -52,7 +52,10 @@ class PathFormatter {
     }
 
 
-    /** The file or folder name [template] renders to. */
+    /**
+     * The file or folder name [template] renders to: the placeholder values ([buildPlaceholderMap]), the template
+     * without the ID tags and parenthesized placeholders that have no value, then the segment ([formatSegment]).
+     */
     private fun format(
         template: String,
         media: CanonicalMedia,
@@ -65,7 +68,7 @@ class PathFormatter {
         return formatSegment(result, placeholders)
     }
 
-    // 4. Render one path segment, shortened to MAX_SEGMENT_BYTES if needed.
+    // Renders one path segment, shortened to MAX_SEGMENT_BYTES if needed.
     // The episode title is cut first, then the title, so the S/E marker, {version} and the extension stay intact.
     // Only when the titles are cut and the name still doesn't fit does {version} lose its release group.
     private fun formatSegment(template: String, placeholders: Map<String, String?>): String {
@@ -100,7 +103,7 @@ class PathFormatter {
         return segment
     }
 
-    // 5. Collapse repeated spaces and trim the ends. Windows can't keep a name that ends in a dot or a space: it drops
+    // Collapses repeated spaces and trims the ends. Windows can't keep a name that ends in a dot or a space: it drops
     // them from some segments of a path but not others, so the folder created and the path used for the file differ.
     // A name that starts with a dot is hidden on Linux and macOS, and Plex and Jellyfin skip hidden files and folders,
     // so leading dots go too (".hack//SIGN" -> "hack-SIGN", "...And Justice for All" -> "And Justice for All").
@@ -143,9 +146,9 @@ class PathFormatter {
         return substring(0, end)
     }
 
-    // 1. Create a map of available placeholders and their values.
+    // The placeholders that have a value for this media and file, by lowercased name.
     private fun buildPlaceholderMap(media: CanonicalMedia, parsedInfo: ParsedMediaInfo, sourceFile: Path): Map<String, String?> {
-        // 1a. Handle special composite placeholders like {version}. The release group closes it: " - [1080p] [BluRay] [YTS]".
+        // Composite placeholders like {version}. The release group closes it: " - [1080p] [BluRay] [YTS]".
         // A group that repeats another tag is left out, so the name parses back to the same tags.
         val versionTags = listOfNotNull(parsedInfo.resolution, parsedInfo.quality, parsedInfo.hdr, parsedInfo.edition)
         val releaseGroup = parsedInfo.releaseGroup?.let { cleanName(it.replace("[", "").replace("]", "")) }
@@ -191,7 +194,7 @@ class PathFormatter {
         return commonPlaceholders.filterValues { it != null }.mapKeys { it.key.lowercase() }
     }
 
-    // 1c. The {cleantitle} of a movie or show. A title with nothing usable in a name ("?", "//", or dots, which
+    // The {cleantitle} of a movie or show. A title with nothing usable in a name ("?", "//", or dots, which
     // finishSegment trims) would leave the folder without a name: with no year or ID tag, the file would land in the
     // library root. Such a title is named by its ID instead ("tmdb-603", else "imdb-tt0133093").
     private fun cleanTitle(title: String, tmdbId: String?, imdbId: String?): String {
@@ -200,7 +203,7 @@ class PathFormatter {
             ?: throw IllegalArgumentException("The title \"$title\" has nothing usable in a file name, and no ID to name it by")
     }
 
-    // 2. Drop an ID tag whose ID is missing: "[tmdbid-{tmdbid}]" or "{imdb-{imdbid}}" without a value goes whole.
+    // Drops an ID tag whose ID is missing: "[tmdbid-{tmdbid}]" or "{imdb-{imdbid}}" without a value goes whole.
     private fun dropEmptyIdTags(template: String, placeholders: Map<String, String?>): String {
         return idTagRegex.replace(template) { matchResult ->
             val key = matchResult.groupValues[1].ifEmpty { matchResult.groupValues[2] }.lowercase()
@@ -208,7 +211,7 @@ class PathFormatter {
         }
     }
 
-    // 2b. Drop a parenthesized placeholder that has no value, so a title without a year
+    // Drops a parenthesized placeholder that has no value, so a title without a year
     // becomes "Title [tmdbid-1]" or "Title.mkv" instead of "Title () [tmdbid-1]".
     private fun dropEmptyParentheses(template: String, placeholders: Map<String, String?>): String {
         return parenthesizedPlaceholderRegex.replace(template) { matchResult ->
@@ -216,7 +219,7 @@ class PathFormatter {
         }
     }
 
-    // 3. Replace all remaining placeholders with their actual values.
+    // Replaces every placeholder with its value, zero-padded to its width ({season:2}).
     private fun replacePlaceholders(template: String, placeholders: Map<String, String?>): String {
         return placeholderRegex.replace(template) { matchResult ->
             val key = matchResult.groupValues[1].lowercase()
@@ -248,7 +251,7 @@ private val joiningSlashRegex = Regex("""(?<=\S)[/\\]+(?=\S)""")
 private val separatorCharsRegex = Regex("""[:/\\|\u0000-\u001F]""")
 private val droppedCharsRegex = Regex("""[<>"?*]""")
 
-// 1b. Make a title usable in a file or folder name without joining its words. Slashes or backslashes
+// Makes a title usable in a file or folder name without joining its words. Slashes or backslashes
 // between two words become one hyphen ("Fate/Zero" -> "Fate-Zero", "Part 1/2" -> "Part 1-2", ".hack//SIGN" ->
 // ".hack-SIGN"); any other separator (":", "|", a slash with a space beside it, a control character) becomes
 // a space ("Avatar: The Way of Water" -> "Avatar The Way of Water", "Re:ZERO" -> "Re ZERO");

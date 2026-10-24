@@ -1,9 +1,8 @@
 package io.github.hospes.plexify.domain.strategy
 
 /**
- * Defines a strategy for naming media files and directories.
- * This approach encapsulates the specific template strings for different media servers
- * and allows for easy extension (e.g., for TV shows) in the future.
+ * Defines a strategy for naming media files and directories: one media server's template strings
+ * for movies and TV shows. The built-in strategies are the only ones; there are no user-defined templates.
  */
 sealed interface NamingStrategy {
     /** A unique, user-friendly name for the strategy. */

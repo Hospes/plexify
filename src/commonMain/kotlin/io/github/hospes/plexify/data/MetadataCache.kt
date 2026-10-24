@@ -35,7 +35,7 @@ class MetadataCache {
 
     suspend fun putSeason(key: String, season: CanonicalMedia.Season) = seasonMutex.withLock { seasonCache[key] = season }
 
-    /** Episode groups by show; an empty list means the show has none (or they failed to load). */
+    /** Episode groups by show; an empty list means the show has none. A failed lookup is not cached. */
     suspend fun getEpisodeGroups(showKey: String): List<CanonicalMedia.EpisodeGroup>? =
         episodeGroupMutex.withLock { episodeGroupCache[showKey] }
 
