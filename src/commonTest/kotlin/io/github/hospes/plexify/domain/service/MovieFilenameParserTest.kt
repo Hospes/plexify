@@ -122,6 +122,19 @@ class MovieFilenameParserTest {
             filename = "Blade.Runner.1982.Directors.Cut.1080p.BluRay.mkv",
             expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", resolution = "1080p", quality = "BluRay", edition = "Directors Cut")
         ),
+        // A straight or a curly apostrophe gives the same tag, so a library gets one tag per edition
+        TestCase(
+            filename = "Blade.Runner.1982.Director's.Cut.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", resolution = "1080p", quality = "BluRay", edition = "Directors Cut")
+        ),
+        TestCase(
+            filename = "Blade.Runner.1982.Director’s.Cut.1080p.BluRay.mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", resolution = "1080p", quality = "BluRay", edition = "Directors Cut")
+        ),
+        TestCase(
+            filename = "Blade Runner (1982) - [1080p] [director’s cut].mkv",
+            expected = ParsedMediaInfo.Movie(title = "blade runner", year = "1982", resolution = "1080p", edition = "Directors Cut")
+        ),
         TestCase(
             filename = "The.Dark.Knight.2008.IMAX.1080p.BluRay.mkv",
             expected = ParsedMediaInfo.Movie(title = "the dark knight", year = "2008", resolution = "1080p", quality = "BluRay", edition = "IMAX")

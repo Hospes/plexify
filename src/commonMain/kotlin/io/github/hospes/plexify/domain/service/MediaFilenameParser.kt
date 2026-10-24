@@ -518,7 +518,7 @@ object MediaFilenameParser {
 
     private fun extractEdition(normalizedText: String): String? =
         editionRegex.find(normalizedText)?.value?.let { raw ->
-            raw.replace(Regex("['']"), "")
+            raw.replace(Regex("['’]"), "")
                 .replace(Regex("\\s+"), " ")
                 .trim()
                 .split(" ")
