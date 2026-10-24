@@ -118,7 +118,7 @@ internal class FakeTmdb(
 internal class RecordingOrganizer(private val delegate: FileOrganizer? = null) : FileOrganizer {
     val organized = mutableMapOf<String, CanonicalMedia>()
 
-    /** The [delegate]'s outcome for each file. */
+    /** The [delegate]'s outcome for each file, by its path: names alone repeat across folders. See [ProcessorRun.outcomeOf]. */
     val outcomes = mutableMapOf<String, Result<OrganizeOutcome>>()
 
     override fun organize(
@@ -130,21 +130,26 @@ internal class RecordingOrganizer(private val delegate: FileOrganizer? = null) :
         isTestMode: Boolean,
     ): Result<OrganizeOutcome> {
         organized[sourceFile.name] = media
-        return delegate?.organize(sourceFile, destinationRoot, media, parsedInfo, mode, isTestMode)?.also { outcomes[sourceFile.name] = it }
+        return delegate?.organize(sourceFile, destinationRoot, media, parsedInfo, mode, isTestMode)?.also { outcomes[sourceFile.toString()] = it }
             ?: Result.success(OrganizeOutcome.Organized(destinationRoot))
     }
 }
 
 /**
  * [output] is every line the processor printed, with the run's temporary folders as `<source>` and `<library>`, so it
- * reads the same on every platform and run.
+ * reads the same on every platform and run. [source] is the folder processed.
  */
 internal class ProcessorRun<P : MetadataProvider>(
     val provider: P,
     val organizer: RecordingOrganizer,
     val stats: MediaProcessor.Stats,
     val output: List<String>,
+    private val source: Path,
 ) {
+    /** The organizer's outcome for [fileName], a name as passed to [runProcessor] ("Show/Season 01/Show - S01E01.mkv"). */
+    fun outcomeOf(fileName: String): Result<OrganizeOutcome>? =
+        organizer.outcomes[fileName.split('/').fold(source) { parent, segment -> Path(parent, segment) }.toString()]
+
     fun showOf(fileName: String): String? = episodeOf(fileName)?.show?.tmdbId
 
     fun movieOf(fileName: String): String? = (organizer.organized[fileName] as? CanonicalMedia.Movie)?.tmdbId
@@ -208,7 +213,7 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     val normalized = output.map { line ->
         line.replace(library.toString(), "<library>").replace(dir.toString(), "<source>")
     }
-    return ProcessorRun(provider, organizer, processor.stats, normalized)
+    return ProcessorRun(provider, organizer, processor.stats, normalized, dir)
 }
 
 /** Processes these source paths as given, with a fresh processor and a provider that finds nothing. */

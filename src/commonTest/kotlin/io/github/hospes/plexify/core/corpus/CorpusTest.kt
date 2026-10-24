@@ -1,8 +1,8 @@
 package io.github.hospes.plexify.core.corpus
 
 import io.github.hospes.plexify.core.DefaultFileOrganizer
-import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.core.OrganizeOutcome
+import io.github.hospes.plexify.core.ProcessorRun
 import io.github.hospes.plexify.core.RecordingOrganizer
 import io.github.hospes.plexify.core.runProcessor
 import io.github.hospes.plexify.data.tmdb.TmdbResponder
@@ -12,14 +12,14 @@ import io.github.hospes.plexify.data.tmdb.tokenCredentials
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.fail
 
 /**
  * Real release names through the real parser, processor, TmdbProvider and organizer (in test mode), against the
- * hand-written TMDB of [corpusTmdb]: every file's library path for both templates, and the run's counts. It pins what
- * plexify does today, right or wrong, so a refactor that changes which media a file matches, or its name, shows up as
- * a diff. Offline: TMDB is a MockEngine.
+ * hand-written TMDB of [corpusTmdb]: every file's library path for both templates, the run's counts, and the TMDB
+ * requests it made by endpoint. It pins what plexify does today, right or wrong, so a refactor that changes which media
+ * a file matches, its name, or what plexify asks TMDB shows up as a diff. A request the fixture can't answer fails the
+ * test (see CorpusTmdb.kt). Offline: TMDB is a MockEngine.
  *
  * To update after an intended change, run the test: the failure prints the whole block as it is now, ready to paste
  * over the expected one. Check the diff before committing it.
@@ -188,7 +188,9 @@ class CorpusTest {
         |  Jellyfin: The Lord of the Rings The War of the Rohirrim (2024) [tmdbid-839033]/The Lord of the Rings The War of the Rohirrim (2024) [tmdbid-839033] - [1080p] [WEBRip] [AniLibria].mkv
         |  Plex:     The Lord of the Rings The War of the Rohirrim (2024) {imdb-tt14824600}/The Lord of the Rings The War of the Rohirrim (2024) - [1080p] [WEBRip] [AniLibria].mkv
         |Jellyfin: 52 organized, 1 skipped, 0 failed
+        |Jellyfin requests: 7 movie/{id}/alternative_titles, 20 search/multi, 3 tv/episode_group/{id}, 13 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 16 tv/{id}/season/{id}
         |Plex: 52 organized, 1 skipped, 0 failed
+        |Plex requests: 7 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 20 search/multi, 3 tv/episode_group/{id}, 13 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 11 tv/{id}/external_ids, 16 tv/{id}/season/{id}
     """)
 
     @Test
@@ -317,7 +319,9 @@ class CorpusTest {
         |  Jellyfin: What If... (2021) [tmdbid-91363]/Season 01/What If... (2021) - S01E01-E09 - What If... Episode 1 Went Another Way Entirely & What If... Episode 2 Went Another Way Entirely & What If... Episode 3 Went Another Way Entirely & What If... Episode 4 Went Another Way Entirely… - [1080p] [WEB-DL].mkv
         |  Plex:     What If... (2021) {imdb-tt10168312}/Season 01/What If... (2021) - S01E01-E09 - What If... Episode 1 Went Another Way Entirely & What If... Episode 2 Went Another Way Entirely & What If... Episode 3 Went Another Way Entirely & What If... Episode 4 Went Another Way Entirely… - [1080p] [WEB-DL].mkv
         |Jellyfin: 41 organized, 0 skipped, 0 failed
+        |Jellyfin requests: 50 movie/{id}/alternative_titles, 1 search/movie, 33 search/multi, 8 tv/episode_group/{id}, 35 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/season/{id}
         |Plex: 41 organized, 0 skipped, 0 failed
+        |Plex requests: 50 movie/{id}/alternative_titles, 23 movie/{id}/external_ids, 1 search/movie, 33 search/multi, 8 tv/episode_group/{id}, 35 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/external_ids, 8 tv/{id}/season/{id}
     """)
 
     @Test
@@ -356,12 +360,15 @@ class CorpusTest {
         |  Jellyfin: One Piece (1999) [tmdbid-37854]/Season 21/One Piece (1999) - S21E1072 - Episode 1072 - [1080p].mkv
         |  Plex:     One Piece (1999) {imdb-tt0388629}/Season 21/One Piece (1999) - S21E1072 - Episode 1072 - [1080p].mkv
         |Jellyfin: 11 organized, 0 skipped, 0 failed
+        |Jellyfin requests: 2 find/{id}, 6 movie/{id}, 3 movie/{id}/alternative_titles, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 6 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 4 tv/{id}/season/{id}
         |Plex: 11 organized, 0 skipped, 0 failed
+        |Plex requests: 2 find/{id}, 6 movie/{id}, 3 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 6 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 3 tv/{id}/external_ids, 4 tv/{id}/season/{id}
     """)
+
 
     @Test
     fun `every name plexify writes leads back to itself`() = capped(60_000) {
-        for (template in TEMPLATES) {
+        val actual = TEMPLATES.flatMap { template ->
             val written = listOf(animeNames, sceneNames, idAndMultiEpisodeNames).flatMap { names ->
                 val run = run(names, template)
                 names.mapNotNull { run.libraryPath(it) }
@@ -369,8 +376,14 @@ class CorpusTest {
             val again = run(written, template)
             val moved = written.filter { again.libraryPath(it) != it }.map { "$it\n  -> ${again.describe(it)}" }
             if (moved.isNotEmpty()) fail("${template.name}: ${moved.size} of ${written.size} names lead elsewhere:\n${moved.joinToString("\n")}")
-            assertEquals("${written.size} organized, 0 skipped, 0 failed", again.counts(), template.name)
+            listOf("${template.name}: ${again.counts()}", "${template.name} requests: ${again.requests()}")
         }
+        assertBlock(actual, """
+            |Jellyfin: 104 organized, 0 skipped, 0 failed
+            |Jellyfin requests: 31 movie/{id}, 19 tv/{id}, 25 tv/{id}/season/{id}
+            |Plex: 104 organized, 0 skipped, 0 failed
+            |Plex requests: 49 find/{id}, 31 movie/{id}, 1 movie/{id}/external_ids, 19 tv/{id}, 25 tv/{id}/season/{id}
+        """)
     }
 
     private fun corpus(names: List<String>, expected: String) = capped(60_000) {
@@ -380,10 +393,16 @@ class CorpusTest {
                 add(name)
                 TEMPLATES.forEachIndexed { index, template -> add("  ${"${template.name}:".padEnd(9)} ${runs[index].describe(name)}") }
             }
-            TEMPLATES.forEachIndexed { index, template -> add("${template.name}: ${runs[index].counts()}") }
+            TEMPLATES.forEachIndexed { index, template ->
+                add("${template.name}: ${runs[index].counts()}")
+                add("${template.name} requests: ${runs[index].requests()}")
+            }
         }
-        val expectedLines = expected.trimMargin().lines().filter { it.isNotBlank() }
-        if (expectedLines != actual) {
+        assertBlock(actual, expected)
+    }
+
+    private fun assertBlock(actual: List<String>, expected: String) {
+        if (expected.trimMargin().lines().filter { it.isNotBlank() } != actual) {
             fail("The corpus differs. If the change is intended, paste this over the expected block:\n" +
                 actual.joinToString("\n", prefix = "    \"\"\"\n", postfix = "\n    \"\"\"") { "        |" + it.replace("$", "\${'$'}") })
         }
@@ -391,18 +410,20 @@ class CorpusTest {
 
     private suspend fun run(names: List<String>, template: NamingStrategy): CorpusRun {
         val organizer = RecordingOrganizer(DefaultFileOrganizer(PathFormatter(), template))
-        val provider = mockProvider(credentials = tokenCredentials, handler = TmdbResponder(corpusTmdb).handler)
-        val run = runProcessor(provider, *names.toTypedArray(), namingStrategy = template, organizer = organizer)
-        return CorpusRun(organizer, run.stats)
+        val tmdb = TmdbResponder(corpusTmdb.bodies, corpusTmdb.notFound)
+        val run = runProcessor(mockProvider(credentials = tokenCredentials, handler = tmdb.handler), *names.toTypedArray(), namingStrategy = template, organizer = organizer)
+        if (tmdb.unanswered.isNotEmpty()) {
+            fail("The fixture has no answer for these requests; add what TMDB answers to CorpusTmdb.kt, from a live run:\n" +
+                tmdb.unanswered.distinct().joinToString("\n"))
+        }
+        return CorpusRun(run, tmdb)
     }
 
-    private class CorpusRun(val organizer: RecordingOrganizer, val stats: MediaProcessor.Stats) {
-        fun outcome(name: String): Result<OrganizeOutcome>? = organizer.outcomes[name.substringAfterLast('/')]
-
+    private class CorpusRun(val run: ProcessorRun<*>, val tmdb: TmdbResponder) {
         /** Where the file went, relative to the library, if it was organized. */
-        fun libraryPath(name: String): String? = (outcome(name)?.getOrNull() as? OrganizeOutcome.Organized)?.path?.relative()
+        fun libraryPath(name: String): String? = (run.outcomeOf(name)?.getOrNull() as? OrganizeOutcome.Organized)?.path?.relative()
 
-        fun describe(name: String): String = when (val outcome = outcome(name)) {
+        fun describe(name: String): String = when (val outcome = run.outcomeOf(name)) {
             null -> "(not organized)"
             else -> outcome.fold(
                 onSuccess = { if (it is OrganizeOutcome.Organized) it.path.relative() else "${it::class.simpleName} ${it.path.relative()}" },
@@ -410,7 +431,12 @@ class CorpusTest {
             )
         }
 
-        fun counts() = "${stats.organized} organized, ${stats.skipped} skipped, ${stats.failed} failed"
+        fun counts() = "${run.stats.organized} organized, ${run.stats.skipped} skipped, ${run.stats.failed} failed"
+
+        /** The TMDB requests made, counted by endpoint ("tv/{id}/season/{id}"). */
+        fun requests(): String = tmdb.paths
+            .groupingBy { path -> path.removePrefix("/3/").split('/').joinToString("/") { if (it.any(Char::isDigit)) "{id}" else it } }
+            .eachCount().entries.sortedBy { it.key }.joinToString(", ") { (endpoint, count) -> "$count $endpoint" }
 
         private fun kotlinx.io.files.Path.relative() = toString().replace('\\', '/').replace(LIBRARY, "")
     }
