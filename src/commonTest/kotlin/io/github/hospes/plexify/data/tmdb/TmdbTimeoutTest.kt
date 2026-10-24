@@ -41,13 +41,13 @@ class TmdbTimeoutTest {
 
     @Test
     fun `the timeout error does not leak the request url or api key`() = capped {
-        val provider = mockProvider(timeouts) { awaitCancellation() }
+        val provider = mockProvider(timeouts, credentials = keyCredentials) { awaitCancellation() }
 
         val error = provider.search("Dune", null).exceptionOrNull()
 
         assertIs<MetadataTimeoutException>(error)
         val printed = error.stackTraceToString()
-        assertFalse("secret-key" in printed, printed)
+        assertFalse(keyCredentials.apiKey!! in printed, printed)
         assertFalse("api.themoviedb.org" in printed, printed)
     }
 

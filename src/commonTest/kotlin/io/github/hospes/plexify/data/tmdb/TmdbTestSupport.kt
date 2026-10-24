@@ -13,7 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
-/** A user's API key. Tests that check an error never shows the key look for "secret-key". */
+/** A user's API key. Tests that check an error never shows the key pass it explicitly, not by default. */
 internal val keyCredentials = TmdbCredentials(apiKey = "secret-key", accessToken = null, source = TmdbCredentials.Source.USER)
 
 /** A user's access token. */
@@ -67,6 +67,7 @@ internal class TmdbResponder(private val bodies: Map<String, String> = emptyMap(
     private val lock = Mutex()
     private val recorded = mutableListOf<HttpRequestData>()
 
+    /** The requests so far. Read it once the provider's calls have returned: one still in flight may be added meanwhile. */
     val requests: List<HttpRequestData> get() = recorded.toList()
 
     val paths: List<String> get() = requests.map { it.url.encodedPath }

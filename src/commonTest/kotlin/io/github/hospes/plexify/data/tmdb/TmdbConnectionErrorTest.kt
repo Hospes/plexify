@@ -11,7 +11,7 @@ class TmdbConnectionErrorTest {
 
     @Test
     fun `a connection error fails with curl's reason instead of the request url`() = runBlocking {
-        val provider = mockProvider { request ->
+        val provider = mockProvider(credentials = keyCredentials) { request ->
             // As the curl engine words it.
             throw IllegalStateException(
                 "Connection failed for request: CurlRequestData(url='${request.url}', method='GET', content: 0 bytes). " +
@@ -24,7 +24,7 @@ class TmdbConnectionErrorTest {
         assertIs<MetadataConnectionException>(error)
         assertEquals("TMDB request failed searching for 'Dune': Could not connect to server (CURLE_COULDNT_CONNECT)", error.message)
         val printed = error.stackTraceToString()
-        assertFalse("secret-key" in printed, printed)
+        assertFalse(keyCredentials.apiKey!! in printed, printed)
         assertFalse("api.themoviedb.org" in printed, printed)
     }
 
