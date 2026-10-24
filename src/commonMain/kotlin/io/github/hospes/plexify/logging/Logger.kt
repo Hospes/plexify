@@ -1,7 +1,8 @@
 package io.github.hospes.plexify.logging
 
-class LoggingContext(val depth: Int = 0, val verbose: Boolean = false) {
-    operator fun plus(increment: Int): LoggingContext = LoggingContext(depth + increment, verbose)
+/** [output] receives every printed line; tests pass their own to capture the transcript. */
+class LoggingContext(val depth: Int = 0, val verbose: Boolean = false, val output: (String) -> Unit = ::println) {
+    operator fun plus(increment: Int): LoggingContext = LoggingContext(depth + increment, verbose, output)
 }
 
 private const val INDENT_STRING = "  " // 2 spaces
@@ -11,7 +12,7 @@ context(ctx: LoggingContext)
 fun log(message: String) {
     val prefix = INDENT_STRING.repeat(ctx.depth)
     val arrow = if (ctx.depth > 0) "-> " else ""
-    println("$prefix$arrow$message")
+    ctx.output("$prefix$arrow$message")
 }
 
 /** Pipeline internals (parsing, cache, providers, scoring). Printed only in verbose mode. */
@@ -23,7 +24,7 @@ fun debug(message: String) {
 /** Per-file outcome lines. Flat single indent in concise mode, depth-indented in verbose mode. */
 context(ctx: LoggingContext)
 fun status(message: String) {
-    if (ctx.verbose) log(message) else println("$INDENT_STRING$message")
+    if (ctx.verbose) log(message) else ctx.output("$INDENT_STRING$message")
 }
 
 context(ctx: LoggingContext)

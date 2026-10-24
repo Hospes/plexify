@@ -29,6 +29,8 @@ Plexify is a cross-platform CLI tool (Kotlin Multiplatform / Native, no JVM at r
 
 There is no linter configured. Kotlin/Native linking is slow; prefer running tests over full links for iteration.
 
+`core/TranscriptTest` pins everything the processor prints (concise and verbose) for representative scenarios, through `LoggingContext.output` and `runProcessor`'s captured `ProcessorRun.output`. After an intended output change, run it and open the test report (`build/reports/tests/windowsTest/index.html`, or `linuxX64Test`): the failure message gives each transcript that differs, ready to paste over the old one; check the diff before committing.
+
 ### Verifying a change end to end
 
 Unit tests don't touch the network, and several bugs (alias matching, 404 season bodies, year scoring) only showed up against live TMDB. For anything in the parse → search → organize path, also run the binary as a dry run on real filenames, with keys from `local.properties` built in:
