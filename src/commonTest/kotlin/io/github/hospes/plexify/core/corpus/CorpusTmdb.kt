@@ -8,7 +8,7 @@ package io.github.hospes.plexify.core.corpus
 // It rests on assumptions; re-check the corpus live (`--test`) when changing what they depend on:
 // - Searches list, in TMDB's order, the results whose own title resembles the query (TMDB's confidence of 60 or more,
 //   or plexify's similarity of 0.6 or more), and the first three that don't, which get an alternative-titles lookup
-//   (TmdbProvider's ALT_TITLES_CONFIDENCE_THRESHOLD and MAX_ALT_TITLES_LOOKUPS). The other results are left out.
+//   (MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD and MAX_ALT_TITLES_LOOKUPS). The other results are left out.
 // - A record lists the alternative titles in Latin script that come about as close to a query (or to the title an ID
 //   name gives) as its own titles, every one whose type has a number (it may name a season: "Season 3 Romaji",
 //   "S2P2"), and every one ending in an arc ("-hen", "編"). A change to how aliases are scored or when they are

@@ -19,6 +19,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbMovieSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSearchResponseDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbTvDetailsDto
+import io.github.hospes.plexify.domain.matching.MatchScoring
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaId
@@ -132,7 +133,7 @@ class TmdbProvider(
         var lookups = 0
         var noAnswer: Exception? = null
         val enriched = map { result ->
-            if (noAnswer != null || result.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MAX_ALT_TITLES_LOOKUPS) {
+            if (noAnswer != null || result.matchConfidence >= MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MatchScoring.MAX_ALT_TITLES_LOOKUPS) {
                 result
             } else {
                 lookups++
@@ -147,7 +148,7 @@ class TmdbProvider(
             }
         }
         noAnswer?.let { failure ->
-            if (enriched.none { it.matchConfidence >= ALT_TITLES_CONFIDENCE_THRESHOLD }) throw failure
+            if (enriched.none { it.matchConfidence >= MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD }) throw failure
         }
         return enriched
     }
@@ -391,15 +392,6 @@ private fun Throwable.unreadableAsFailed(): Throwable =
 private fun Throwable.isTimeout(): Boolean = generateSequence(this) { it.cause }.take(8).any {
     it is HttpRequestTimeoutException || it is ConnectTimeoutException || it is SocketTimeoutException
 }
-
-// A result whose title (or original title) already resembles the query this closely
-// doesn't need an alternative-titles lookup.
-private const val ALT_TITLES_CONFIDENCE_THRESHOLD = 60.0
-
-// Cap extra API calls per search: only the first few unconvincing results get an
-// alternative-titles lookup. TMDB orders results by relevance, so the alias match
-// (if any) is expected near the top.
-private const val MAX_ALT_TITLES_LOOKUPS = 3
 
 // Cap extra API calls per show: popular shows can carry a dozen community-made groups.
 private const val MAX_EPISODE_GROUP_LOOKUPS = 6
