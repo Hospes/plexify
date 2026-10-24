@@ -9,7 +9,6 @@ import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.data.createHttpClientEngine
 import io.github.hospes.plexify.data.nonstrict
 import io.github.hospes.plexify.data.tmdb.dto.TmdbAlternativeTitlesDto
-import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbExternalIdsDto
@@ -31,7 +30,6 @@ import io.ktor.client.engine.*
 import io.ktor.client.network.sockets.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -73,11 +71,6 @@ class TmdbProvider(
                 connectTimeoutMillis = timeouts.connectMillis
                 requestTimeoutMillis = timeouts.requestMillis
             }
-
-//            install(Logging) {
-//                logger = Logger.DEFAULT
-//                level = LogLevel.ALL
-//            }
 
             // The read access token goes in the header up front; the v3 API key only when
             // there is no token. Either one alone authenticates every v3 endpoint.
@@ -227,22 +220,6 @@ class TmdbProvider(
 
     private suspend fun find(id: MediaId): TmdbFindResponseDto =
         getJson("find/${id.id}", { parameter("external_source", "imdb_id") }) { "looking up $id" }
-
-    override suspend fun episode(
-        show: CanonicalMedia.TvShow,
-        season: Int,
-        episode: Int
-    ): Result<CanonicalMedia.Episode> = tmdbCatching {
-        requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
-        val dto = getJson<TmdbEpisodeDto>("tv/${show.tmdbId}/season/$season/episode/$episode") { "fetching S${season}E${episode} of '${show.title}'" }
-
-        CanonicalMedia.Episode(
-            show = show,
-            season = dto.seasonNumber,
-            episode = dto.episodeNumber,
-            title = dto.title,
-        )
-    }
 
     override suspend fun season(
         show: CanonicalMedia.TvShow,
@@ -457,7 +434,6 @@ private fun TmdbEpisodeGroupDto.toDomainModel(
 
 private fun TmdbMediaItemDto.Movie.toDomainModel(queryTitle: String) = MediaSearchResult.Movie(
     title = title,
-    //year = releaseDate?.year?.toString(),
     year = releaseDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
     tmdbId = id,
     provider = "TMDb",
@@ -474,7 +450,6 @@ private fun TmdbMediaItemDto.toDomainModel(queryTitle: String): MediaSearchResul
 
         is TmdbMediaItemDto.TvShow -> MediaSearchResult.TvShow(
             title = title,
-            //year = firstAirDate?.year?.toString(),//releaseDate?.substringBefore("-"), // Extract year from "YYYY-MM-DD"
             year = firstAirDate?.substringBefore("-")?.ifBlank { null }, // Extract year from "YYYY-MM-DD"
             tmdbId = id,
             provider = "TMDb",

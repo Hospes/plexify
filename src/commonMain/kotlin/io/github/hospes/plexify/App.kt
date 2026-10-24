@@ -221,6 +221,4 @@ private const val HOW_TO_SET_TMDB_KEY =
     "Get a free key at https://www.themoviedb.org/settings/api and set TMDB_API_ACCESS_TOKEN " +
             "(or pass --tmdb-access-token)."
 
-fun commonMain(args: Array<String>) = App
-    //.subcommands(ExtraCommands, AnotherExtraCommands)
-    .main(args)
+fun commonMain(args: Array<String>) = App.main(args)

@@ -31,7 +31,6 @@ class TmdbCancellationTest {
         "search" to { search("Ghosts", null) },
         "searchMovies" to { searchMovies("Dune", "2021") },
         "season" to { season(show, 4) },
-        "episode" to { episode(show, 4, 1) },
         "episodeGroups" to { episodeGroups(show) },
         "externalIds" to { externalIds(show) },
     )
