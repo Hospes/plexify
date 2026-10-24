@@ -434,9 +434,7 @@ class CorpusTest {
         fun counts() = "${run.stats.organized} organized, ${run.stats.skipped} skipped, ${run.stats.failed} failed"
 
         /** The TMDB requests made, counted by endpoint ("tv/{id}/season/{id}"). */
-        fun requests(): String = tmdb.paths
-            .groupingBy { path -> path.removePrefix("/3/").split('/').joinToString("/") { if (it.any(Char::isDigit)) "{id}" else it } }
-            .eachCount().entries.sortedBy { it.key }.joinToString(", ") { (endpoint, count) -> "$count $endpoint" }
+        fun requests(): String = requestsByEndpoint(tmdb.paths)
 
         private fun kotlinx.io.files.Path.relative() = toString().replace('\\', '/').replace(LIBRARY, "")
     }
