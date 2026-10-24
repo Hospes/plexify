@@ -4,6 +4,7 @@ import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
 import io.github.hospes.plexify.core.yearScore
 import io.github.hospes.plexify.data.MetadataCache
+import io.github.hospes.plexify.data.calculateTitleConfidence
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.PathFormatter
@@ -67,6 +68,7 @@ class MatchScoringTest {
 
     @Test
     fun `match score table`() = with(LoggingContext()) {
+        val spidermanConfidence = calculateTitleConfidence("Spiderman", "Spider-Man")
         val table = listOf(
             // 10·1.0 + 10 (exact year) + 0 (one provider) + 100/20
             ScoreRow(
@@ -74,24 +76,26 @@ class MatchScoringTest {
                 listOf(MediaSearchResult.Movie("Inception", "2010", tmdbId = "27205", provider = "TMDb", matchConfidence = 100.0)),
                 "Inception", "2010", expected = 25.0,
             ),
-            // 10·1.0 (via the alias) + 4.9 (show premiered two years before) + 0 + 40/20
+            // 10·1.0 (via the alias) + 4.9 (show premiered two years before) + 0 + 100/20: once the aliases
+            // are looked up, the provider scores its confidence over them too.
             ScoreRow(
                 "show matched by alias, premiered earlier",
                 listOf(
                     MediaSearchResult.TvShow(
-                        "The Kingdoms of Ruin", "2023", tmdbId = "219673", provider = "TMDb", matchConfidence = 40.0,
+                        "The Kingdoms of Ruin", "2023", tmdbId = "219673", provider = "TMDb", matchConfidence = 100.0,
                         alternativeTitles = listOf("Hametsu no Oukoku"),
                     )
                 ),
-                "Hametsu no Oukoku", "2025", expected = 16.9,
+                "Hametsu no Oukoku", "2025", expected = 19.9,
             ),
-            // 10·1.0 + 0 (no year) + 2·(2 − 1) + 90/20. "Spiderman" against "Spider-Man" is similarity
-            // 1.0 (letters and digits only) but confidence 90 (lowercased only).
+            // 10·1.0 + 0 (no year) + 2·(2 − 1) + 90/20. The title counts twice, normalized two ways:
+            // "Spiderman" against "Spider-Man" is similarity 1.0 (letters and digits only) but confidence
+            // 90 (lowercased only).
             ScoreRow(
                 "two providers agree, no year",
                 listOf(
-                    MediaSearchResult.Movie("Spider-Man", "2002", tmdbId = "557", provider = "TMDb", matchConfidence = 90.0),
-                    MediaSearchResult.Movie("Spider-Man", "2002", tmdbId = "557", provider = "Other", matchConfidence = 90.0),
+                    MediaSearchResult.Movie("Spider-Man", "2002", tmdbId = "557", provider = "TMDb", matchConfidence = spidermanConfidence),
+                    MediaSearchResult.Movie("Spider-Man", "2002", tmdbId = "557", provider = "Other", matchConfidence = spidermanConfidence),
                 ),
                 "Spiderman", null, expected = 16.5,
             ),

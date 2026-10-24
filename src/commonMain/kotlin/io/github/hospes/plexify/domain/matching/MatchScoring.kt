@@ -38,10 +38,11 @@ package io.github.hospes.plexify.domain.matching
  *   punctuation can break a tie between candidates.
  * - **[MINIMUM_CONFIDENCE_SCORE] rarely decides.** A candidate past the similarity cut already has
  *   4.0 from its title, and when the filename and the candidate both have a year, at least
- *   [SHOW_YEAR_FLOOR] more: 5.0. It can fall below the minimum only when a year is missing, its
- *   similarity is under 0.5, and its confidence is under `100 − 200 · similarity` (under 20 at
- *   0.40, under 10 at 0.45). Both title terms measure nearly the same thing, so in practice
- *   [MIN_TITLE_SIMILARITY] is the gate.
+ *   [SHOW_YEAR_FLOOR] more: 5.0; a second provider would add [PROVIDER_AGREEMENT_BONUS]. It can
+ *   fall below the minimum only when a year is missing, one provider returned it, its similarity is
+ *   under 0.5, and its confidence is under `100 − 200 · similarity` (under 20 at 0.40, under 10 at
+ *   0.45). Both title terms measure nearly the same thing, so in practice [MIN_TITLE_SIMILARITY]
+ *   is the gate.
  */
 object MatchScoring {
     /** Below this title similarity a candidate is discarded, whatever else it has. */
