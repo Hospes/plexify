@@ -68,10 +68,11 @@ class MediaProcessor(
     // warning for every episode file of the same release.
     private val seasonWarnedDirs = mutableSetOf<String>()
 
-    // The season each searched show title (keyed "title:year", as the show cache is) names, if any.
+    // The season each show title names, if any, keyed as the show cache is: "title:year", or the
+    // idShowKey of a show found by the ID in the path.
     private val titleSeasons = mutableMapOf<String, TitleSeason?>()
 
-    // Searched show titles (keyed "title:year") that end in an arc no season title places.
+    // Show titles (keyed as titleSeasons is) that end in an arc no season title places.
     private val unplacedArcTitles = mutableSetOf<String>()
 
     // Show titles closing in a number (keyed "title:year") and whether that number is the season.
@@ -83,8 +84,8 @@ class MediaProcessor(
     // Show+season pairs already reported as mapped (or unmappable) through episode groups.
     private val episodeGroupNotices = mutableSetOf<String>()
 
-    // The show each release season (keyed "title:year:season") was placed in, so later files of the
-    // same season go to the same show instead of being matched again.
+    // The show each release season (keyed "<show key>:season", the show key as titleSeasons has it) was
+    // placed in, so later files of the same season go to the same show instead of being matched again.
     private val seasonShows = mutableMapOf<String, CanonicalMedia.TvShow>()
 
     context(_: LoggingContext)
@@ -1082,12 +1083,12 @@ internal fun yearScore(parsedYear: Int, candidateYear: Int, isShow: Boolean): Do
     }
 }
 
-// Keep only alphanumeric chars for title comparison, so "Spider-Man" matches "Spiderman".
 // An arc at the end of a release title: romaji "-hen" (separators are spaces by then), English
 // "Arc", Japanese/Chinese 編/篇.
 private val ARC_SUFFIX = Regex("""(?:\s(?:hen|arc)|[編篇])$""", RegexOption.IGNORE_CASE)
 private val ARC_ENDINGS = listOf("hen", "arc", "編", "篇")
 
+// Keep only alphanumeric chars for title comparison, so "Spider-Man" matches "Spiderman".
 private fun String.normalizedTitle(): String = filter { it.isLetterOrDigit() }.lowercase()
 
 /** Normalized Levenshtein similarity in [0.0, 1.0]; 1.0 means identical strings. */
