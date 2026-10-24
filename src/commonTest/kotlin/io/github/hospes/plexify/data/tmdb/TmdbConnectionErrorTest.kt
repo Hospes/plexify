@@ -1,7 +1,6 @@
 package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.data.MetadataConnectionException
-import io.ktor.client.engine.mock.*
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,14 +9,9 @@ import kotlin.test.assertIs
 
 class TmdbConnectionErrorTest {
 
-    private val credentials = TmdbCredentials(apiKey = "secret-key", accessToken = null, source = TmdbCredentials.Source.USER)
-
-    private fun provider(handler: MockRequestHandler) =
-        TmdbProvider(credentials) { MockEngine(handler) }
-
     @Test
     fun `a connection error fails with curl's reason instead of the request url`() = runBlocking {
-        val provider = provider { request ->
+        val provider = mockProvider { request ->
             // As the curl engine words it.
             throw IllegalStateException(
                 "Connection failed for request: CurlRequestData(url='${request.url}', method='GET', content: 0 bytes). " +
@@ -36,7 +30,7 @@ class TmdbConnectionErrorTest {
 
     @Test
     fun `an error without curl's wording keeps its message`() = runBlocking {
-        val provider = provider { throw IllegalStateException("Network is unreachable") }
+        val provider = mockProvider { throw IllegalStateException("Network is unreachable") }
 
         val error = provider.search("Dune", null).exceptionOrNull()
 

@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,12 +9,10 @@ class SeasonFromTitleTest {
 
     // Demon Slayer as TMDB has it: one show, each arc its own season, the arcs' romaji titles
     // among the alternative titles tagged with their season.
-    private val demonSlayer = MediaSearchResult.TvShow(
+    private val demonSlayer = showResult(
         title = "Demon Slayer: Kimetsu no Yaiba",
         year = "2019",
         tmdbId = "85937",
-        provider = "TMDb",
-        matchConfidence = 100.0,
         originalTitle = "鬼滅の刃",
         alternativeTitles = listOf(
             "Kimetsu no Yaiba",
@@ -93,7 +90,7 @@ class SeasonFromTitleTest {
 
     @Test
     fun `a show whose own title ends like an arc is not an arc`() = runTest {
-        val noahsArc = MediaSearchResult.TvShow(title = "Noah's Arc", year = "2005", tmdbId = "2", provider = "TMDb", matchConfidence = 100.0)
+        val noahsArc = showResult("Noah's Arc", "2005", "2")
 
         val run = runProcessor(FakeTmdb(listOf(noahsArc), seasons = mapOf("2" to mapOf(1 to 1..9))), "Noahs_Arc_[01]_[720p].mkv")
 
