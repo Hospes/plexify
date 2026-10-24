@@ -3,6 +3,8 @@ package io.github.hospes.plexify.domain.service
 import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
+import io.github.hospes.plexify.data.MetadataTimeoutException
+import io.github.hospes.plexify.data.MetadataUnreachableException
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
@@ -11,6 +13,7 @@ import io.github.hospes.plexify.logging.LoggingContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class ExternalIdsLookupTest {
@@ -35,12 +38,14 @@ class ExternalIdsLookupTest {
     private val breakingBad = CanonicalMedia.TvShow(title = "Breaking Bad", year = 2008, tmdbId = "1396")
     private val breakingBadIds = ExternalIds(imdbId = "tt0903747")
 
+    private suspend fun MetadataService.lookUp(media: CanonicalMedia) = with(LoggingContext()) { getExternalIds(media) }
+
     @Test
     fun `looks up the imdb id when the template uses it`() = runTest {
         val provider = FakeProvider(Result.success(ExternalIds(imdbId = "tt0133093")))
         val service = MetadataService(listOf(provider), NamingStrategy.Plex)
 
-        assertEquals("tt0133093", with(LoggingContext()) { service.getExternalIds(matrix) }?.imdbId)
+        assertEquals("tt0133093", service.lookUp(matrix).getOrThrow()?.imdbId)
         assertEquals(1, provider.lookups)
     }
 
@@ -49,7 +54,7 @@ class ExternalIdsLookupTest {
         val provider = FakeProvider(Result.success(breakingBadIds))
         val service = MetadataService(listOf(provider), NamingStrategy.Plex)
 
-        assertEquals("tt0903747", with(LoggingContext()) { service.getExternalIds(breakingBad) }?.imdbId)
+        assertEquals("tt0903747", service.lookUp(breakingBad).getOrThrow()?.imdbId)
         assertEquals(1, provider.lookups)
     }
 
@@ -58,8 +63,8 @@ class ExternalIdsLookupTest {
         val provider = FakeProvider(Result.success(breakingBadIds))
         val service = MetadataService(listOf(provider), NamingStrategy.Jellyfin)
 
-        assertNull(with(LoggingContext()) { service.getExternalIds(breakingBad) })
-        assertNull(with(LoggingContext()) { service.getExternalIds(matrix) })
+        assertNull(service.lookUp(breakingBad).getOrThrow())
+        assertNull(service.lookUp(matrix).getOrThrow())
         assertEquals(0, provider.lookups)
     }
 
@@ -68,7 +73,38 @@ class ExternalIdsLookupTest {
         val provider = FakeProvider(Result.failure(MetadataNotFoundException("HTTP 404")))
         val service = MetadataService(listOf(provider), NamingStrategy.Plex)
 
-        assertNull(with(LoggingContext()) { service.getExternalIds(matrix) })
+        assertNull(service.lookUp(matrix).getOrThrow())
+    }
+
+    @Test
+    fun `a record without an imdb id leaves it empty`() = runTest {
+        val provider = FakeProvider(Result.success(ExternalIds(imdbId = null)))
+        val service = MetadataService(listOf(provider), NamingStrategy.Plex)
+
+        assertNull(service.lookUp(matrix).getOrThrow())
+    }
+
+    @Test
+    fun `a lookup that failed fails`() = runTest {
+        val failures = listOf(
+            IllegalStateException("HTTP 503 fetching external IDs of 'The Matrix'"),
+            MetadataTimeoutException("TMDB request timed out fetching external IDs of 'The Matrix'"),
+            MetadataUnreachableException("Not fetching external IDs of 'The Matrix': TMDB stopped answering earlier in this run"),
+        )
+        for (failure in failures) {
+            val service = MetadataService(listOf(FakeProvider(Result.failure(failure))), NamingStrategy.Plex)
+
+            assertEquals(failure, service.lookUp(matrix).exceptionOrNull())
+        }
+    }
+
+    @Test
+    fun `another provider's imdb id wins over a failed lookup`() = runTest {
+        val failing = FakeProvider(Result.failure(IllegalStateException("HTTP 503")), id = "tmdb")
+        val other = FakeProvider(Result.success(ExternalIds(imdbId = "tt0133093")), id = "other", supportedIds = setOf("imdbid"))
+        val service = MetadataService(listOf(failing, other), NamingStrategy.Plex)
+
+        assertEquals("tt0133093", service.lookUp(matrix).getOrThrow()?.imdbId)
     }
 
     @Test
@@ -77,7 +113,7 @@ class ExternalIdsLookupTest {
         val other = FakeProvider(Result.success(ExternalIds(imdbId = "tt0133093")), id = "other", supportedIds = setOf("imdbid"))
         val service = MetadataService(listOf(unsupported, other), NamingStrategy.Plex)
 
-        assertEquals("tt0133093", with(LoggingContext()) { service.getExternalIds(matrix) }?.imdbId)
+        assertEquals("tt0133093", service.lookUp(matrix).getOrThrow()?.imdbId)
     }
 
     @Test
@@ -85,9 +121,24 @@ class ExternalIdsLookupTest {
         val cache = MetadataCache()
         var lookups = 0
 
-        repeat(3) { assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; breakingBadIds }) }
-        repeat(3) { assertNull(cache.getOrPutExternalIds("movie:603") { lookups++; null }) }
+        repeat(3) { assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; Result.success(breakingBadIds) }.getOrThrow()) }
+        repeat(3) { assertNull(cache.getOrPutExternalIds("movie:603") { lookups++; Result.success(null) }.getOrThrow()) }
 
         assertEquals(2, lookups)
+    }
+
+    @Test
+    fun `cache looks a failed lookup up again`() = runTest {
+        val cache = MetadataCache()
+        var lookups = 0
+
+        repeat(2) {
+            val result = cache.getOrPutExternalIds("tv:1396") { lookups++; Result.failure(IllegalStateException("HTTP 503")) }
+            assertIs<IllegalStateException>(result.exceptionOrNull())
+        }
+        assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; Result.success(breakingBadIds) }.getOrThrow())
+        assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; Result.success(null) }.getOrThrow())
+
+        assertEquals(3, lookups)
     }
 }

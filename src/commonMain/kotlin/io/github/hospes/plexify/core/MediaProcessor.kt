@@ -186,6 +186,7 @@ class MediaProcessor(
         }
 
         val canonicalMovie = (ranking.firstOrNull()?.media as? CanonicalMedia.Movie)?.withExternalIds()
+            ?.getOrElse { error -> return@indent lookupFailed(source, error) }
 
         if (canonicalMovie == null) {
             status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
@@ -357,7 +358,7 @@ class MediaProcessor(
         debug("Trying '${numbered.showTitle}' Season ${numbered.season} for '${parsed.showTitle}'")
         // With its external IDs now, so the season cached below carries them, as findEpisode expects.
         val show = bestShow(numbered.showTitle, parsed.year).getOrElse { return@indent Result.failure(it) }
-            ?.withExternalIds()
+            ?.withExternalIds()?.getOrElse { return@indent Result.failure(it) }
             ?: return@indent Result.success(null)
         val season = findOrFetchSeason(show, numbered.season).getOrElse { return@indent Result.failure(it) }
         if (season.episodes.isEmpty()) {
@@ -383,7 +384,7 @@ class MediaProcessor(
     private val CanonicalMedia.TvShow.identity: String get() = tmdbId ?: imdbId ?: title
 
     /**
-     * The lookup itself failed (a search or a season fetch timed out, or hit an HTTP or network error),
+     * The lookup itself failed (a search, a season fetch or an IMDb lookup timed out, or hit an HTTP or network error),
      * so the file is a failure, not a miss.
      */
     context(_: LoggingContext)
@@ -462,6 +463,9 @@ class MediaProcessor(
             emptyList()
         } else {
             val best = ranked.firstOrNull()
+            // Only the best match gets its external IDs now; a runner-up gets them if the episode
+            // fallback picks it (see findEpisode). A failed lookup fails before anything is kept.
+            val bestShow = best?.let { (it.media as CanonicalMedia.TvShow).withExternalIds().getOrElse { error -> return@indent Result.failure(error) } }
             titleSeasons[cacheKey] = best?.titleSeason
             if (best?.namesUnplacedArc == true) unplacedArcTitles += cacheKey
             val runnerUps = ranked.drop(1).filter { candidate ->
@@ -469,10 +473,7 @@ class MediaProcessor(
                     if (!sameShow) debug("Not a fallback for '$title': ${candidate.media.describe()} (title or year differs)")
                 }
             }
-            // Only the best match gets its external IDs now; a runner-up gets them if the
-            // episode fallback picks it (see findEpisode).
-            listOfNotNull(best).map { (it.media as CanonicalMedia.TvShow).withExternalIds() } +
-                    runnerUps.map { it.media as CanonicalMedia.TvShow }
+            listOfNotNull(bestShow) + runnerUps.map { it.media as CanonicalMedia.TvShow }
         }
 
         if (shows.isNotEmpty()) {
@@ -496,6 +497,7 @@ class MediaProcessor(
         debug("Looking up the movie $id in the path")
         val record = metadataService.findMovie(id).getOrElse { return@indent Result.failure(it) }
         val movie = (rankById(id, record, "movie", parsed.title, parsed.year)?.media as? CanonicalMedia.Movie)?.withExternalIds()
+            ?.getOrElse { return@indent Result.failure(it) }
         if (movie != null) status("Matched movie by the ID in its path: ${movie.describe()}")
         Result.success(movie)
     }
@@ -515,7 +517,7 @@ class MediaProcessor(
         debug("Looking up the show $id in the path")
         val record = metadataService.findShow(id).getOrElse { return@indent Result.failure(it) }
         val match = rankById(id, record, "show", parsed.showTitle, parsed.year)
-        val show = (match?.media as? CanonicalMedia.TvShow)?.withExternalIds()
+        val show = (match?.media as? CanonicalMedia.TvShow)?.withExternalIds()?.getOrElse { return@indent Result.failure(it) }
         if (match == null || show == null) {
             cache.markShowFailed(cacheKey)
         } else {
@@ -645,7 +647,7 @@ class MediaProcessor(
             // unknown, and taking the next one could file the season under the wrong show.
             val candidateSeason = indent { findOrFetchSeason(candidate, season) }.getOrElse { return Result.failure(it) }
             val match = candidateSeason.episodes.firstOrNull { it.episode == episode } ?: continue
-            val alternative = candidate.withExternalIds()
+            val alternative = candidate.withExternalIds().getOrElse { return Result.failure(it) }
             seasonShows[seasonKey] = alternative
             status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
             return Result.success(match.copy(show = alternative))
@@ -756,27 +758,27 @@ class MediaProcessor(
 
     /** Fills the winning movie's IMDb ID, which search results don't carry. See [findExternalIds]. */
     context(_: LoggingContext)
-    private suspend fun CanonicalMedia.Movie.withExternalIds(): CanonicalMedia.Movie {
-        if (imdbId != null) return this
-        val ids = findExternalIds(this, tmdbId) ?: return this
-        return copy(imdbId = ids.imdbId)
+    private suspend fun CanonicalMedia.Movie.withExternalIds(): Result<CanonicalMedia.Movie> {
+        if (imdbId != null) return Result.success(this)
+        return findExternalIds(this, tmdbId).map { ids -> ids?.let { copy(imdbId = it.imdbId) } ?: this }
     }
 
     /** Fills the winning show's IMDb ID, which search results don't carry. See [findExternalIds]. */
     context(_: LoggingContext)
-    private suspend fun CanonicalMedia.TvShow.withExternalIds(): CanonicalMedia.TvShow {
-        if (imdbId != null) return this
-        val ids = findExternalIds(this, tmdbId) ?: return this
-        return copy(imdbId = ids.imdbId)
+    private suspend fun CanonicalMedia.TvShow.withExternalIds(): Result<CanonicalMedia.TvShow> {
+        if (imdbId != null) return Result.success(this)
+        return findExternalIds(this, tmdbId).map { ids -> ids?.let { copy(imdbId = it.imdbId) } ?: this }
     }
 
     /**
      * Looked up once per TMDB record and run (the service skips it when the template doesn't use
-     * `{imdbid}`), so a season of episodes or several versions of a movie cost one call.
+     * `{imdbid}`), so a season of episodes or several versions of a movie cost one call. A failed
+     * lookup fails the file, as a failed season fetch does, and is tried again for the next one:
+     * named without the ID, the file would land outside the folder the next run files the title in.
      */
     context(_: LoggingContext)
-    private suspend fun findExternalIds(media: CanonicalMedia, tmdbId: String?): ExternalIds? {
-        if (tmdbId == null) return null
+    private suspend fun findExternalIds(media: CanonicalMedia, tmdbId: String?): Result<ExternalIds?> {
+        if (tmdbId == null) return Result.success(null)
         val kind = if (media is CanonicalMedia.Movie) "movie" else "tv"
         return cache.getOrPutExternalIds("$kind:$tmdbId") { metadataService.getExternalIds(media) }
     }

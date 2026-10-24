@@ -146,31 +146,37 @@ class MetadataService(
     }
 
     /**
-     * IMDb ID of a matched movie or show, from the first provider that supplies one.
-     * Null without a lookup when the naming template doesn't use it (Jellyfin's doesn't),
-     * so the extra call is only made when its result is used.
+     * IMDb ID of a matched movie or show, from the first provider that supplies one; null when none
+     * has one (HTTP 404, or a record without it). Null without a lookup when the naming template
+     * doesn't use it (Jellyfin's doesn't), so the extra call is only made when its result is used.
+     * Fails as [getSeason] does when a lookup failed and no provider had the ID: the template names
+     * the folder by it, so leaving it out would file the title apart from the next run's files.
      */
     context(_: LoggingContext)
-    suspend fun getExternalIds(media: CanonicalMedia): ExternalIds? {
-        if (media !is CanonicalMedia.Movie && media !is CanonicalMedia.TvShow) return null
-        if (IMDB_ID !in namingStrategy.requiredMetadataFields()) return null
+    suspend fun getExternalIds(media: CanonicalMedia): Result<ExternalIds?> {
+        if (media !is CanonicalMedia.Movie && media !is CanonicalMedia.TvShow) return Result.success(null)
+        if (IMDB_ID !in namingStrategy.requiredMetadataFields()) return Result.success(null)
         return indent {
+            var failure: Throwable? = null
             for (provider in resolveActiveProviders().filter { IMDB_ID in it.supportedIds }) {
-                val ids = provider.externalIds(media)
+                provider.externalIds(media)
+                    .onSuccess { ids ->
+                        if (ids.imdbId != null) {
+                            debug("External IDs fetched from ${provider.id}: imdb=${ids.imdbId}")
+                            return@indent Result.success(ids)
+                        }
+                        debug("${provider.id}: no IMDb ID")
+                    }
                     .onFailure { error ->
+                        // The caller reports a failed lookup with the file it fails.
+                        debug("${provider.id}: ${error.message}")
                         when (error) {
-                            is UnsupportedOperationException -> Unit
-                            is MetadataNotFoundException -> debug("${provider.id}: ${error.message}")
-                            else -> log("Error(${provider.id}): ${error.message}")
+                            is MetadataNotFoundException, is UnsupportedOperationException -> Unit
+                            else -> if (failure == null) failure = error
                         }
                     }
-                    .getOrNull()
-                if (ids?.imdbId != null) {
-                    debug("External IDs fetched from ${provider.id}: imdb=${ids.imdbId}")
-                    return@indent ids
-                }
             }
-            null
+            failure?.let { Result.failure(it) } ?: Result.success(null)
         }
     }
 

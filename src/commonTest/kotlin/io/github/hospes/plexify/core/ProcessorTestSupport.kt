@@ -25,6 +25,8 @@ import kotlin.random.Random
  * [moviesByYear] answers the search with a year, empty for any other year; [yearSearchFailure] fails it.
  * [resultsByTitle] answers the general search for those titles instead of [results].
  * A lookup by ID finds any of these results, or of [idRecords], by its TMDB ID or "tt" + TMDB ID; [idLookupFailure] fails it.
+ * Looking up the external IDs of one of [failingExternalIds] (TMDB IDs) fails the first [externalIdFailures] times;
+ * the records in [withoutImdbId] have no IMDb ID.
  */
 internal class FakeTmdb(
     private val results: List<MediaSearchResult>,
@@ -38,6 +40,9 @@ internal class FakeTmdb(
     private val resultsByTitle: Map<String, List<MediaSearchResult>> = emptyMap(),
     private val idRecords: List<MediaSearchResult> = emptyList(),
     private val idLookupFailure: Throwable? = null,
+    private val failingExternalIds: Set<String> = emptySet(),
+    private val externalIdFailures: Int = Int.MAX_VALUE,
+    private val withoutImdbId: Set<String> = emptySet(),
 ) : MetadataProvider {
     override val id = "tmdb"
     override val supportedIds = setOf("tmdbid", "imdbid")
@@ -102,7 +107,10 @@ internal class FakeTmdb(
             else -> null
         }!!
         externalIdLookups += tmdbId
-        return Result.success(ExternalIds(imdbId = "tt$tmdbId"))
+        if (tmdbId in failingExternalIds && externalIdLookups.count { it == tmdbId } <= externalIdFailures) {
+            return Result.failure(IllegalStateException("HTTP 503 fetching external IDs of $tmdbId"))
+        }
+        return Result.success(ExternalIds(imdbId = if (tmdbId in withoutImdbId) null else "tt$tmdbId"))
     }
 }
 
