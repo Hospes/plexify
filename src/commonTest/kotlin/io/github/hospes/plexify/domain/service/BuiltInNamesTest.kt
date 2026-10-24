@@ -75,6 +75,7 @@ class BuiltInNamesTest {
         movie("Inception", parsed = ParsedMediaInfo.Movie(title = "x", year = null, edition = "E".repeat(300), releaseGroup = "GRP")),
         movie("Inception", parsed = ParsedMediaInfo.Movie(title = "x", year = null, edition = "E".repeat(233), releaseGroup = "GRP")),
         movie("[REC]", year = 2007),
+        movie("Schindler’s List", year = 1993),
     )
 
     private val longShow = boys.copy(title = "An Extremely Long Show Title That Keeps On Going ".repeat(6).trim())
@@ -154,6 +155,7 @@ class BuiltInNamesTest {
             Plex | Inception (2010) {imdb-tt1375666}/… (2010) - [EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE.mkv
             Plex | Inception (2010) {imdb-tt1375666}/Inc… (2010) - [EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE].mkv
             Plex | [REC] (2007) {imdb-tt1375666}/[REC] (2007).mkv
+            Plex | Schindler’s List (1993) {imdb-tt1375666}/Schindler’s List (1993).mkv
             Plex | The Boys (2019) {imdb-tt1190634}/Season 03/The Boys (2019) - S03E01 - Payback.mkv
             Plex | The Boys (2019) {imdb-tt1190634}/Season 03/The Boys (2019) - S03E01 - Payback - [720p] [WEB-DL] [NTb].mkv
             Plex | The Boys (2019) {imdb-tt1190634}/Season 03/The Boys (2019) - S03E01-E02 - Payback & The Only Man in the Sky - [720p] [WEB-DL] [NTb].mkv
@@ -192,6 +194,7 @@ class BuiltInNamesTest {
             Jellyfin | Inception (2010) [tmdbid-27205]/… (2010) [tmdbid-27205] - [EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE.mkv
             Jellyfin | Inception (2010) [tmdbid-27205]/… (2010) [tmdbid-27205] - [EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE.mkv
             Jellyfin | [REC] (2007) [tmdbid-27205]/[REC] (2007) [tmdbid-27205].mkv
+            Jellyfin | Schindler’s List (1993) [tmdbid-27205]/Schindler’s List (1993) [tmdbid-27205].mkv
             Jellyfin | The Boys (2019) [tmdbid-76479]/Season 03/The Boys (2019) - S03E01 - Payback.mkv
             Jellyfin | The Boys (2019) [tmdbid-76479]/Season 03/The Boys (2019) - S03E01 - Payback - [720p] [WEB-DL] [NTb].mkv
             Jellyfin | The Boys (2019) [tmdbid-76479]/Season 03/The Boys (2019) - S03E01-E02 - Payback & The Only Man in the Sky - [720p] [WEB-DL] [NTb].mkv
