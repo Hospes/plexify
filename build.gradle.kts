@@ -1,5 +1,6 @@
 @file:OptIn(KotlinNativeCacheApi::class)
 
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.plugin.mpp.DisableCacheInKotlinVersion
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCacheApi
 import org.jetbrains.kotlin.konan.properties.Properties
@@ -101,6 +102,11 @@ kotlin {
     compilerOptions {
         optIn.add("kotlinx.serialization.ExperimentalSerializationApi")
     }
+}
+
+// The default console format gives a failed test's exception class but not its message, and CI has only the log.
+tasks.withType<AbstractTestTask>().configureEach {
+    testLogging.exceptionFormat = TestExceptionFormat.FULL
 }
 
 fun loadLocalProperties(): Properties {
