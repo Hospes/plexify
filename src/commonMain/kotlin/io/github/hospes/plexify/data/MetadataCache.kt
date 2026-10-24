@@ -43,12 +43,14 @@ class MetadataCache {
         episodeGroupMutex.withLock { episodeGroupCache[showKey] = groups }
 
     /**
-     * External IDs by media key, looked up once per run. A null result (not needed, or the lookup
-     * failed) is cached too. The lock is held through [lookup], so concurrent callers asking for
-     * the same key wait for the first lookup instead of repeating it.
+     * External IDs by media key, looked up once per run. A null result (not needed, or the media has
+     * none) is cached too; a failed lookup is not, so the next caller tries again. The lock is held
+     * through [lookup], so concurrent callers asking for the same key wait for the first lookup
+     * instead of repeating it.
      */
-    suspend fun getOrPutExternalIds(key: String, lookup: suspend () -> ExternalIds?): ExternalIds? =
+    suspend fun getOrPutExternalIds(key: String, lookup: suspend () -> Result<ExternalIds?>): Result<ExternalIds?> =
         externalIdsMutex.withLock {
-            if (key in externalIdsCache) externalIdsCache[key] else lookup().also { externalIdsCache[key] = it }
+            if (key in externalIdsCache) Result.success(externalIdsCache[key])
+            else lookup().onSuccess { externalIdsCache[key] = it }
         }
 }

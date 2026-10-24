@@ -103,24 +103,24 @@ class TmdbProvider(
     }
 
     override suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = tmdbCatching {
-        val response = get("search/multi", {
+        val dto = getJson<TmdbSearchResponseDto>("search/multi", {
             parameter("query", title)
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
         }) { "searching for '$title'" }
-        response.body<TmdbSearchResponseDto>().items.mapNotNull { it.toDomainModel(title) }.withAlternativeTitles(title)
+        dto.items.mapNotNull { it.toDomainModel(title) }.withAlternativeTitles(title)
     }
 
     override suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = tmdbCatching {
         // `year` matches a release in any country, not only the primary one, so a film whose TMDB
         // date is its premiere is still found by the year of a later release.
-        val response = get("search/movie", {
+        val dto = getJson<TmdbMovieSearchResponseDto>("search/movie", {
             parameter("query", title)
             parameter("year", year)
             parameter("include_adult", true)
             parameter("page", 1)
         }) { "searching for '$title' ($year)" }
-        response.body<TmdbMovieSearchResponseDto>().items.map { it.toDomainModel(title) }.withAlternativeTitles(title)
+        dto.items.map { it.toDomainModel(title) }.withAlternativeTitles(title)
     }
 
     /**
@@ -162,11 +162,10 @@ class TmdbProvider(
             is MediaSearchResult.Movie -> "movie/${result.tmdbId}/alternative_titles"
             is MediaSearchResult.TvShow -> "tv/${result.tmdbId}/alternative_titles"
         }
-        val response = get(endpoint, {
+        val dto = getJson<TmdbAlternativeTitlesDto>(endpoint, {
             attributes.put(OptionalLookup, Unit)
             timeout { requestTimeoutMillis = timeouts.optionalRequestMillis }
         }) { "fetching alternative titles of '${result.title}'" }
-        val dto = response.body<TmdbAlternativeTitlesDto>()
         val altTitles = dto.all.map { it.title }
         if (altTitles.isEmpty()) return result
 
@@ -193,8 +192,7 @@ class TmdbProvider(
             MediaId.Database.TMDB -> id.id
             MediaId.Database.IMDB -> find(id).movies.firstOrNull()?.id ?: throw MetadataNotFoundException("No movie found for $id")
         }
-        val dto = get("movie/$tmdbId", { parameter("append_to_response", "alternative_titles") }) { "looking up movie $id" }
-            .body<TmdbMovieDetailsDto>()
+        val dto = getJson<TmdbMovieDetailsDto>("movie/$tmdbId", { parameter("append_to_response", "alternative_titles") }) { "looking up movie $id" }
         MediaSearchResult.Movie(
             title = dto.title,
             year = dto.releaseDate?.substringBefore("-")?.ifBlank { null },
@@ -211,8 +209,7 @@ class TmdbProvider(
             MediaId.Database.TMDB -> id.id
             MediaId.Database.IMDB -> find(id).shows.firstOrNull()?.id ?: throw MetadataNotFoundException("No show found for $id")
         }
-        val dto = get("tv/$tmdbId", { parameter("append_to_response", "alternative_titles,external_ids") }) { "looking up show $id" }
-            .body<TmdbTvDetailsDto>()
+        val dto = getJson<TmdbTvDetailsDto>("tv/$tmdbId", { parameter("append_to_response", "alternative_titles,external_ids") }) { "looking up show $id" }
         MediaSearchResult.TvShow(
             title = dto.title,
             year = dto.firstAirDate?.substringBefore("-")?.ifBlank { null },
@@ -227,7 +224,7 @@ class TmdbProvider(
     }
 
     private suspend fun find(id: MediaId): TmdbFindResponseDto =
-        get("find/${id.id}", { parameter("external_source", "imdb_id") }) { "looking up $id" }.body()
+        getJson("find/${id.id}", { parameter("external_source", "imdb_id") }) { "looking up $id" }
 
     override suspend fun episode(
         show: CanonicalMedia.TvShow,
@@ -235,8 +232,7 @@ class TmdbProvider(
         episode: Int
     ): Result<CanonicalMedia.Episode> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode details." }
-        val response = get("tv/${show.tmdbId}/season/$season/episode/$episode") { "fetching S${season}E${episode} of '${show.title}'" }
-        val dto = response.body<TmdbEpisodeDto>()
+        val dto = getJson<TmdbEpisodeDto>("tv/${show.tmdbId}/season/$season/episode/$episode") { "fetching S${season}E${episode} of '${show.title}'" }
 
         CanonicalMedia.Episode(
             show = show,
@@ -251,8 +247,7 @@ class TmdbProvider(
         season: Int,
     ): Result<CanonicalMedia.Season> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch season details." }
-        val response = get("tv/${show.tmdbId}/season/$season") { "fetching season $season of '${show.title}'" }
-        val dto = response.body<TmdbSeasonDto>()
+        val dto = getJson<TmdbSeasonDto>("tv/${show.tmdbId}/season/$season") { "fetching season $season of '${show.title}'" }
 
         CanonicalMedia.Season(
             show = show,
@@ -272,13 +267,13 @@ class TmdbProvider(
         show: CanonicalMedia.TvShow,
     ): Result<List<CanonicalMedia.EpisodeGroup>> = tmdbCatching {
         requireNotNull(show.tmdbId) { "TMDb ID is required to fetch episode groups." }
-        val response = get("tv/${show.tmdbId}/episode_groups") { "fetching episode groups of '${show.title}'" }
+        val groups = getJson<TmdbEpisodeGroupsDto>("tv/${show.tmdbId}/episode_groups") { "fetching episode groups of '${show.title}'" }
 
         // Each group's episodes take one more call, so fetch only orderings that can stand in
         // for seasons, most trusted first, plus a couple of absolute orderings for absolute-numbered
         // releases ("One Piece - 1071"). Story-arc orderings are skipped.
         val seasonLikeTypes = EpisodeGroupMapper.SEASON_LIKE_TYPES
-        val summaries = response.body<TmdbEpisodeGroupsDto>().results
+        val summaries = groups.results
             .mapNotNull { summary -> summary.type.toEpisodeGroupType()?.let { summary to it } }
         val seasonLike = summaries
             .filter { (_, type) -> type in seasonLikeTypes }
@@ -289,8 +284,8 @@ class TmdbProvider(
             .take(MAX_ABSOLUTE_GROUP_LOOKUPS)
         (seasonLike + absolute)
             .map { (summary, type) ->
-                val groupResponse = get("tv/episode_group/${summary.id}") { "fetching episode group '${summary.name}' of '${show.title}'" }
-                groupResponse.body<TmdbEpisodeGroupDto>().toDomainModel(show, type)
+                getJson<TmdbEpisodeGroupDto>("tv/episode_group/${summary.id}") { "fetching episode group '${summary.name}' of '${show.title}'" }
+                    .toDomainModel(show, type)
             }
     }
 
@@ -302,8 +297,7 @@ class TmdbProvider(
             else -> throw UnsupportedOperationException("External IDs are looked up for movies and shows only.")
         }
         requireNotNull(tmdbId) { "TMDb ID is required to fetch external IDs." }
-        val response = get("$kind/$tmdbId/external_ids") { "fetching external IDs of '$title'" }
-        val dto = response.body<TmdbExternalIdsDto>()
+        val dto = getJson<TmdbExternalIdsDto>("$kind/$tmdbId/external_ids") { "fetching external IDs of '$title'" }
         ExternalIds(imdbId = dto.imdbId?.ifBlank { null })
     }
 
@@ -315,7 +309,7 @@ class TmdbProvider(
             Result.success(block())
         } catch (e: Throwable) {
             if (e is CancellationException && !e.isTimeout()) throw e
-            Result.failure(credentials.redact(e))
+            Result.failure(credentials.redact(e.unreadableAsFailed()))
         }
 
     /**
@@ -344,6 +338,24 @@ class TmdbProvider(
         unanswered = 0
         response.ensureSuccess(action)
         return response
+    }
+
+    /**
+     * GET [path] as [get] does and read its JSON body. A body Ktor can't read (no JSON content type, as curl hands out
+     * after a timed-out request) fails as the lookup [action] names, not as an UnsupportedOperationException, which
+     * callers would take for "TMDB can't do this" (and an IMDb lookup for "no IMDb ID").
+     */
+    private suspend inline fun <reified T> getJson(
+        path: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+        noinline action: () -> String,
+    ): T {
+        val response = get(path, block, action)
+        return try {
+            response.body<T>()
+        } catch (e: NoTransformationFoundException) {
+            throw IllegalStateException("TMDB sent a response that could not be read ${action()}", e)
+        }
     }
 
     private fun HttpResponse.ensureSuccess(action: () -> String) {
@@ -385,6 +397,11 @@ private val OptionalLookup = AttributeKey<Unit>("PlexifyOptionalLookup")
 
 private fun Throwable.isNoAnswer(): Boolean =
     this is MetadataTimeoutException || this is MetadataConnectionException || this is MetadataUnreachableException
+
+// Backs getJson up for a body read some other way: Ktor's NoTransformationFoundException is an
+// UnsupportedOperationException, which callers would take for "TMDB can't do this" instead of a failed lookup.
+private fun Throwable.unreadableAsFailed(): Throwable =
+    if (this is NoTransformationFoundException) IllegalStateException("TMDB sent a response that could not be read", this) else this
 
 // Ktor may deliver a timeout wrapped in a CancellationException.
 private fun Throwable.isTimeout(): Boolean = generateSequence(this) { it.cause }.take(8).any {
