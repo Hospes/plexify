@@ -74,14 +74,12 @@ kotlin {
 
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.io.core)
-            implementation(libs.kotlinx.atomicfu)
             implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
 
             implementation(libs.ktor.core)
             implementation(libs.ktor.content.negotiation)
             implementation(libs.ktor.serialization.json)
-            implementation(libs.ktor.logging)
         }
 
         commonTest.dependencies {
