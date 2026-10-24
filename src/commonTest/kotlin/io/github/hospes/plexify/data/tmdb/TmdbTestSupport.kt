@@ -59,27 +59,43 @@ internal suspend fun stalledBody(start: String): ByteChannel {
 }
 
 /**
- * A TMDB that answers each request by its path from [bodies] (`"/3/movie/603"` to its JSON) and any other with a
- * 404, and records every request in order. Pass [handler] to [mockProvider]. A search is answered by its query (and
- * year) too, when [bodies] has that key: `"/3/search/multi?query=gate"`, `"/3/search/movie?query=dracula&year=1974"`.
+ * A TMDB that answers each request from [bodies]: by its path and parameters when [bodies] has that key
+ * (`"/3/search/movie?query=dracula&year=1974"`, `"/3/tv/1396?append_to_response=alternative_titles,external_ids"`;
+ * parameters sorted by name, without credentials, paging, `include_adult` and `external_source`), else by its path
+ * (`"/3/movie/603"`). Any other request gets TMDB's 404; those not in [notFound] (by either key) are also listed in
+ * [unanswered]. Records every request in order. Pass [handler] to [mockProvider].
  */
-internal class TmdbResponder(private val bodies: Map<String, String> = emptyMap()) {
+internal class TmdbResponder(private val bodies: Map<String, String> = emptyMap(), private val notFound: Set<String> = emptySet()) {
     // A provider may send requests in parallel (a search's alternative-titles lookups).
     private val lock = Mutex()
     private val recorded = mutableListOf<HttpRequestData>()
+    private val missed = mutableListOf<String>()
 
     /** The requests so far. Read it once the provider's calls have returned: one still in flight may be added meanwhile. */
     val requests: List<HttpRequestData> get() = recorded.toList()
 
     val paths: List<String> get() = requests.map { it.url.encodedPath }
 
+    /** The requests [bodies] had no answer for and [notFound] doesn't list, by their key with parameters. */
+    val unanswered: List<String> get() = missed.toList()
+
     val handler: MockRequestHandler = { request ->
-        lock.withLock { recorded += request }
-        val url = request.url
-        val search = url.parameters["query"]?.let { query ->
-            "${url.encodedPath}?query=$query" + (url.parameters["year"]?.let { "&year=$it" } ?: "")
+        val path = request.url.encodedPath
+        val key = request.url.key()
+        val body = bodies[key] ?: bodies[path]
+        lock.withLock {
+            recorded += request
+            if (body == null && key !in notFound && path !in notFound) missed += key
         }
-        val body = search?.let { bodies[it] } ?: bodies[url.encodedPath]
         if (body != null) respondJson(body) else respondJson(TMDB_NOT_FOUND, HttpStatusCode.NotFound)
     }
+}
+
+// Parameters that never change what TMDB answers in these tests.
+private val UNKEYED_PARAMETERS = setOf("api_key", "page", "include_adult", "external_source")
+
+private fun Url.key(): String {
+    val parameters = parameters.entries().filter { it.key !in UNKEYED_PARAMETERS }.sortedBy { it.key }
+        .flatMap { (name, values) -> values.map { "$name=$it" } }
+    return if (parameters.isEmpty()) encodedPath else "$encodedPath?${parameters.joinToString("&")}"
 }
