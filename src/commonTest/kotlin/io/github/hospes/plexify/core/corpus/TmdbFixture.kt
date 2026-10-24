@@ -197,3 +197,8 @@ internal class TmdbFixture {
 }
 
 internal fun tmdbFixture(build: TmdbFixture.() -> Unit): TmdbFixture.Answers = TmdbFixture().apply(build).answers()
+
+/** The requests to these paths ([TmdbResponder.paths]), counted by endpoint: "2 search/multi, 1 tv/{id}/season/{id}". */
+internal fun requestsByEndpoint(paths: List<String>): String = paths
+    .groupingBy { path -> path.removePrefix("/3/").split('/').joinToString("/") { if (it.any(Char::isDigit)) "{id}" else it } }
+    .eachCount().entries.sortedBy { it.key }.joinToString(", ") { (endpoint, count) -> "$count $endpoint" }
