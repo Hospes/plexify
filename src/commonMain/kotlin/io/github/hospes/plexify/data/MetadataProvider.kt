@@ -31,9 +31,6 @@ interface MetadataProvider {
     suspend fun show(id: MediaId): Result<MediaSearchResult.TvShow> =
         Result.failure(UnsupportedOperationException("show() not supported by provider '${this.id}'"))
 
-    suspend fun episode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode> =
-        Result.failure(UnsupportedOperationException("episode() not supported by provider '$id'"))
-
     suspend fun season(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> =
         Result.failure(UnsupportedOperationException("season() not supported by provider '$id'"))
 
