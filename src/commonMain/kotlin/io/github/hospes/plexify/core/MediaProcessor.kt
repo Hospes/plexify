@@ -2,6 +2,7 @@ package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.calculateTitleConfidence
+import io.github.hospes.plexify.domain.matching.MatchScoring
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaId
@@ -35,8 +36,6 @@ class MediaProcessor(
     private val episodeOffset: Int? = null,
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
-    private val MINIMUM_CONFIDENCE_SCORE = 5.0 // A score below this is considered a poor match.
-    private val MAX_FALLBACK_SHOWS = 3 // Runner-up shows tried when the best match lacks a season.
 
     class Stats {
         var organized: Int = 0
@@ -643,7 +642,7 @@ class MediaProcessor(
         // The show has the season, just not this episode: a numbering quirk, not evidence of a wrong show.
         if (!isSeasonMissing(primary, season)) return Result.success(null)
 
-        for (candidate in candidates.drop(1).take(MAX_FALLBACK_SHOWS)) {
+        for (candidate in candidates.drop(1).take(MatchScoring.MAX_FALLBACK_SHOWS)) {
             // A runner-up whose season fails to load fails the file: whether it has the season is
             // unknown, and taking the next one could file the season under the wrong show.
             val candidateSeason = indent { findOrFetchSeason(candidate, season) }.getOrElse { return Result.failure(it) }
@@ -839,9 +838,10 @@ class MediaProcessor(
     ): CanonicalMedia? = rankMatches(results, parsedTitle, parsedYear).firstOrNull()?.media
 
     /**
-     * Every candidate scoring at least [MINIMUM_CONFIDENCE_SCORE], best first, each consolidated
-     * across providers, with its title similarity and year score. Empty when none qualifies, with
-     * the reason reported unless [reportMiss] is false (a ranking that a second search may redo).
+     * Every candidate scoring at least [MatchScoring.MINIMUM_CONFIDENCE_SCORE] (see [MatchScoring]
+     * for the score), best first, each consolidated across providers, with its title similarity and
+     * year score. Empty when none qualifies, with the reason reported unless [reportMiss] is false
+     * (a ranking that a second search may redo).
      */
     context(_: LoggingContext)
     internal fun rankMatches(
@@ -887,12 +887,12 @@ class MediaProcessor(
 
             var score = 0.0
 
-            if (similarity < 0.4) {
+            if (similarity < MatchScoring.MIN_TITLE_SIMILARITY) {
                 debug("Candidate: '${representative.title} (${representative.year})' | Discarded (title similarity too low)")
                 return@mapNotNull null
             }
 
-            score += similarity * 10.0
+            score += similarity * MatchScoring.TITLE_WEIGHT
 
             val parsedY = parsedYear?.toIntOrNull()
             val groupY = representative.year?.toIntOrNull()
@@ -908,12 +908,11 @@ class MediaProcessor(
             }
             score += yearScore ?: 0.0
 
-            score += (group.distinctBy { it.provider }.size - 1) * 2.0
+            score += (group.distinctBy { it.provider }.size - 1) * MatchScoring.PROVIDER_AGREEMENT_BONUS
 
             // Bonus based on the average confidence score reported by the providers
             val avgProviderConfidence = group.map { it.matchConfidence }.average()
-            // We scale it (e.g., divide by 20) to make it a bonus, not the main driver of the score
-            score += avgProviderConfidence / 20.0
+            score += avgProviderConfidence / MatchScoring.PROVIDER_CONFIDENCE_DIVISOR
 
             debug("Candidate: '${representative.title} (${representative.year})' | Score: ${score.format(2)}$matchedVia")
             val titleSeason = seasonNamedBy(group, titleScores)
@@ -921,7 +920,7 @@ class MediaProcessor(
         }
 
         val bestGroup = scoredGroups.maxByOrNull { it.score }
-        if (bestGroup == null || bestGroup.score < MINIMUM_CONFIDENCE_SCORE) {
+        if (bestGroup == null || bestGroup.score < MatchScoring.MINIMUM_CONFIDENCE_SCORE) {
             val reason = when {
                 yearRejected.isNotEmpty() -> "${yearRejected.listed()} rejected (year does not match override $yearOverride)"
                 yearMismatched.isNotEmpty() -> "${yearMismatched.listed()} rejected (year does not match $parsedYear)"
@@ -929,7 +928,7 @@ class MediaProcessor(
                 bestGroup != null -> {
                     val candidate = bestGroup.group.first()
                     "best candidate '${candidate.title} (${candidate.year})' scored ${bestGroup.score.format(2)}, " +
-                            "below the $MINIMUM_CONFIDENCE_SCORE confidence minimum"
+                            "below the ${MatchScoring.MINIMUM_CONFIDENCE_SCORE} confidence minimum"
                 }
 
                 else -> "none of ${results.size} provider result(s) resembled the title"
@@ -942,7 +941,7 @@ class MediaProcessor(
 
         // sortedByDescending is stable, so the best stays the one maxByOrNull picks on a tie.
         return@indent scoredGroups
-            .filter { it.score >= MINIMUM_CONFIDENCE_SCORE }
+            .filter { it.score >= MatchScoring.MINIMUM_CONFIDENCE_SCORE }
             .sortedByDescending { it.score }
             .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason, it.namesUnplacedArc, it.score) }
     }
@@ -1061,25 +1060,27 @@ private fun Double.format(digits: Int): String {
 }
 
 /**
- * Year contribution to a candidate's match score.
+ * Year contribution to a candidate's match score (values in [MatchScoring]).
  *
- * Movies: Exact(+10), Adjacent(+5), Mismatch(-10).
+ * Movies: exact [MatchScoring.EXACT_YEAR_SCORE] (+10), adjacent [MatchScoring.ADJACENT_YEAR_SCORE]
+ * (+5), otherwise [MatchScoring.YEAR_MISMATCH_SCORE] (-10).
  *
  * Shows: a show's year is its first-air year, but the year in an episode filename is usually the
  * season's air year (`The_Boys_S03E01_2022` is The Boys (2019)). A show that started before the
  * filename year is therefore consistent with it, not a mismatch: it scores +5, slowly decaying with
- * distance so the closest earlier show wins among same-titled ones. Only a show that started after
- * the filename year (beyond the usual one-year release-date disagreement) is penalized.
+ * distance (0.1 a year, to at least +1) so the closest earlier show wins among same-titled ones. Only
+ * a show that started after the filename year (beyond the usual one-year release-date disagreement)
+ * is penalized.
  *
  * A negative score is a contradiction, not a weak signal: [MediaProcessor.rankMatches] discards the candidate.
  */
 internal fun yearScore(parsedYear: Int, candidateYear: Int, isShow: Boolean): Double {
     val diff = parsedYear - candidateYear
     return when {
-        diff == 0 -> 10.0
-        abs(diff) == 1 -> 5.0
-        isShow && diff > 1 -> max(1.0, 5.0 - (diff - 1) * 0.1)
-        else -> -10.0
+        diff == 0 -> MatchScoring.EXACT_YEAR_SCORE
+        abs(diff) == 1 -> MatchScoring.ADJACENT_YEAR_SCORE
+        isShow && diff > 1 -> max(MatchScoring.SHOW_YEAR_FLOOR, MatchScoring.ADJACENT_YEAR_SCORE - (diff - 1) * MatchScoring.SHOW_YEAR_DECAY)
+        else -> MatchScoring.YEAR_MISMATCH_SCORE
     }
 }
 
