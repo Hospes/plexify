@@ -37,6 +37,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.*
+import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
 
 class TmdbProvider(
@@ -61,6 +62,7 @@ class TmdbProvider(
                     cause.isTimeout() && retryCount <= timeouts.retries && OptionalLookup !in request.attributes
                 }
                 exponentialDelay()
+                delay(timeouts.retryDelay)
             }
 
             // Installed after HttpRequestRetry, so each try gets its own timeouts. The curl engine sets
@@ -372,6 +374,11 @@ data class TmdbTimeouts(
     val optionalRequestMillis: Long = 10_000,
     /** Requests in a row with no answer (timed out or could not connect) after which TMDB counts as unreachable for the run. */
     val unreachableAfter: Int = 3,
+    /**
+     * Waits out the back-off before a retry: Ktor's exponential delay (1 s, 2 s, 4 s, each plus up to 1 s
+     * at random, or a longer Retry-After). Tests pass one that returns at once.
+     */
+    val retryDelay: suspend (millis: Long) -> Unit = { delay(it) },
 )
 
 // The curl engine's message is "Connection failed for request: <request, URL included>. Reason: <curl error>".

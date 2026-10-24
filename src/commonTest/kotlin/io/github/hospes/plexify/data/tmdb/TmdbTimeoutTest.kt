@@ -10,10 +10,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-// Real time: Ktor's timeout and retry delays run outside a test scheduler, so keep the limits short.
+// Real time: Ktor's timeouts run outside a test scheduler, so keep the limits short and skip the retry back-off.
 class TmdbTimeoutTest {
 
-    private val timeouts = TmdbTimeouts(connectMillis = 200, requestMillis = 200, retries = 1)
+    private val timeouts = TmdbTimeouts(connectMillis = 200, requestMillis = 200, retries = 1, retryDelay = {})
 
     @Test
     fun `a stalled request fails with a short message after one retry`() = capped {
