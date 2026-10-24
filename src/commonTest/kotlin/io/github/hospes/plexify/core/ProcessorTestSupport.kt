@@ -118,6 +118,9 @@ internal class FakeTmdb(
 internal class RecordingOrganizer(private val delegate: FileOrganizer? = null) : FileOrganizer {
     val organized = mutableMapOf<String, CanonicalMedia>()
 
+    /** The [delegate]'s outcome for each file. */
+    val outcomes = mutableMapOf<String, Result<OrganizeOutcome>>()
+
     override fun organize(
         sourceFile: Path,
         destinationRoot: Path,
@@ -127,7 +130,7 @@ internal class RecordingOrganizer(private val delegate: FileOrganizer? = null) :
         isTestMode: Boolean,
     ): Result<OrganizeOutcome> {
         organized[sourceFile.name] = media
-        return delegate?.organize(sourceFile, destinationRoot, media, parsedInfo, mode, isTestMode)
+        return delegate?.organize(sourceFile, destinationRoot, media, parsedInfo, mode, isTestMode)?.also { outcomes[sourceFile.name] = it }
             ?: Result.success(OrganizeOutcome.Organized(destinationRoot))
     }
 }
@@ -152,7 +155,8 @@ internal class ProcessorRun<P : MetadataProvider>(
 /**
  * Processes empty files with these names, which may lead through folders ("Show/Season 01/Show - S01E01.mkv"), from
  * a fresh temporary directory (or a folder [dirName] in it), with a fresh processor. Its output is captured, at the
- * [verbose] level, into [ProcessorRun.output]. Pass [organizer] to file through a real one (see [RecordingOrganizer]).
+ * [verbose] level, into [ProcessorRun.output]. Pass [organizer] to file through a real one (see [RecordingOrganizer]),
+ * into the folder "library" of that directory.
  */
 internal suspend fun <P : MetadataProvider> runProcessor(
     provider: P,
@@ -183,16 +187,22 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     val folders = files.flatMap { file -> generateSequence(file.parent) { it.parent }.takeWhile { it.toString().length > dir.toString().length } }
         .distinctBy { it.toString() }.sortedByDescending { it.toString().length }
     try {
-        folders.forEach { SystemFileSystem.createDirectories(it) }
-        files.forEach { SystemFileSystem.sink(it).buffered().close() }
+        // Through PlatformFileSystem, which takes paths of 260 characters and more on Windows (kotlinx-io doesn't,
+        // and plexify's own names get that long): each file is made under a short name, then moved into place.
+        folders.forEach { PlatformFileSystem.createDirectories(it) }
+        files.forEachIndexed { index, file ->
+            val made = Path(root, "new-$index")
+            SystemFileSystem.sink(made).buffered().close()
+            PlatformFileSystem.atomicMove(made, file)
+        }
         with(LoggingContext(verbose = verbose, output = { output += it })) {
             processor.process(dir, library, OperationMode.HARDLINK, isTestMode = true)
         }
     } finally {
-        files.forEach { SystemFileSystem.delete(it, mustExist = false) }
-        folders.forEach { SystemFileSystem.delete(it, mustExist = false) }
-        if (dir != root) SystemFileSystem.delete(dir, mustExist = false)
-        SystemFileSystem.delete(root, mustExist = false)
+        files.forEach { PlatformFileSystem.delete(it) }
+        folders.forEach { PlatformFileSystem.delete(it) }
+        if (dir != root) PlatformFileSystem.delete(dir)
+        PlatformFileSystem.delete(root)
     }
     // The library first: the source folder contains it, or is it (dirName = "library").
     val normalized = output.map { line ->
