@@ -17,7 +17,7 @@ package io.github.hospes.plexify.core.corpus
 //   search is unanswered, and CorpusTest fails, naming the requests.
 //
 // Not covered: no name here is decided by the second or third alternative-titles lookup, or needs more than one of
-// MediaProcessor's MAX_FALLBACK_SHOWS runner-up shows.
+// MatchScoring.MAX_FALLBACK_SHOWS runner-up shows.
 //
 // To add a name: add it to CorpusNames.kt and what TMDB answers for it here (from a live run), then run CorpusTest and
 // check the new paths.
