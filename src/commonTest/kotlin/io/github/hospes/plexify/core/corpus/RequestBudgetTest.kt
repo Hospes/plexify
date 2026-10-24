@@ -31,8 +31,8 @@ class RequestBudgetTest {
     // search, since shows are cached by the title searched, so the same show is searched four times. Its title
     // ("Demon Slayer: Kimetsu no Yaiba") doesn't resemble any of the four queries, so each search looks up its
     // alternative titles again, which also name the arc's season ("Kimetsu no Yaiba: Yuukaku-hen", "Season 3
-    // Romaji"); the first search also looks up those of the two films it returns. One fetch per season (1, 2, 3, 5),
-    // cached for the folder's other episodes.
+    // Romaji"); the plain-title search (the first folder) also looks up those of the two films it returns. One fetch
+    // per season (1, 2, 3, 5), cached for the folder's other episodes.
     @Test
     fun `an arc show`() = budget(
         animeNames.filter { it.startsWith("Kimetsu") },
@@ -40,7 +40,8 @@ class RequestBudgetTest {
     )
 
     // The general search doesn't return the 1974 Dracula (TMDB has many), so the movie is searched again with its year.
-    // Each search looks up the alternative titles of its first three results whose titles don't resemble "dracula".
+    // Each search looks up the alternative titles of its first three results whose titles don't resemble "dracula": the
+    // general search has more such results, the rest left out (MAX_ALT_TITLES_LOOKUPS); the year search has three.
     @Test
     fun `a movie with a year retry`() = budget(
         listOf("Dracula.1974.720p.BluRay.mkv"),
@@ -48,7 +49,8 @@ class RequestBudgetTest {
     )
 
     // The second version searches again, alternative-titles lookups and all: movie searches aren't cached (P3-2 will
-    // change this). Each search looks up the alternative titles of the three results that don't resemble "inception".
+    // change this). Each search looks up the alternative titles of the first three of the five results that don't
+    // resemble "inception" (MAX_ALT_TITLES_LOOKUPS).
     @Test
     fun `a movie in two versions`() = budget(
         listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
@@ -67,10 +69,10 @@ class RequestBudgetTest {
         NamingStrategy.Plex,
     )
 
-    // What the Plex run writes, run again: no search. Each IMDb tag is resolved once (find/{imdb}), and the record
-    // fetched once with its alternative titles and IMDb ID in the same request (append_to_response), so there is no
-    // external_ids lookup; shows found by ID are cached too, so the episodes share one find, one record and one
-    // season fetch.
+    // What the Plex run writes, run again: no search. An IMDb tag is resolved by find/{imdb}, then the record is
+    // fetched with its alternative titles and IMDb ID in the same request (append_to_response), so there is no
+    // external_ids lookup. Shows found by ID are cached, so the episodes share one find, one record and one season
+    // fetch; movies found by ID aren't, so the second version asks again (P3-2 will change this).
     @Test
     fun `a plex library run again`() = budget(
         listOf(
@@ -78,8 +80,9 @@ class RequestBudgetTest {
             "Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E02 - Episode 2 - [720p] [BluRay].mkv",
             "Breaking Bad (2008) {imdb-tt0903747}/Season 01/Breaking Bad (2008) - S01E07 - Episode 7 - [720p] [BluRay].mkv",
             "Inception (2010) {imdb-tt1375666}/Inception (2010) - [1080p] [BluRay] [YTS].mkv",
+            "Inception (2010) {imdb-tt1375666}/Inception (2010) - [1080p] [BluRay] [SPARKS].mkv",
         ),
-        "2 find/{id}, 1 movie/{id}, 1 tv/{id}, 1 tv/{id}/season/{id}",
+        "3 find/{id}, 2 movie/{id}, 1 tv/{id}, 1 tv/{id}/season/{id}",
         NamingStrategy.Plex,
     )
 
@@ -91,8 +94,3 @@ class RequestBudgetTest {
         assertEquals(expected, requestsByEndpoint(tmdb.paths))
     }
 }
-
-/** The requests to these paths, counted by endpoint: "2 search/multi, 1 tv/{id}/season/{id}". */
-internal fun requestsByEndpoint(paths: List<String>): String = paths
-    .groupingBy { path -> path.removePrefix("/3/").split('/').joinToString("/") { if (it.any(Char::isDigit)) "{id}" else it } }
-    .eachCount().entries.sortedBy { it.key }.joinToString(", ") { (endpoint, count) -> "$count $endpoint" }
