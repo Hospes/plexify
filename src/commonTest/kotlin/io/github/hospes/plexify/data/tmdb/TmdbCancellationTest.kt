@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.MediaId
 import io.ktor.http.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,9 @@ class TmdbCancellationTest {
         "season" to { season(show, 4) },
         "episodeGroups" to { episodeGroups(show) },
         "externalIds" to { externalIds(show) },
+        "movie" to { movie(MediaId(MediaId.Database.TMDB, "603")) },
+        // An IMDb ID is first found among TMDB's shows, so this cancels the find request.
+        "show" to { show(MediaId(MediaId.Database.IMDB, "tt0903747")) },
     )
 
     /** Starts [lookup], cancels it once a request is waiting on TMDB, and returns what the lookup returned, if anything. */
