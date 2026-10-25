@@ -623,12 +623,12 @@ class MediaProcessor(
         val season = seasonKey.season
         // A runner-up's season was fetched before its external IDs were, so its cached episodes
         // carry the show without them: hand out the season's show as decided.
-        showStates[seasonKey]?.let { show -> return findOrFetchEpisode(show, season, episode).map { it?.copy(show = show) } }
+        showStates.seasonShow(seasonKey)?.let { show -> return findOrFetchEpisode(show, season, episode).map { it?.copy(show = show) } }
 
         val primary = candidates.first()
         val primaryMatch = findOrFetchEpisode(primary, season, episode).getOrElse { return Result.failure(it) }
         if (primaryMatch != null) {
-            showStates[seasonKey] = primary
+            showStates.placeSeason(seasonKey, primary)
             return Result.success(primaryMatch)
         }
 
@@ -641,7 +641,7 @@ class MediaProcessor(
             val candidateSeason = indent { findOrFetchSeason(candidate, season) }.getOrElse { return Result.failure(it) }
             val match = candidateSeason.episodes.firstOrNull { it.episode == episode } ?: continue
             val alternative = candidate.withExternalIds().getOrElse { return Result.failure(it) }
-            showStates[seasonKey] = alternative
+            showStates.placeSeason(seasonKey, alternative)
             status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
             return Result.success(match.copy(show = alternative))
         }

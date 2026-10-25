@@ -11,8 +11,12 @@ import io.github.hospes.plexify.domain.model.MediaId
 internal sealed interface ShowKey {
     data class Searched(val title: String, val year: String?) : ShowKey
 
-    /** [id] as plexify names a title by it ("tmdb-1721501"): one key whichever part of the path the ID was read from. */
-    data class ById(val id: String, val title: String, val year: String?) : ShowKey {
+    /**
+     * [id] as plexify names a title by it ("tmdb-1721501"): one key whichever part of the path the ID was read from.
+     * Made from a [MediaId] only, so no other spelling of the ID makes another key.
+     */
+    @ConsistentCopyVisibility
+    data class ById private constructor(val id: String, val title: String, val year: String?) : ShowKey {
         constructor(id: MediaId, title: String, year: String?) : this(id.toString(), title, year)
     }
 
@@ -51,10 +55,11 @@ internal class ShowStates {
 
     operator fun get(key: ShowKey): ShowState = states.getOrPut(key) { ShowState() }
 
-    /** The show [key]'s season was placed in, if one was yet. */
-    operator fun get(key: SeasonKey): CanonicalMedia.TvShow? = this[key.show].seasonShows[key.season]
+    /** The show the release season [key] was placed in, if it was yet. */
+    fun seasonShow(key: SeasonKey): CanonicalMedia.TvShow? = this[key.show].seasonShows[key.season]
 
-    operator fun set(key: SeasonKey, show: CanonicalMedia.TvShow) {
+    /** Places the release season [key] in [show], for the rest of its files. */
+    fun placeSeason(key: SeasonKey, show: CanonicalMedia.TvShow) {
         this[key.show].seasonShows[key.season] = show
     }
 }
