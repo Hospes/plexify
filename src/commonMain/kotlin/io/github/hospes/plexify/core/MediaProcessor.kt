@@ -67,25 +67,11 @@ class MediaProcessor(
     // warning for every episode file of the same release.
     private val seasonWarnedDirs = mutableSetOf<String>()
 
-    // The season each show title names, if any, keyed as the show cache is: "title:year", or the
-    // idShowKey of a show found by the ID in the path.
-    private val titleSeasons = mutableMapOf<String, TitleSeason?>()
+    // What the run decided about each show key: the season its title names, its release seasons' shows, notices.
+    private val showStates = ShowStates()
 
-    // Show titles (keyed as titleSeasons is) that end in an arc no season title places.
-    private val unplacedArcTitles = mutableSetOf<String>()
-
-    // Show titles closing in a number (keyed "title:year") and whether that number is the season.
-    private val numberedTitles = mutableMapOf<String, Boolean>()
-
-    // Show titles already reported as naming their season.
-    private val titleSeasonNotices = mutableSetOf<String>()
-
-    // Show+season pairs already reported as mapped (or unmappable) through episode groups.
-    private val episodeGroupNotices = mutableSetOf<String>()
-
-    // The show each release season (keyed "<show key>:season", the show key as titleSeasons has it) was
-    // placed in, so later files of the same season go to the same show instead of being matched again.
-    private val seasonShows = mutableMapOf<String, CanonicalMedia.TvShow>()
+    // Provider shows (by identity) and seasons already reported as mapped (or unmappable) through episode groups.
+    private val episodeGroupNotices = mutableSetOf<Pair<String, Int>>()
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -273,9 +259,11 @@ class MediaProcessor(
 
         // Step 1: Find the candidate shows, best first, using the cache first. The show the path's ID names
         // is the only one: it has no runner-ups to take a season it lacks.
-        val showById = findShowById(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }
+        val byId = findShowById(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }
+        val showById = byId?.second
+        val searchedKey = ShowKey.Searched(parsedInfo.showTitle, parsedInfo.year)
         val candidates = showById?.let { listOf(it) }
-            ?: findOrFetchShows(parsedInfo.showTitle, parsedInfo.year, parsedInfo.bareShowYear)
+            ?: findOrFetchShows(searchedKey, parsedInfo.bareShowYear)
                 .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (candidates.isEmpty()) {
             status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
@@ -287,14 +275,16 @@ class MediaProcessor(
         // A release named after one season's own title (an anime arc, numbered from 1 with no
         // season in the filenames) is that season, not season 1. A show found by its ID is keyed by
         // the ID too, as two shows may share their cleaned titles.
-        val showKey = if (showById != null) parsedInfo.idShowKey() else "${parsedInfo.showTitle}:${parsedInfo.year}"
-        val season = parsedInfo.season ?: titleSeasons[showKey]?.let { named ->
-            if (titleSeasonNotices.add(showKey)) {
+        val showKey = byId?.first ?: searchedKey
+        val state = showStates[showKey]
+        val season = parsedInfo.season ?: state.titleSeason?.let { named ->
+            if (!state.titleSeasonReported) {
+                state.titleSeasonReported = true
                 status("No season number in filenames; '${named.title}' is Season ${named.season} of ${candidates.first().describe()}")
             }
             named.season
         } ?: run {
-            if (showKey in unplacedArcTitles) {
+            if (state.namesUnplacedArc) {
                 status("✗ ${source.name} — '${parsedInfo.showTitle}' names an arc that matches no season title of ${candidates.first().describe()}; set the season with -s/--season")
                 stats.skipped++
                 return@indent
@@ -306,8 +296,8 @@ class MediaProcessor(
         }
 
         // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
-        val seasonKey = "$showKey:$season"
-        val firstEpisodeMatch = findEpisode(candidates, seasonKey, season, parsedInfo.episode)
+        val seasonKey = SeasonKey(showKey, season)
+        val firstEpisodeMatch = findEpisode(candidates, seasonKey, parsedInfo.episode)
             .getOrElse { error -> return@indent lookupFailed(source, error) }
         if (firstEpisodeMatch == null) {
             status("✗ ${source.name} — episode S${season}E${parsedInfo.episode} not found")
@@ -316,7 +306,7 @@ class MediaProcessor(
         }
         val bestEpisodeMatch = parsedInfo.lastEpisode
             ?.let { last ->
-                extendToRange(firstEpisodeMatch, candidates, seasonKey, season, parsedInfo.episode, last, source.name)
+                extendToRange(firstEpisodeMatch, candidates, seasonKey, parsedInfo.episode, last, source.name)
                     .getOrElse { error -> return@indent lookupFailed(source, error) }
             }
             ?: firstEpisodeMatch
@@ -338,11 +328,11 @@ class MediaProcessor(
         // A season from the parent directory or the command line that differs makes the number the title's.
         if (titleOverride != null || (parsed.season != null && parsed.season != numbered.season)) return Result.success(parsed)
 
-        val key = "${parsed.showTitle}:${parsed.year}"
-        val isSeason = numberedTitles[key] ?: run {
+        val state = showStates[ShowKey.Searched(parsed.showTitle, parsed.year)]
+        val isSeason = state.numberIsSeason ?: run {
             val show = showWithTitleSeason(parsed, numbered).getOrElse { return Result.failure(it) }
             if (show != null) status("No season number in filenames; '${parsed.showTitle}' is Season ${numbered.season} of ${show.describe()}")
-            (show != null).also { numberedTitles[key] = it }
+            (show != null).also { state.numberIsSeason = it }
         }
         return Result.success(
             if (isSeason) parsed.copy(showTitle = numbered.showTitle, season = numbered.season, numberedSeason = null) else parsed
@@ -381,6 +371,7 @@ class MediaProcessor(
                 .firstOrNull()?.media as? CanonicalMedia.TvShow
         }
 
+    /** The provider show this is, as its seasons and episode groups are cached: its TMDB ID, else IMDb ID, else title. */
     private val CanonicalMedia.TvShow.identity: String get() = tmdbId ?: imdbId ?: title
 
     /**
@@ -403,15 +394,15 @@ class MediaProcessor(
     private suspend fun extendToRange(
         first: CanonicalMedia.Episode,
         candidates: List<CanonicalMedia.TvShow>,
-        seasonKey: String,
-        season: Int,
+        seasonKey: SeasonKey,
         firstEpisode: Int,
         lastEpisode: Int,
         fileName: String,
     ): Result<CanonicalMedia.Episode> {
+        val season = seasonKey.season
         val episodes = mutableListOf(first)
         for (episode in (firstEpisode + 1)..lastEpisode) {
-            val match = findEpisode(candidates, seasonKey, season, episode).getOrElse { return Result.failure(it) }
+            val match = findEpisode(candidates, seasonKey, episode).getOrElse { return Result.failure(it) }
             val previous = episodes.last()
             if (match == null || match.season != previous.season || match.episode != previous.episode + 1) {
                 status(
@@ -439,11 +430,11 @@ class MediaProcessor(
      */
     context(_: LoggingContext)
     private suspend fun findOrFetchShows(
-        title: String,
-        year: String?,
+        key: ShowKey.Searched,
         bareYear: Boolean,
     ): Result<List<CanonicalMedia.TvShow>> = indent {
-        val cacheKey = "$title:$year"
+        val (title, year) = key
+        val cacheKey = key.cacheKey
         val cachedShows = cache.getShows(cacheKey)
         if (cachedShows != null) {
             debug("Cache HIT for show: '$title'")
@@ -466,8 +457,9 @@ class MediaProcessor(
             // Only the best match gets its external IDs now; a runner-up gets them if the episode
             // fallback picks it (see findEpisode). A failed lookup fails before anything is kept.
             val bestShow = best?.let { (it.media as CanonicalMedia.TvShow).withExternalIds().getOrElse { error -> return@indent Result.failure(error) } }
-            titleSeasons[cacheKey] = best?.titleSeason
-            if (best?.namesUnplacedArc == true) unplacedArcTitles += cacheKey
+            val state = showStates[key]
+            state.titleSeason = best?.titleSeason
+            if (best?.namesUnplacedArc == true) state.namesUnplacedArc = true
             val runnerUps = ranked.drop(1).filter { candidate ->
                 (best != null && candidate.canStandInFor(best)).also { sameShow ->
                     if (!sameShow) debug("Not a fallback for '$title': ${candidate.media.describe()} (title or year differs)")
@@ -503,15 +495,17 @@ class MediaProcessor(
     }
 
     /**
-     * The show the ID in the path names, with its external IDs, looked up once per ID, title and year; null as for
-     * [findMovieById]. The season its title names (an anime arc) is kept under [idShowKey], as [findOrFetchShows]
-     * keeps a searched show's. A failed lookup is not cached, so the next file of the show tries again.
+     * The show the ID in the path names, with its external IDs and the [ShowKey.ById] it is kept under, looked up once
+     * per ID, title and year; null as for [findMovieById]. The season its title names (an anime arc) is kept under that
+     * key, as [findOrFetchShows] keeps a searched show's. A failed lookup is not cached, so the next file of the show
+     * tries again.
      */
     context(_: LoggingContext)
-    private suspend fun findShowById(parsed: ParsedMediaInfo.Episode): Result<CanonicalMedia.TvShow?> = indent {
+    private suspend fun findShowById(parsed: ParsedMediaInfo.Episode): Result<Pair<ShowKey.ById, CanonicalMedia.TvShow>?> = indent {
         val id = parsed.mediaId ?: return@indent Result.success(null)
-        val cacheKey = parsed.idShowKey()
-        cache.getShows(cacheKey)?.let { return@indent Result.success(it.first()) }
+        val key = ShowKey.ById(id, parsed.showTitle, parsed.year)
+        val cacheKey = key.cacheKey
+        cache.getShows(cacheKey)?.let { return@indent Result.success(key to it.first()) }
         if (cache.isShowFailed(cacheKey)) return@indent Result.success(null)
 
         debug("Looking up the show $id in the path")
@@ -521,16 +515,14 @@ class MediaProcessor(
         if (match == null || show == null) {
             cache.markShowFailed(cacheKey)
         } else {
-            titleSeasons[cacheKey] = match.titleSeason
-            if (match.namesUnplacedArc) unplacedArcTitles += cacheKey
+            val state = showStates[key]
+            state.titleSeason = match.titleSeason
+            if (match.namesUnplacedArc) state.namesUnplacedArc = true
             cache.putShows(cacheKey, listOf(show))
             status("Matched show by the ID in its path: ${show.describe()}")
         }
-        Result.success(show)
+        Result.success(show?.let { key to it })
     }
-
-    /** The key of a show found by the ID in the path: the ID, with the title and year it was ranked for. */
-    private fun ParsedMediaInfo.Episode.idShowKey(): String = "id:$mediaId:$showTitle:$year"
 
     /**
      * [record], the [kind] the ID in the path names, ranked as a search result for the parsed title and year is (by
@@ -624,18 +616,18 @@ class MediaProcessor(
     context(_: LoggingContext)
     private suspend fun findEpisode(
         candidates: List<CanonicalMedia.TvShow>,
-        seasonKey: String,
-        season: Int,
+        seasonKey: SeasonKey,
         episode: Int,
     ): Result<CanonicalMedia.Episode?> {
+        val season = seasonKey.season
         // A runner-up's season was fetched before its external IDs were, so its cached episodes
         // carry the show without them: hand out the season's show as decided.
-        seasonShows[seasonKey]?.let { show -> return findOrFetchEpisode(show, season, episode).map { it?.copy(show = show) } }
+        showStates[seasonKey]?.let { show -> return findOrFetchEpisode(show, season, episode).map { it?.copy(show = show) } }
 
         val primary = candidates.first()
         val primaryMatch = findOrFetchEpisode(primary, season, episode).getOrElse { return Result.failure(it) }
         if (primaryMatch != null) {
-            seasonShows[seasonKey] = primary
+            showStates[seasonKey] = primary
             return Result.success(primaryMatch)
         }
 
@@ -648,7 +640,7 @@ class MediaProcessor(
             val candidateSeason = indent { findOrFetchSeason(candidate, season) }.getOrElse { return Result.failure(it) }
             val match = candidateSeason.episodes.firstOrNull { it.episode == episode } ?: continue
             val alternative = candidate.withExternalIds().getOrElse { return Result.failure(it) }
-            seasonShows[seasonKey] = alternative
+            showStates[seasonKey] = alternative
             status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
             return Result.success(match.copy(show = alternative))
         }
@@ -718,16 +710,15 @@ class MediaProcessor(
         episode: Int,
         providerHasSeason: Boolean,
     ): Result<CanonicalMedia.Episode?> = indent {
-        val showId = show.tmdbId ?: show.imdbId ?: show.title
-        val groups = cache.getEpisodeGroups(showId)
+        val groups = cache.getEpisodeGroups(show.identity)
             ?: metadataService.getEpisodeGroups(show)
-                .onSuccess { cache.putEpisodeGroups(showId, it) }
+                .onSuccess { cache.putEpisodeGroups(show.identity, it) }
                 .getOrElse { return@indent Result.failure(it) }
 
         val match = when (val resolution = EpisodeGroupMapper.resolve(groups, season, episode, providerHasSeason)) {
             is EpisodeGroupMapper.Resolution.Found -> {
                 val mapped = resolution.episode
-                if (episodeGroupNotices.add("$showId:$season")) {
+                if (episodeGroupNotices.add(show.identity to season)) {
                     status(
                         "Season $season of '${show.title}' mapped through episode group '${resolution.group.name}' " +
                                 "(S${season.pad2()}E${episode.pad2()} → S${mapped.season.pad2()}E${mapped.episode.pad2()})"
@@ -738,7 +729,7 @@ class MediaProcessor(
             }
 
             is EpisodeGroupMapper.Resolution.Ambiguous -> {
-                if (episodeGroupNotices.add("$showId:$season")) {
+                if (episodeGroupNotices.add(show.identity to season)) {
                     val names = resolution.groups.joinToString(", ") { "'${it.name}'" }
                     status(
                         "Season $season of '${show.title}' is numbered differently by episode groups $names; " +
