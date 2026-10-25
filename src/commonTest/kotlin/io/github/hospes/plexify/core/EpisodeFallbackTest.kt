@@ -229,5 +229,48 @@ class EpisodeFallbackTest {
         assertEquals(1 to 19, run.tmdbNumberOf("Texhnolyze - S01E21.mkv"))
     }
 
+    @Test
+    fun `each release season of one show keeps its own show`() = runTest {
+        val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6), "2" to mapOf(4 to 1..8)))
+
+        val run = runProcessor(provider, "Ghosts.S01E01.1080p.WEB.mkv", "Ghosts.S04E01.1080p.WEB.mkv")
+
+        // Season 1 is placed in the best match, season 4 in the runner-up: neither placement carries over.
+        assertEquals("1", run.showOf("Ghosts.S01E01.1080p.WEB.mkv"))
+        assertEquals("2", run.showOf("Ghosts.S04E01.1080p.WEB.mkv"))
+    }
+
+    // Provider season 1 split into three release seasons of 8.
+    private val thirds = { show: CanonicalMedia.TvShow ->
+        val episodes = (1..24).map { CanonicalMedia.Episode(show, 1, it, "Episode $it") }
+        listOf(
+            CanonicalMedia.EpisodeGroup(
+                "Cours", CanonicalMedia.EpisodeGroup.Type.TV, listOf(
+                    CanonicalMedia.EpisodeGroup.Part("Cour 1", 1, episodes.take(8)),
+                    CanonicalMedia.EpisodeGroup.Part("Cour 2", 2, episodes.drop(8).take(8)),
+                    CanonicalMedia.EpisodeGroup.Part("Cour 3", 3, episodes.drop(16)),
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `an episode group notice is printed once per show and season`() = runTest {
+        val provider = FakeTmdb(
+            listOf(showResult("Gate", "2015", "62745")),
+            seasons = mapOf("62745" to mapOf(1 to 1..24), "42410" to mapOf(1 to 1..24)),
+            episodeGroupsOf = thirds,
+            resultsByTitle = mapOf("durarara" to listOf(showResult("Durarara", "2010", "42410"))),
+        )
+
+        val run = runProcessor(provider, "Gate - S02E01.mkv", "Gate - S02E02.mkv", "Gate - S03E01.mkv", "Durarara - S02E01.mkv")
+
+        assertEquals(4, run.organizer.organized.size)
+        assertEquals(
+            listOf("Season 2 of 'Durarara'", "Season 2 of 'Gate'", "Season 3 of 'Gate'"),
+            run.output.filter { "mapped through episode group" in it }.map { it.trim().substringBefore(" mapped") },
+        )
+    }
+
     private fun ProcessorRun<*>.tmdbNumberOf(fileName: String): Pair<Int, Int>? = episodeOf(fileName)?.let { it.season to it.episode }
 }
