@@ -17,7 +17,7 @@ package io.github.hospes.plexify.domain.matching
  *
  * The groups scoring at least [MINIMUM_CONFIDENCE_SCORE] are the matches, best first.
  *
- * - **similarity**: `titleSimilarity` (normalized Levenshtein, 0..1) between the parsed title and the
+ * - **similarity**: [titleSimilarity] (normalized Levenshtein, 0..1) between the parsed title and the
  *   closest title of the group (title, original title, aliases), both reduced to lowercase letters
  *   and digits.
  * - **year score** (`yearScore`): [EXACT_YEAR_SCORE] for the same year, [ADJACENT_YEAR_SCORE] one
@@ -28,12 +28,12 @@ package io.github.hospes.plexify.domain.matching
  * - **providers**: always 1 today, since `App` gives `MetadataService` only TMDB, so the agreement
  *   term is 0.
  * - **provider confidence**: `MediaSearchResult.matchConfidence` (0..100), the best
- *   `calculateTitleConfidence` between the query and the result's title or original title, and its
+ *   [calculateTitleConfidence] between the query and the result's title or original title, and its
  *   aliases once they are looked up (see [ALT_TITLES_CONFIDENCE_THRESHOLD]). It adds 0..5.
  *
  * Two consequences of this arithmetic, documented here and deliberately left as they are:
- * - **The title is counted twice, with two normalizations.** `titleSimilarity` compares letters
- *   and digits only, while `calculateTitleConfidence` only lowercases. "Spider-Man" against
+ * - **The title is counted twice, with two normalizations.** [titleSimilarity] compares letters
+ *   and digits only, while [calculateTitleConfidence] only lowercases. "Spider-Man" against
  *   "Spiderman" has similarity 1.0 (10 points) but confidence 90 (4.5 points instead of 5), so
  *   punctuation can break a tie between candidates.
  * - **[MINIMUM_CONFIDENCE_SCORE] rarely decides.** A candidate past the similarity cut already has
