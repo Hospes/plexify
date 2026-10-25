@@ -28,8 +28,8 @@ internal fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
     val lhsLength = lhs.length
     val rhsLength = rhs.length
 
-    var cost = Array(lhsLength + 1) { it }
-    val newCost = Array(lhsLength + 1) { 0 }
+    var cost = IntArray(lhsLength + 1) { it }
+    var newCost = IntArray(lhsLength + 1)
 
     for (i in 1..rhsLength) {
         newCost[0] = i
@@ -40,7 +40,10 @@ internal fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
             val costDelete = newCost[j - 1] + 1
             newCost[j] = min(min(costInsert, costDelete), costReplace)
         }
-        cost = newCost.copyOf()
+        // Every cell of newCost is written before it is read, so the old row can be reused.
+        val previous = cost
+        cost = newCost
+        newCost = previous
     }
     return cost[lhsLength]
 }
