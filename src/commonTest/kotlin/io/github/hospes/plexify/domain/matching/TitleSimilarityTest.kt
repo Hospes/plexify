@@ -23,6 +23,10 @@ class TitleSimilarityTest {
         // Case-sensitive: the hyphen and the capital M.
         assertEquals(2, levenshtein("Spider-Man", "Spiderman"))
         assertEquals(1, levenshtein("進撃の巨人", "進撃の巨人2"))
+        // UTF-16 chars, not code points: the two emoji share their high surrogate.
+        assertEquals(1, levenshtein("😀", "😁"))
+        // No Unicode normalization: decomposed é (e + U+0301) against precomposed é.
+        assertEquals(2, levenshtein("Ame\u0301lie", "Am\u00E9lie"))
     }
 
     @Test
@@ -40,6 +44,7 @@ class TitleSimilarityTest {
         assertEquals(0.0, titleSimilarity("abc", ""))
         assertEquals(0.5714285714285714, titleSimilarity("kitten", "sitting"))
         assertEquals(0.625, titleSimilarity("Saturday", "Sunday"))
+        assertEquals(0.5, titleSimilarity("😀", "😁"))
         // Both sides normalized first, as rankMatches does.
         assertEquals(1.0, titleSimilarity("Spiderman".normalizedTitle(), "Spider-Man".normalizedTitle()))
     }
