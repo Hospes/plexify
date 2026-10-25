@@ -37,8 +37,6 @@ internal object ReleaseGroupReader {
     private val repostSuffixRegex =
         """-(?:Obfuscated|Scrambled|postbot|xpost|Rakuv\w*|AsRequested|AlternativeToRequested|WhiteRev|BUYMORE|RePACKPOST|sample)$"""
             .toRegex(RegexOption.IGNORE_CASE)
-    // A name segment that is a release tag as a whole, hyphen included ("WEB-DL", "Blu-ray", "DTS-HD")
-    private val wholeTagRegex = "^(${ReleaseTags.stopWords})$".toRegex(RegexOption.IGNORE_CASE)
 
     // The group in the tag leading [name] (no extension, delimiters still in place). A bracketed number leading
     // the name ("[01].mkv") is an episode, not a group.
@@ -63,7 +61,7 @@ internal object ReleaseGroupReader {
         // A second hyphen in the segment before it: a hyphenated group ("x264-D-Z0N3", "x264-Fight-BB") we
         // would cut in half, unless the segment is a tag itself ("WEB-DL-GROUP")
         val segment = name.substring(0, match.range.first).takeLastWhile { it !in "._ []" }
-        if ('-' in segment && !wholeTagRegex.matches(segment)) return null
+        if ('-' in segment && !ReleaseTags.isWholeTag(segment)) return null
         // "x264-2020" ends in a year, not a group
         if (group.none { it.isLetter() }) return null
         if (group.substringBefore('.').lowercase() in notSceneGroups) return null

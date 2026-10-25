@@ -6,8 +6,8 @@ import kotlin.time.Clock
 
 /**
  * The release tags a media file name carries (resolution, quality, HDR, edition), the stop words that end its title,
- * its years, and the delimiters between them: the vocabulary [ReleaseGroupReader], [MovieNameParser] and
- * [EpisodeNameParser] share.
+ * its years, and the delimiters between them: the vocabulary [ReleaseGroupReader], [PathIdReader], [MovieNameParser]
+ * and [EpisodeNameParser] share.
  */
 internal object ReleaseTags {
 
@@ -66,8 +66,11 @@ internal object ReleaseTags {
     )
 
     // Combine all tags that signal the end of the title into a single regex.
-    val stopWords = (resolutionTags + qualityTags + otherStopTags).joinToString(separator = "|")
+    private val stopWords = (resolutionTags + qualityTags + otherStopTags).joinToString(separator = "|")
     val stopWordRegex = "\\b($stopWords)\\b".toRegex(RegexOption.IGNORE_CASE)
+    // A name segment that is a release tag as a whole, hyphen included ("WEB-DL", "Blu-ray", "DTS-HD")
+    private val wholeTagRegex = "^($stopWords)$".toRegex(RegexOption.IGNORE_CASE)
+    fun isWholeTag(segment: String): Boolean = wholeTagRegex.matches(segment)
 
     // Regex for cleaning up the final title string
     val delimiterRegex = "[._\\[\\]()-]+".toRegex()

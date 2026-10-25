@@ -8,7 +8,7 @@ internal object MovieNameParser {
 
     private val yearInBracketsRegex = """[\[(](19\d{2}|20\d{2})[\])]""".toRegex()
 
-    // [filename]: the file name without its extension and provider-ID tags, delimiters still in place.
+    /** The movie [filename] names: the file name without its extension and provider-ID tags, delimiters still in place. */
     fun parse(filename: String): ParsedMediaInfo.Movie {
         // Normalize common delimiters to spaces first, so word boundary matching (\b) is reliable.
         val normalized = filename.replace('.', ' ').replace('_', ' ').replace(ReleaseTags.cleanupRegex, " ")
