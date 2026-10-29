@@ -1,8 +1,12 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaId
+import io.ktor.client.engine.mock.*
+import io.ktor.client.plugins.*
 import io.ktor.http.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
@@ -13,6 +17,7 @@ import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -119,5 +124,26 @@ class TmdbCancellationTest {
 
         assertTrue(result.isSuccess, result.exceptionOrNull()?.message)
         assertEquals(timeouts.unreachableAfter + 1, requests)
+    }
+
+    // Ktor unwraps an engine's exceptions, so a MockEngine can't hand these to TmdbHttp: they are built by hand.
+    private val http = TmdbHttp(tokenCredentials, timeouts) { MockEngine { error("No request is expected") } }
+
+    private fun timeoutAsCancellation() =
+        CancellationException("Request timed out", HttpRequestTimeoutException("https://api.themoviedb.org/3/search/multi", 5_000))
+
+    @Test
+    fun `ktor's timeout delivered as a cancellation fails the request instead of cancelling it`() = capped {
+        val failure = timeoutAsCancellation().asNoAnswer { "searching for 'Ghosts'" }
+
+        assertIs<MetadataTimeoutException>(failure)
+        assertEquals("TMDB request timed out searching for 'Ghosts'", failure.message)
+        assertTrue(http.catching<Unit> { throw timeoutAsCancellation() }.isFailure)
+    }
+
+    @Test
+    fun `any other cancellation goes on to the caller`() = capped {
+        assertFailsWith<CancellationException> { CancellationException("Cancelled").asNoAnswer { "searching for 'Ghosts'" } }
+        assertFailsWith<CancellationException> { http.catching<Unit> { throw CancellationException("Cancelled") } }
     }
 }

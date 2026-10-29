@@ -77,31 +77,38 @@ internal class TmdbHttp(
     // Every result leaves through here, so no caller can print a credential from an error message.
     // A cancelled lookup is not a failed one: cancellation goes on to the caller, unless it is
     // Ktor's own timeout in disguise.
-    inline fun <T> catching(block: () -> T): Result<T> =
+    suspend fun <T> catching(block: suspend () -> T): Result<T> =
         try {
             Result.success(block())
         } catch (e: Throwable) {
             if (e is CancellationException && !e.isTimeout()) throw e
-            Result.failure(redacted(e))
+            Result.failure(credentials.redact(e.unreadableAsFailed()))
         }
-
-    fun redacted(e: Throwable): Throwable = credentials.redact(e.unreadableAsFailed())
 
     /**
      * GET [path] and check the status. A timeout or a connection error fails with a short message
      * naming the [action] instead of Ktor's, which spells out the whole request URL. A failed search
-     * is reported on every file it fails, so the message has to stay readable.
+     * is reported on every file it fails, so the message has to stay readable. An [optional] lookup
+     * (alternative titles) only costs a detail when it fails, so it gets a shorter request timeout
+     * and no retry after one.
      */
-    suspend fun get(path: String, block: HttpRequestBuilder.() -> Unit = {}, action: () -> String): HttpResponse {
+    suspend fun get(
+        path: String,
+        block: HttpRequestBuilder.() -> Unit = {},
+        optional: Boolean = false,
+        action: () -> String,
+    ): HttpResponse {
         if (unreachable) throw MetadataUnreachableException("Not ${action()}: TMDB stopped answering earlier in this run")
         val response = try {
-            httpClient.get(path, block)
-        } catch (e: Throwable) {
-            val failure = when {
-                e.isTimeout() -> MetadataTimeoutException("TMDB request timed out ${action()}")
-                e is CancellationException -> throw e
-                else -> MetadataConnectionException("TMDB request failed ${action()}: ${e.failureReason()}")
+            httpClient.get(path) {
+                block()
+                if (optional) {
+                    attributes.put(OptionalLookup, Unit)
+                    timeout { requestTimeoutMillis = timeouts.optionalRequestMillis }
+                }
             }
+        } catch (e: Throwable) {
+            val failure = e.asNoAnswer(action)
             unanswered++
             if (unreachable) {
                 throw MetadataUnreachableException(
@@ -123,9 +130,10 @@ internal class TmdbHttp(
     suspend inline fun <reified T> getJson(
         path: String,
         noinline block: HttpRequestBuilder.() -> Unit = {},
+        optional: Boolean = false,
         noinline action: () -> String,
     ): T {
-        val response = get(path, block, action)
+        val response = get(path, block, optional, action)
         return try {
             response.body<T>()
         } catch (e: NoTransformationFoundException) {
@@ -177,8 +185,19 @@ private fun Throwable.failureReason(): String {
     return message.substringAfter("Reason: ", missingDelimiterValue = message)
 }
 
+/**
+ * What a request that got no answer fails with: a timeout, also when Ktor delivers it wrapped in a
+ * [CancellationException], or a connection error. Any other cancellation is not a failed request,
+ * so it is thrown on to the caller.
+ */
+internal fun Throwable.asNoAnswer(action: () -> String): Exception = when {
+    isTimeout() -> MetadataTimeoutException("TMDB request timed out ${action()}")
+    this is CancellationException -> throw this
+    else -> MetadataConnectionException("TMDB request failed ${action()}: ${failureReason()}")
+}
+
 // Marks a request whose failure only costs a detail, so a timeout is not worth a second try.
-internal val OptionalLookup = AttributeKey<Unit>("PlexifyOptionalLookup")
+private val OptionalLookup = AttributeKey<Unit>("PlexifyOptionalLookup")
 
 /** TMDB still refused the request with HTTP 429 after the retries. */
 class TmdbRateLimitedException(message: String) : Exception(message)
