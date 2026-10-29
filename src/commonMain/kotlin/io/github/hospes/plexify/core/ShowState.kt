@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.core
 
+import io.github.hospes.plexify.domain.matching.TitleSeason
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaId
 
@@ -34,7 +35,7 @@ internal data class SeasonKey(val show: ShowKey, val season: Int)
 /** What the run decided about one [ShowKey], so later files of the show don't decide or report it again. */
 internal class ShowState {
     /** The season the title names (an anime arc), once the title is matched; null when it names none. */
-    var titleSeason: MediaProcessor.TitleSeason? = null
+    var titleSeason: TitleSeason? = null
 
     /** The title ends in an arc no season title of the matched show places. */
     var namesUnplacedArc: Boolean = false

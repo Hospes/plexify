@@ -1,14 +1,6 @@
 package io.github.hospes.plexify.domain.matching
 
-import io.github.hospes.plexify.core.DefaultFileOrganizer
-import io.github.hospes.plexify.core.MediaProcessor
-import io.github.hospes.plexify.core.yearScore
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.domain.model.MediaSearchResult
-import io.github.hospes.plexify.domain.service.MetadataService
-import io.github.hospes.plexify.domain.service.PathFormatter
-import io.github.hospes.plexify.domain.strategy.NamingStrategy
-import io.github.hospes.plexify.logging.LoggingContext
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -20,11 +12,7 @@ import kotlin.test.assertTrue
  */
 class MatchScoringTest {
 
-    private val processor = MediaProcessor(
-        metadataService = MetadataService(emptyList(), NamingStrategy.Jellyfin),
-        fileOrganizer = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin),
-        cache = MetadataCache(),
-    )
+    private val ranker = MatchRanker()
 
     private class YearRow(val parsedYear: Int, val candidateYear: Int, val isShow: Boolean, val expected: Double)
 
@@ -66,7 +54,7 @@ class MatchScoringTest {
     )
 
     @Test
-    fun `match score table`() = with(LoggingContext()) {
+    fun `match score table`() {
         val spidermanConfidence = calculateTitleConfidence("Spiderman", "Spider-Man")
         val table = listOf(
             // 10·1.0 + 10 (exact year) + 0 (one provider) + 100/20
@@ -119,7 +107,7 @@ class MatchScoringTest {
         )
 
         val wrong = table.mapNotNull { row ->
-            val actual = processor.rankMatches(row.results, row.parsedTitle, row.parsedYear).firstOrNull()?.score
+            val actual = ranker.rank(row.results, row.parsedTitle, row.parsedYear).matches.firstOrNull()?.score
             val matches = if (row.expected == null || actual == null) actual == row.expected else abs(actual - row.expected) < TOLERANCE
             if (matches) null else "${row.name}: expected ${row.expected ?: "no match"}, got ${actual ?: "no match"}"
         }

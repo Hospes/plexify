@@ -45,7 +45,7 @@ class TitleSimilarityTest {
         assertEquals(0.5714285714285714, titleSimilarity("kitten", "sitting"))
         assertEquals(0.625, titleSimilarity("Saturday", "Sunday"))
         assertEquals(0.5, titleSimilarity("😀", "😁"))
-        // Both sides normalized first, as rankMatches does.
+        // Both sides normalized first, as MatchRanker does.
         assertEquals(1.0, titleSimilarity("Spiderman".normalizedTitle(), "Spider-Man".normalizedTitle()))
     }
 
