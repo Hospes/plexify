@@ -155,7 +155,7 @@ class MetadataService(
     context(_: LoggingContext)
     suspend fun getExternalIds(media: CanonicalMedia): Result<ExternalIds?> {
         if (media !is CanonicalMedia.Movie && media !is CanonicalMedia.TvShow) return Result.success(null)
-        if (IMDB_ID !in namingStrategy.requiredMetadataFields()) return Result.success(null)
+        if (!namingStrategy.needsImdbId) return Result.success(null)
         return indent {
             var failure: Throwable? = null
             for (provider in resolveActiveProviders().filter { IMDB_ID in it.supportedIds }) {

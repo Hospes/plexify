@@ -54,6 +54,8 @@ internal object ReleaseTags {
         "final cut",
     )
     val editionRegex = "\\b(${editionPatterns.joinToString("|")})\\b".toRegex(RegexOption.IGNORE_CASE)
+    // The apostrophes an edition name drops: "Director's Cut" -> "Directors Cut"
+    private val editionApostropheRegex = "['’]".toRegex()
 
     // A comprehensive list of "stop words" to find the end of the title.
     private val otherStopTags = listOf(
@@ -85,8 +87,8 @@ internal object ReleaseTags {
 
     fun editionIn(normalizedText: String): String? =
         editionRegex.find(normalizedText)?.value?.let { raw ->
-            raw.replace(Regex("['’]"), "")
-                .replace(Regex("\\s+"), " ")
+            raw.replace(editionApostropheRegex, "")
+                .replace(cleanupRegex, " ")
                 .trim()
                 .split(" ")
                 .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }

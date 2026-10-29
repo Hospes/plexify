@@ -19,13 +19,11 @@ sealed interface NamingStrategy {
     val seasonFolderTemplate: String
     val episodeFileTemplate: String
 
-    fun requiredMetadataFields(): Set<String> {
-        val allTemplates = listOf(movieFolderTemplate, movieFileTemplate, tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate)
-        val regex = Regex("""\{(\w+)(?::\d+)?}""", RegexOption.IGNORE_CASE)
-        return allTemplates.flatMap { template ->
-            regex.findAll(template).map { it.groupValues[1].lowercase() }
-        }.toSet()
-    }
+    /** The placeholders the templates use, lowercased ("cleantitle", "imdbid", …). Read once per strategy. */
+    fun requiredMetadataFields(): Set<String>
+
+    /** True when a template names folders by the IMDb ID (Plex's do), so a matched movie or show needs that lookup. */
+    val needsImdbId: Boolean get() = "imdbid" in requiredMetadataFields()
 
 
     /**
@@ -44,6 +42,9 @@ sealed interface NamingStrategy {
         override val tvShowFolderTemplate: String = "$BASE_NAME {imdb-{imdbid}}"
         override val seasonFolderTemplate: String = "Season {season:2}"
         override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
+
+        private val placeholders = placeholdersIn(movieFolderTemplate, movieFileTemplate, tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate)
+        override fun requiredMetadataFields(): Set<String> = placeholders
 
         override fun toString(): String {
             return """
@@ -73,6 +74,9 @@ sealed interface NamingStrategy {
         override val seasonFolderTemplate: String = "Season {season:2}"
         override val episodeFileTemplate: String = "$BASE_NAME - S{season:2}E{episode:2}{multiEpisode} - {episodeTitle}{version}.{ext}"
 
+        private val placeholders = placeholdersIn(movieFolderTemplate, movieFileTemplate, tvShowFolderTemplate, seasonFolderTemplate, episodeFileTemplate)
+        override fun requiredMetadataFields(): Set<String> = placeholders
+
         override fun toString(): String {
             return """
                 $name [
@@ -86,3 +90,10 @@ sealed interface NamingStrategy {
         }
     }
 }
+
+// A placeholder like {cleantitle} or {season:2}, its name in group 1
+private val templatePlaceholderRegex = Regex("""\{(\w+)(?::\d+)?}""", RegexOption.IGNORE_CASE)
+
+// The placeholders [templates] use, lowercased
+private fun placeholdersIn(vararg templates: String): Set<String> =
+    templates.flatMap { template -> templatePlaceholderRegex.findAll(template).map { it.groupValues[1].lowercase() } }.toSet()
