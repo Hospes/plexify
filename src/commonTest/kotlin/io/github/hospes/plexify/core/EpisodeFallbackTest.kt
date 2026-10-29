@@ -160,6 +160,16 @@ class EpisodeFallbackTest {
     }
 
     @Test
+    fun `the default season warning is printed once per folder`() = runTest {
+        val provider = FakeTmdb(listOf(showResult("Gate", "2015", "62745")), seasons = mapOf("62745" to mapOf(1 to 1..24)))
+
+        val run = runProcessor(provider, "First Release/Gate_[01]_[720p].mkv", "First Release/Gate_[02]_[720p].mkv", "Second Release/Gate_[03]_[720p].mkv")
+
+        assertEquals(3, run.organizer.organized.size)
+        assertEquals(2, run.output.count { "defaulting to Season 1" in it })
+    }
+
+    @Test
     fun `a multi-episode file gets the whole range and both titles`() = runTest {
         val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6)))
 
