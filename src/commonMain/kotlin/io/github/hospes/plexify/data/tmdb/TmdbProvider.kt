@@ -21,14 +21,13 @@ import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.ktor.client.engine.*
-import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import kotlin.coroutines.cancellation.CancellationException
 
 /** TMDB's endpoints as a [MetadataProvider]. [TmdbHttp] sends the requests; `TmdbMappers.kt` reads the answers. */
 class TmdbProvider(
     credentials: TmdbCredentials,
-    private val timeouts: TmdbTimeouts = TmdbTimeouts(),
+    timeouts: TmdbTimeouts = TmdbTimeouts(),
     engineFactory: () -> HttpClientEngine = ::createHttpClientEngine,
 ) : MetadataProvider {
     override val id: String = "tmdb"
@@ -107,10 +106,7 @@ class TmdbProvider(
             is MediaSearchResult.Movie -> "movie/${result.tmdbId}/alternative_titles"
             is MediaSearchResult.TvShow -> "tv/${result.tmdbId}/alternative_titles"
         }
-        val dto = http.getJson<TmdbAlternativeTitlesDto>(endpoint, {
-            attributes.put(OptionalLookup, Unit)
-            timeout { requestTimeoutMillis = timeouts.optionalRequestMillis }
-        }) { "fetching alternative titles of '${result.title}'" }
+        val dto = http.getJson<TmdbAlternativeTitlesDto>(endpoint, optional = true) { "fetching alternative titles of '${result.title}'" }
         val altTitles = dto.all.map { it.title }
         if (altTitles.isEmpty()) return result
 
