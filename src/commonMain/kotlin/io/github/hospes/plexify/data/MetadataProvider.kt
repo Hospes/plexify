@@ -23,12 +23,14 @@ interface MetadataProvider {
      * [results], this provider's answer to a [search] or [searchMovies] for [title], with the aliases its search results
      * don't carry (translations, romanizations), for the results that need them. The caller asks only when the aliases
      * could change the match (MatchRanker.aliasesCanChangeWinner). Each record's aliases come through [cache], which
-     * fetches them only when it doesn't have them. Fails when a lookup failed and the missing alias may be the match.
+     * fetches them only when it doesn't have them. With [withExternalIds], a fetch also brings the record's external IDs when
+     * the same request can, for [cache] to keep. Fails when a lookup failed and the missing alias may be the match.
      */
     suspend fun withAlternativeTitles(
         results: List<MediaSearchResult>,
         title: String,
         cache: AliasCache = AliasCache.NONE,
+        withExternalIds: Boolean = false,
     ): Result<List<MediaSearchResult>> = Result.success(results)
 
     /**
@@ -58,14 +60,23 @@ interface MetadataProvider {
  * searches find has its aliases fetched once. Which results get them, and what a failed fetch means, stays the provider's.
  */
 fun interface AliasCache {
-    /** The aliases of [result]'s record: the ones kept, else [fetch]'s, kept when it returns. A failed fetch throws and isn't kept. */
-    suspend fun getOrFetch(result: MediaSearchResult, fetch: suspend () -> AlternativeTitles): AlternativeTitles
+    /**
+     * The aliases of [result]'s record: the ones kept, else [fetch]'s, kept when it returns, with the external IDs the
+     * same request brought. A failed fetch throws and isn't kept.
+     */
+    suspend fun getOrFetch(result: MediaSearchResult, fetch: suspend () -> AliasLookup): AlternativeTitles
 
     companion object {
         /** Keeps nothing: every lookup fetches. */
-        val NONE = AliasCache { _, fetch -> fetch() }
+        val NONE = AliasCache { _, fetch -> fetch().aliases }
     }
 }
+
+/**
+ * What a lookup of a record's aliases answered: the aliases, and the record's external IDs when the same request
+ * brought them (null: not asked, so not known; an [ExternalIds] with a null field: the record has none).
+ */
+data class AliasLookup(val aliases: AlternativeTitles, val externalIds: ExternalIds? = null)
 
 /** The provider has no such record (HTTP 404), e.g. a season it numbers differently. Expected, not an error. */
 class MetadataNotFoundException(message: String) : Exception(message)

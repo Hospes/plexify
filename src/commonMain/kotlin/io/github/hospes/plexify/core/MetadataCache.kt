@@ -87,6 +87,9 @@ internal class MetadataCache {
     suspend fun getOrPutExternalIds(record: TmdbRecord, lookup: suspend () -> Result<ExternalIds?>): Result<ExternalIds?> =
         externalIdsCache.getOrPut(record, lookup = lookup)
 
+    /** Keeps a TMDB record's external IDs that another request brought, unless some are kept already. */
+    suspend fun putExternalIds(record: TmdbRecord, ids: ExternalIds) = externalIdsCache.putIfAbsent(record, ids)
+
     /** A general search's results, by its exact query and year. */
     suspend fun getOrPutSearch(key: SearchKey, onHit: () -> Unit, lookup: suspend () -> Result<List<MediaSearchResult>>) =
         searchCache.getOrPut(key, onHit, lookup)
@@ -121,4 +124,6 @@ private class LookupCache<K, V> {
         if (key in values) Result.success(values.getValue(key)).also { onHit() }
         else lookup().onSuccess { values[key] = it }
     }
+
+    suspend fun putIfAbsent(key: K, value: V) = mutex.withLock { if (key !in values) values[key] = value }
 }

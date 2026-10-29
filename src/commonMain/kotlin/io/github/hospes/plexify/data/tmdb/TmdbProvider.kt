@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.data.AliasCache
+import io.github.hospes.plexify.data.AliasLookup
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.createHttpClientEngine
@@ -72,6 +73,11 @@ class TmdbProvider(
      * Each record's aliases come through [cache], so a record that several searches find is fetched once; the lookup
      * still counts toward the limit, so a cached alias set reaches the results a fetch would have, and no others.
      *
+     * With [withExternalIds] (a template that names the IMDb ID), a lookup fetches the record's details with its aliases
+     * appended instead, as [movie] and [show] do: the same one request, which also brings the IMDb ID for [cache] to
+     * keep, so the record needs no `external_ids` call if it wins. It is still an optional lookup, as below: when it
+     * fails, nothing is kept, and the IMDb ID of a record that wins is looked up as usual, a lookup that must succeed.
+     *
      * A lookup for a record TMDB doesn't have (HTTP 404) leaves its result as it is. Any other failure
      * fails the search unless a result resembles the query anyway: the missing alias may be the match,
      * so "no match" would be a guess, and the file would be skipped and its show cached as a miss
@@ -83,9 +89,14 @@ class TmdbProvider(
         results: List<MediaSearchResult>,
         title: String,
         cache: AliasCache,
-    ): Result<List<MediaSearchResult>> = http.catching { results.lookUpAlternativeTitles(title, cache) }
+        withExternalIds: Boolean,
+    ): Result<List<MediaSearchResult>> = http.catching { results.lookUpAlternativeTitles(title, cache, withExternalIds) }
 
-    private suspend fun List<MediaSearchResult>.lookUpAlternativeTitles(title: String, cache: AliasCache): List<MediaSearchResult> {
+    private suspend fun List<MediaSearchResult>.lookUpAlternativeTitles(
+        title: String,
+        cache: AliasCache,
+        withExternalIds: Boolean,
+    ): List<MediaSearchResult> {
         var lookups = 0
         var failed: Exception? = null
         var stopped = false
@@ -95,7 +106,10 @@ class TmdbProvider(
             } else {
                 lookups++
                 try {
-                    result.withAliases(cache.getOrFetch(result) { alternativeTitles(result) }, title)
+                    val aliases = cache.getOrFetch(result) {
+                        if (withExternalIds) alternativeTitlesWithExternalIds(result) else AliasLookup(alternativeTitles(result))
+                    }
+                    result.withAliases(aliases, title)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -122,7 +136,26 @@ class TmdbProvider(
         } catch (_: MetadataNotFoundException) {
             return AlternativeTitles.NONE
         }
-        return AlternativeTitles(dto.all.map { it.title }, dto.seasonTitles())
+        return dto.toDomainModel()
+    }
+
+    // The record's details with its aliases (and a show's external IDs) appended: the request movie() and show() send.
+    // A 404 is an answer for the aliases, but leaves the IMDb ID to its own lookup.
+    private suspend fun alternativeTitlesWithExternalIds(result: MediaSearchResult): AliasLookup {
+        val action = { "fetching alternative titles of '${result.title}'" }
+        return try {
+            when (result) {
+                is MediaSearchResult.Movie -> http.getJson<TmdbMovieDetailsDto>(
+                    "movie/${result.tmdbId}", { parameter("append_to_response", "alternative_titles") }, optional = true, action,
+                ).toAliasLookup()
+
+                is MediaSearchResult.TvShow -> http.getJson<TmdbTvDetailsDto>(
+                    "tv/${result.tmdbId}", { parameter("append_to_response", "alternative_titles,external_ids") }, optional = true, action,
+                ).toAliasLookup()
+            }
+        } catch (_: MetadataNotFoundException) {
+            AliasLookup(AlternativeTitles.NONE)
+        }
     }
 
     private fun MediaSearchResult.withAliases(aliases: AlternativeTitles, queryTitle: String): MediaSearchResult {

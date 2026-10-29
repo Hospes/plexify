@@ -190,7 +190,7 @@ class CorpusTest {
         |Jellyfin: 52 organized, 1 skipped, 0 failed
         |Jellyfin requests: 3 movie/{id}/alternative_titles, 18 search/multi, 3 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 16 tv/{id}/season/{id}
         |Plex: 52 organized, 1 skipped, 0 failed
-        |Plex requests: 3 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 18 search/multi, 3 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 11 tv/{id}/external_ids, 16 tv/{id}/season/{id}
+        |Plex requests: 3 movie/{id}, 1 movie/{id}/external_ids, 18 search/multi, 3 tv/episode_group/{id}, 8 tv/{id}, 2 tv/{id}/episode_groups, 6 tv/{id}/external_ids, 16 tv/{id}/season/{id}
     """)
 
     @Test
@@ -321,7 +321,7 @@ class CorpusTest {
         |Jellyfin: 41 organized, 0 skipped, 0 failed
         |Jellyfin requests: 2 movie/{id}/alternative_titles, 1 search/movie, 32 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/season/{id}
         |Plex: 41 organized, 0 skipped, 0 failed
-        |Plex requests: 2 movie/{id}/alternative_titles, 23 movie/{id}/external_ids, 1 search/movie, 32 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/external_ids, 8 tv/{id}/season/{id}
+        |Plex requests: 2 movie/{id}, 23 movie/{id}/external_ids, 1 search/movie, 32 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}, 1 tv/{id}/episode_groups, 7 tv/{id}/external_ids, 8 tv/{id}/season/{id}
     """)
 
     @Test
@@ -362,7 +362,7 @@ class CorpusTest {
         |Jellyfin: 11 organized, 0 skipped, 0 failed
         |Jellyfin requests: 2 find/{id}, 5 movie/{id}, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 4 tv/{id}/season/{id}
         |Plex: 11 organized, 0 skipped, 0 failed
-        |Plex requests: 2 find/{id}, 5 movie/{id}, 1 movie/{id}/external_ids, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 3 tv/{id}/external_ids, 4 tv/{id}/season/{id}
+        |Plex requests: 2 find/{id}, 5 movie/{id}, 1 movie/{id}/external_ids, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 2 tv/{id}/external_ids, 4 tv/{id}/season/{id}
     """)
 
 

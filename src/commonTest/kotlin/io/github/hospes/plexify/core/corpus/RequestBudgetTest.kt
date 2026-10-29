@@ -89,6 +89,17 @@ class RequestBudgetTest {
         NamingStrategy.Plex,
     )
 
+    // The arc show above with the Plex template: each alias lookup fetches the record's details with its alternative
+    // titles appended (and a show's external IDs; a movie's details carry its IMDb ID), the request a lookup by ID
+    // sends, so the counts are the same, under other endpoints. The show's IMDb ID came with its aliases, so it takes
+    // no external_ids lookup.
+    @Test
+    fun `an arc show with plex`() = budget(
+        animeNames.filter { it.startsWith("Kimetsu") },
+        "2 movie/{id}, 4 search/multi, 1 tv/{id}, 4 tv/{id}/season/{id}",
+        NamingStrategy.Plex,
+    )
+
     // What the Plex run writes, run again: no search. An IMDb tag is resolved by find/{imdb}, then the record is
     // fetched with its alternative titles and IMDb ID in the same request (append_to_response), so there is no
     // external_ids lookup. Records are cached by the ID that names them, so the episodes share one find, one record

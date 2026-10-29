@@ -67,15 +67,29 @@ class ExternalIdsFailureTest {
     }
 
     @Test
-    fun `a show found by the TMDB ID in its path fails the same way`() = runTest {
+    fun `a show found by the TMDB ID in its path with its IMDb ID needs no lookup that could fail`() = runTest {
+        val folder = "Ghosts (2021) [tmdbid-1]/Season 04"
+        val provider = FakeTmdb(ghosts.map { it.copy(imdbId = "tt1") }, seasons = ghostsSeasons, failingExternalIds = setOf("1"))
+
+        val run = runProcessor(provider, "$folder/$episode1", "$folder/$episode2", namingStrategy = NamingStrategy.Plex)
+
+        assertEquals(2, run.stats.organized)
+        assertEquals("tt1", run.episodeOf(episode2)?.show?.imdbId)
+        assertEquals(listOf("tmdb-1"), run.provider.idLookups)
+        assertTrue(run.provider.externalIdLookups.isEmpty())
+        assertTrue(run.provider.searchedTitles.isEmpty())
+    }
+
+    @Test
+    fun `a show found by the TMDB ID in its path without an IMDb ID fails the same way`() = runTest {
         val folder = "Ghosts (2021) [tmdbid-1]/Season 04"
         val provider = FakeTmdb(ghosts, seasons = ghostsSeasons, failingExternalIds = setOf("1"))
 
         val run = runProcessor(provider, "$folder/$episode1", "$folder/$episode2", namingStrategy = NamingStrategy.Plex)
 
         assertEquals(2, run.stats.failed)
-        // The record answered, so the next file takes it from the cache; the failed IMDb lookup is not cached, so it
-        // looks that up again.
+        // The record answered, so the next file takes it from the cache. It came without an IMDb ID, which says nothing
+        // about whether the show has one, so the ID is looked up; that lookup failed, wasn't cached, and is made again.
         assertEquals(listOf("tmdb-1"), run.provider.idLookups)
         assertEquals(listOf("1", "1"), run.provider.externalIdLookups)
         assertTrue(run.provider.searchedTitles.isEmpty())
