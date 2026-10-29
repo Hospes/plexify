@@ -281,6 +281,7 @@ class MatchRankerTest {
         val ranking = MatchRanker(yearOverride = "1995").rank(listOf(kingdomsOfRuin()), "the kingdoms of ruin", "1995")
 
         assertEquals("'The Kingdoms of Ruin (2023)' rejected (year does not match override 1995)", ranking.miss)
+        assertEquals("Candidate: 'The Kingdoms of Ruin (2023)' | Discarded (year does not match override 1995)", ranking.trace.last())
     }
 
     @Test
@@ -297,11 +298,12 @@ class MatchRankerTest {
 
     @Test
     fun `miss reason gives the best score under the minimum`() {
-        val results = listOf(MediaSearchResult.Movie("Abxyz", null, tmdbId = "1", provider = "TMDb", matchConfidence = 10.0))
+        // No year in the filename, so the candidate's year adds nothing: 4.0 + 10/20.
+        val results = listOf(MediaSearchResult.Movie("Abxyz", "2001", tmdbId = "1", provider = "TMDb", matchConfidence = 10.0))
 
         val ranking = ranker.rank(results, "Abcde", null)
 
-        assertEquals("best candidate 'Abxyz (null)' scored 4.50, below the 5.0 confidence minimum", ranking.miss)
+        assertEquals("best candidate 'Abxyz (2001)' scored 4.50, below the 5.0 confidence minimum", ranking.miss)
     }
 
     @Test
