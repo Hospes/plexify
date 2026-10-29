@@ -186,6 +186,7 @@ class TranscriptTest {
             |  -> Processing: <source>/Solaris.1080p.mkv
             |    -> Parsed as Movie: Title='solaris', Year='null'
             |      -> Found 1 results from tmdb
+            |      -> Alternative titles may change the match for 'solaris'; looking them up
             |      -> Consolidating 1 results for title: 'solaris' year: 'null'
             |      -> 1 unique media candidates found.
             |      -> Candidate: 'Solar Attack (2006)' | Score: 4.55

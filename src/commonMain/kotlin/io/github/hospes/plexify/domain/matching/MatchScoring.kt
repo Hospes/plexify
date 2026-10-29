@@ -81,7 +81,9 @@ object MatchScoring {
     /**
      * A search result whose title or original title already has this provider confidence doesn't
      * get its alternative titles looked up. TMDB matches aliases (e.g. romaji anime titles) server-side
-     * but returns only those two titles, so for the other results the alias may be what matched.
+     * but returns only those two titles, so for the other results the alias may be what matched. The
+     * lookups are made only when they could change the winner (see
+     * [MatchRanker.aliasesCanChangeWinner]).
      */
     const val ALT_TITLES_CONFIDENCE_THRESHOLD = 60.0
 

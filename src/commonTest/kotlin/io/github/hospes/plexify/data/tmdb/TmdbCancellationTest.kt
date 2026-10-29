@@ -3,6 +3,7 @@ package io.github.hospes.plexify.data.tmdb
 import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaId
+import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.*
 import io.ktor.http.*
@@ -36,6 +37,9 @@ class TmdbCancellationTest {
         "verifyCredentials" to { verifyCredentials() },
         "search" to { search("Ghosts", null) },
         "searchMovies" to { searchMovies("Dune", "2021") },
+        "withAlternativeTitles" to {
+            withAlternativeTitles(listOf(MediaSearchResult.TvShow("Ghosts", "2019", tmdbId = "1", provider = "TMDb")), "Kimetsu no Yaiba")
+        },
         "season" to { season(show, 4) },
         "episodeGroups" to { episodeGroups(show) },
         "externalIds" to { externalIds(show) },
@@ -98,7 +102,7 @@ class TmdbCancellationTest {
             }
         }
 
-        val returned = cancelWhileWaiting(provider, requestStarted) { search("Kimetsu no Yaiba", null) }
+        val returned = cancelWhileWaiting(provider, requestStarted) { searchWithAliases("Kimetsu no Yaiba") }
 
         assertNull(returned)
     }

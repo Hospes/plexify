@@ -21,6 +21,11 @@ class MetadataRepository(private val service: MetadataService) {
     context(_: LoggingContext)
     suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = service.searchMovies(title, year)
 
+    /** [results] with their aliases, as [MetadataService.withAlternativeTitles] looks them up; not cached. */
+    context(_: LoggingContext)
+    suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> =
+        service.withAlternativeTitles(results, title)
+
     context(_: LoggingContext)
     suspend fun findMovie(id: MediaId): Result<MediaSearchResult.Movie?> = service.findMovie(id)
 

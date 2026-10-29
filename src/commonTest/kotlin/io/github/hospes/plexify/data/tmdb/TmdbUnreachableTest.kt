@@ -113,7 +113,7 @@ class TmdbUnreachableTest {
         val provider = stalledAltTitles((1..3).joinToString(",") { tvResult(it, "Unrelated $it") }, altTitleCalls)
 
         val start = TimeSource.Monotonic.markNow()
-        val error = provider.search("Kimetsu no Yaiba", null).exceptionOrNull()
+        val error = provider.searchWithAliases("Kimetsu no Yaiba").exceptionOrNull()
 
         assertIs<MetadataTimeoutException>(error)
         assertEquals("TMDB request timed out fetching alternative titles of 'Unrelated 1'", error.message)
@@ -127,7 +127,7 @@ class TmdbUnreachableTest {
         val altTitleCalls = mutableListOf<String>()
         val provider = stalledAltTitles(tvResult(1, "Kimetsu no Yaiba") + "," + tvResult(2, "Unrelated 2") + "," + tvResult(3, "Unrelated 3"), altTitleCalls)
 
-        val found = provider.search("Kimetsu no Yaiba", null).getOrThrow()
+        val found = provider.searchWithAliases("Kimetsu no Yaiba").getOrThrow()
 
         assertEquals(3, found.size)
         assertTrue(found.all { it is MediaSearchResult.TvShow && it.alternativeTitles.isEmpty() })

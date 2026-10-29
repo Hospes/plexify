@@ -8,7 +8,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /**
- * `search/multi` and the alternative-titles lookups it makes for results that don't resemble the query. Bodies are
+ * `search/multi`, and the alternative-titles lookups for the results that don't resemble the query, which the processor
+ * asks for after a search only when they could change the winner (MatchRanker.aliasesCanChangeWinner). Bodies are
  * hand-written in the shape of TMDB's (October 2026). The failure rule for a lookup with no answer is in
  * TmdbUnreachableTest. A lookup that fails with an HTTP error other than 404 fails the search by the same rule, but
  * only no answer and HTTP 429 (after its retries) end the lookups.
@@ -33,11 +34,21 @@ class TmdbSearchTest {
     private fun provider(tmdb: TmdbResponder) = mockProvider(credentials = tokenCredentials, handler = tmdb.handler)
 
     @Test
+    fun `a search itself looks up no alternative titles`() = runBlocking {
+        val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings"))))
+
+        val found = provider(tmdb).search("Dark Angel", null).getOrThrow()
+
+        assertEquals(listOf("1", "2"), found.map { it.tmdbId })
+        assertEquals(emptyList(), tmdb.aliasLookups())
+    }
+
+    @Test
     fun `a result that resembles the query by 60 percent gets no alias lookup and one below gets one`() = runBlocking {
         // Against "Dark Angel": "Dark Water" is 4 edits in 10 (60), "Dark Waters" 5 in 11 (54.5).
         val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Dark Water"), tv(2, "Dark Waters"))) + noTvAliases(2))
 
-        provider(tmdb).search("Dark Angel", null).getOrThrow()
+        provider(tmdb).searchWithAliases("Dark Angel").getOrThrow()
 
         assertEquals(listOf("/3/tv/2/alternative_titles"), tmdb.aliasLookups())
         assertEquals(emptyList(), tmdb.unanswered)
@@ -47,7 +58,7 @@ class TmdbSearchTest {
     fun `an original title that resembles the query is enough`() = runBlocking {
         val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Ангел тьмы", originalName = "Dark Angel"))))
 
-        provider(tmdb).search("Dark Angel", null).getOrThrow()
+        provider(tmdb).searchWithAliases("Dark Angel").getOrThrow()
 
         assertEquals(emptyList(), tmdb.aliasLookups())
     }
@@ -64,7 +75,7 @@ class TmdbSearchTest {
             ) + noTvAliases(12),
         )
 
-        val found = provider(tmdb).search("Dark Angel", null).getOrThrow()
+        val found = provider(tmdb).searchWithAliases("Dark Angel").getOrThrow()
 
         assertEquals(5, found.size)
         assertEquals(
@@ -87,7 +98,7 @@ class TmdbSearchTest {
             ),
         )
 
-        val show = assertIs<MediaSearchResult.TvShow>(provider(tmdb).search("Kimetsu no Yaiba", null).getOrThrow().single())
+        val show = assertIs<MediaSearchResult.TvShow>(provider(tmdb).searchWithAliases("Kimetsu no Yaiba").getOrThrow().single())
 
         assertEquals(100.0, show.matchConfidence)
         assertEquals(listOf("Kimetsu no Yaiba", "Kimetsu no Yaiba: Yuukaku-hen", "鬼滅の刃"), show.alternativeTitles)
@@ -104,14 +115,14 @@ class TmdbSearchTest {
             ),
         )
 
-        val movie = assertIs<MediaSearchResult.Movie>(provider(tmdb).search("Sen to Chihiro no Kamikakushi", null).getOrThrow().single())
+        val movie = assertIs<MediaSearchResult.Movie>(provider(tmdb).searchWithAliases("Sen to Chihiro no Kamikakushi").getOrThrow().single())
 
         assertEquals(100.0, movie.matchConfidence)
         assertEquals(listOf("Sen to Chihiro no Kamikakushi"), movie.alternativeTitles)
     }
 
     @Test
-    fun `a movie search with a year looks up aliases too`() = runBlocking {
+    fun `a movie search with a year gets aliases too`() = runBlocking {
         val tmdb = TmdbResponder(
             mapOf(
                 "/3/search/movie" to """{"page":1,"results":[{"adult":false,"id":129,"title":"Spirited Away","original_title":"千と千尋の神隠し","release_date":"2001-07-20"}],"total_results":1}""",
@@ -119,7 +130,9 @@ class TmdbSearchTest {
             ),
         )
 
-        val movie = provider(tmdb).searchMovies("Sen to Chihiro no Kamikakushi", "2001").getOrThrow().single()
+        val provider = provider(tmdb)
+        val found = provider.searchMovies("Sen to Chihiro no Kamikakushi", "2001").getOrThrow()
+        val movie = provider.withAlternativeTitles(found, "Sen to Chihiro no Kamikakushi").getOrThrow().single()
 
         assertEquals(listOf("Sen to Chihiro no Kamikakushi"), movie.alternativeTitles)
     }
@@ -132,7 +145,7 @@ class TmdbSearchTest {
             notFound = setOf("/3/tv/1/alternative_titles"),
         )
 
-        val (first, second) = provider(tmdb).search("Dark Angel", null).getOrThrow().map { assertIs<MediaSearchResult.TvShow>(it) }
+        val (first, second) = provider(tmdb).searchWithAliases("Dark Angel").getOrThrow().map { assertIs<MediaSearchResult.TvShow>(it) }
 
         assertEquals(emptyList(), first.alternativeTitles)
         assertEquals(listOf("Dark Angel"), second.alternativeTitles)
@@ -159,7 +172,7 @@ class TmdbSearchTest {
         val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings"))) + noTvAliases(2))
         val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.InternalServerError, serverError)
 
-        val error = provider.search("Dark Angel", null).exceptionOrNull()
+        val error = provider.searchWithAliases("Dark Angel").exceptionOrNull()
 
         assertEquals("HTTP 500 fetching alternative titles of 'Black Seraph'", error?.message)
         // The next lookup goes on, as it may find the alias; it doesn't.
@@ -171,7 +184,7 @@ class TmdbSearchTest {
         val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings")), tvAliases(2, "Dark Angel" to "")))
         val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.InternalServerError, serverError)
 
-        val (first, second) = provider.search("Dark Angel", null).getOrThrow().map { assertIs<MediaSearchResult.TvShow>(it) }
+        val (first, second) = provider.searchWithAliases("Dark Angel").getOrThrow().map { assertIs<MediaSearchResult.TvShow>(it) }
 
         assertEquals(emptyList(), first.alternativeTitles)
         assertEquals(listOf("Dark Angel"), second.alternativeTitles)
@@ -184,7 +197,7 @@ class TmdbSearchTest {
         val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings"))) + noTvAliases(2))
         val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.TooManyRequests, rateLimited, builtIn)
 
-        val error = provider.search("Dark Angel", null).exceptionOrNull()
+        val error = provider.searchWithAliases("Dark Angel").exceptionOrNull()
 
         assertEquals(
             "TMDB rate limit reached (HTTP 429) fetching alternative titles of 'Black Seraph'. The built-in key is shared by all " +
@@ -200,7 +213,7 @@ class TmdbSearchTest {
         val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Dark Angel"))))
         val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.InternalServerError, serverError)
 
-        val found = provider.search("Dark Angel", null).getOrThrow()
+        val found = provider.searchWithAliases("Dark Angel").getOrThrow()
 
         assertEquals(listOf("1", "2"), found.map { it.tmdbId })
         assertEquals(emptyList(), assertIs<MediaSearchResult.TvShow>(found.first()).alternativeTitles)
@@ -218,7 +231,7 @@ class TmdbSearchTest {
             tmdb.handler(this, request)
         }
 
-        val (first, second) = provider.search("Dark Angel", null).getOrThrow()
+        val (first, second) = provider.searchWithAliases("Dark Angel").getOrThrow()
 
         assertEquals(100.0, first.matchConfidence)
         assertEquals(emptyList(), assertIs<MediaSearchResult.TvShow>(second).alternativeTitles)

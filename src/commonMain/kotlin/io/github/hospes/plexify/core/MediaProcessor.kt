@@ -3,6 +3,7 @@ package io.github.hospes.plexify.core
 import io.github.hospes.plexify.domain.matching.MatchRanker
 import io.github.hospes.plexify.domain.matching.MatchScoring
 import io.github.hospes.plexify.domain.matching.RankedMatch
+import io.github.hospes.plexify.domain.matching.awaitingAliases
 import io.github.hospes.plexify.domain.matching.calculateTitleConfidence
 import io.github.hospes.plexify.domain.matching.consolidate
 import io.github.hospes.plexify.domain.matching.format
@@ -178,17 +179,16 @@ class MediaProcessor(
         title: String,
         year: String?,
     ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
-        val first = metadata.search(title, year)
+        val first = searchFor<MediaSearchResult.Movie>(title, year) { metadata.search(title, year) }
             .getOrElse { return Result.failure(it) }
-            .filterIsInstance<MediaSearchResult.Movie>()
         val firstRanking = rankMatches(first, title, year, reportMiss = year == null)
         if (year == null || firstRanking.bestYear() == year) return Result.success(first to firstRanking)
 
         // A search that fails after an earlier one found a candidate is left out; with no candidate
         // yet, it decides the file.
-        suspend fun moviesUnlessFailed(found: List<RankedMatch>, search: suspend () -> Result<List<MediaSearchResult>>) =
+        suspend fun moviesUnlessFailed(found: List<RankedMatch>, search: suspend () -> Result<List<MediaSearchResult.Movie>>) =
             search().fold(
-                onSuccess = { Result.success(it.filterIsInstance<MediaSearchResult.Movie>()) },
+                onSuccess = { Result.success(it) },
                 onFailure = { error ->
                     if (found.isEmpty()) return@fold Result.failure(error)
                     debug("Search failed: ${error.message}")
@@ -197,20 +197,24 @@ class MediaProcessor(
             )
 
         debug("No match from $year among the first results; searching again with the year")
-        val byYear = moviesUnlessFailed(firstRanking) { metadata.searchMovies(title, year) }
+        val byYear = moviesUnlessFailed(firstRanking) {
+            searchFor<MediaSearchResult.Movie>(title, year) { metadata.searchMovies(title, year) }
+        }
             .getOrElse { return Result.failure(it) }
         val merged = (first + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
         val ranking = rankMatches(merged, title, year, reportMiss = false)
 
         if (ranking.bestYear() != year && titleOverride == null && yearOverride == null) {
             val joinedTitle = "$title $year"
-            debug("Still no match from $year; trying '$joinedTitle' as the whole title")
-            val joined = moviesUnlessFailed(ranking) { metadata.search(joinedTitle, null) }
-                .getOrElse { return Result.failure(it) }
             // Only a film whose title has the year: the reading has no year to rule out the namesakes
             // the first one rejected ("Dracula" for "Dracula 1974").
-            val joinedRanking = rankMatches(joined, joinedTitle, null, reportMiss = false)
-                .filter { year in (it.media as CanonicalMedia.Movie).title }
+            val namesYear = { media: CanonicalMedia -> year in (media as CanonicalMedia.Movie).title }
+            debug("Still no match from $year; trying '$joinedTitle' as the whole title")
+            val joined = moviesUnlessFailed(ranking) {
+                searchFor<MediaSearchResult.Movie>(joinedTitle, null, namesYear) { metadata.search(joinedTitle, null) }
+            }
+                .getOrElse { return Result.failure(it) }
+            val joinedRanking = rankMatches(joined, joinedTitle, null, reportMiss = false).filter { namesYear(it.media) }
             val joinedScore = joinedRanking.firstOrNull()?.score
             if (joinedScore != null && joinedScore > (ranking.firstOrNull()?.score ?: 0.0)) {
                 debug("'$joinedTitle' matches better (${joinedScore.format(2)})")
@@ -346,8 +350,8 @@ class MediaProcessor(
     /** The best show match for [title]; a reading being tried reports no miss of its own. */
     context(_: LoggingContext)
     private suspend fun bestShow(title: String, year: String?): Result<CanonicalMedia.TvShow?> =
-        metadata.search(title, year).map { results ->
-            rankMatches(results.filterIsInstance<MediaSearchResult.TvShow>(), title, year, reportMiss = false)
+        searchFor<MediaSearchResult.TvShow>(title, year) { metadata.search(title, year) }.map { results ->
+            rankMatches(results, title, year, reportMiss = false)
                 .firstOrNull()?.media as? CanonicalMedia.TvShow
         }
 
@@ -544,9 +548,8 @@ class MediaProcessor(
         year: String?,
         bareYear: Boolean,
     ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
-        val found = metadata.search(title, year)
+        val found = searchFor<MediaSearchResult.TvShow>(title, year) { metadata.search(title, year) }
             .getOrElse { return Result.failure(it) }
-            .filterIsInstance<MediaSearchResult.TvShow>()
         val titleYear = year?.takeIf { bareYear && titleOverride == null && yearOverride == null }
         val ranking = rankMatches(found, title, year, reportMiss = titleYear == null).filter { it.media is CanonicalMedia.TvShow }
         if (titleYear == null || (ranking.firstOrNull()?.media as? CanonicalMedia.TvShow)?.year?.toString() == titleYear) {
@@ -554,9 +557,11 @@ class MediaProcessor(
         }
 
         val joinedTitle = "$title $titleYear"
+        // Only a show whose title has the year: the reading has no year to rule out other shows.
+        val namesYear = { media: CanonicalMedia -> (media as? CanonicalMedia.TvShow)?.title?.contains(titleYear) == true }
         debug("No show from $titleYear matched; trying '$joinedTitle' as the whole title")
-        val joined = metadata.search(joinedTitle, null).fold(
-            onSuccess = { it.filterIsInstance<MediaSearchResult.TvShow>() },
+        val joined = searchFor<MediaSearchResult.TvShow>(joinedTitle, null, namesYear) { metadata.search(joinedTitle, null) }.fold(
+            onSuccess = { it },
             onFailure = { error ->
                 // With no candidate yet, the failed search decides the file.
                 if (ranking.isEmpty()) return Result.failure(error)
@@ -564,9 +569,7 @@ class MediaProcessor(
                 emptyList()
             },
         )
-        // Only a show whose title has the year: the reading has no year to rule out other shows.
-        val joinedRanking = rankMatches(joined, joinedTitle, null, reportMiss = false)
-            .filter { (it.media as? CanonicalMedia.TvShow)?.title?.contains(titleYear) == true }
+        val joinedRanking = rankMatches(joined, joinedTitle, null, reportMiss = false).filter { namesYear(it.media) }
         val joinedScore = joinedRanking.firstOrNull()?.score
         if (joinedScore != null && joinedScore > (ranking.firstOrNull()?.score ?: 0.0)) {
             debug("'$joinedTitle' matches better (${joinedScore.format(2)})")
@@ -734,6 +737,26 @@ class MediaProcessor(
                 stats.failed++
                 if (ctx.verbose) error.printStackTrace()
             }
+    }
+
+    /**
+     * The [T] results of [search] for [title] and [year], with their aliases looked up only when they could change the
+     * best match the caller takes among those [accepts] keeps ([MatchRanker.aliasesCanChangeWinner]). The lookups are
+     * those the provider always made, for the same results with every kind counted ([awaitingAliases]), with the same
+     * failure rule ([MetadataRepository.withAlternativeTitles]). Fails when the search or the lookups failed.
+     */
+    context(_: LoggingContext)
+    private suspend inline fun <reified T : MediaSearchResult> searchFor(
+        title: String,
+        year: String?,
+        noinline accepts: (CanonicalMedia) -> Boolean = { true },
+        search: () -> Result<List<MediaSearchResult>>,
+    ): Result<List<T>> {
+        val results = search().getOrElse { return Result.failure(it) }
+        val ofKind = results.filterIsInstance<T>()
+        if (!ranker.aliasesCanChangeWinner(ofKind, results.awaitingAliases(), title, year, accepts)) return Result.success(ofKind)
+        indent { debug("Alternative titles may change the match for '$title'; looking them up") }
+        return metadata.withAlternativeTitles(results, title).map { it.filterIsInstance<T>() }
     }
 
     /**

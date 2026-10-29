@@ -46,7 +46,7 @@ class TmdbProvider(
             parameter("include_adult", true)    // We need to include all possible movies/shows even if it's R+ rating
             parameter("page", 1)
         }) { "searching for '$title'" }
-        dto.items.mapNotNull { it.toDomainModel(title) }.withAlternativeTitles(title)
+        dto.items.mapNotNull { it.toDomainModel(title) }
     }
 
     override suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = http.catching {
@@ -58,13 +58,14 @@ class TmdbProvider(
             parameter("include_adult", true)
             parameter("page", 1)
         }) { "searching for '$title' ($year)" }
-        dto.items.map { it.toDomainModel(title) }.withAlternativeTitles(title)
+        dto.items.map { it.toDomainModel(title) }
     }
 
     /**
      * TMDB matches aliases server-side (e.g. romaji anime titles), but the search response only
      * carries the localized and original titles. For results that don't resemble the query by
-     * either of those, pull the alternative titles so downstream scoring can see the alias.
+     * either of those, pull the alternative titles so downstream scoring can see the alias: the
+     * first [MatchScoring.MAX_ALT_TITLES_LOOKUPS] such results, in TMDB's order ([awaitingAliases]).
      *
      * A lookup for a record TMDB doesn't have (HTTP 404) leaves its result as it is. Any other failure
      * fails the search unless a result resembles the query anyway: the missing alias may be the match,
@@ -73,7 +74,10 @@ class TmdbProvider(
      * lookups, as the next ones would wait as long or be refused too; after another HTTP error the
      * next lookups go on, as one of them may find the alias.
      */
-    private suspend fun List<MediaSearchResult>.withAlternativeTitles(title: String): List<MediaSearchResult> {
+    override suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> =
+        http.catching { results.lookUpAlternativeTitles(title) }
+
+    private suspend fun List<MediaSearchResult>.lookUpAlternativeTitles(title: String): List<MediaSearchResult> {
         var lookups = 0
         var failed: Exception? = null
         var stopped = false
