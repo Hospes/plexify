@@ -39,6 +39,17 @@ class RequestBudgetTest {
         "2 movie/{id}/alternative_titles, 4 search/multi, 4 tv/{id}/alternative_titles, 4 tv/{id}/season/{id}",
     )
 
+    // TMDB keeps Gate's second cour in Season 1, so Season 2 is a 404 (fetched once, cached as empty) and the episodes
+    // are placed through the show's episode groups: the list and its one group are fetched for the first episode and
+    // cached for the other two. The search looks up the alternative titles of the three results whose titles don't
+    // resemble "gate" (Steins;Gate, Tale Gate, The Ninth Gate).
+    @Test
+    fun `a cour placed through episode groups`() = budget(
+        animeNames.filter { it.startsWith("Gate S2/") },
+        "1 movie/{id}/alternative_titles, 1 search/multi, 1 tv/episode_group/{id}, 2 tv/{id}/alternative_titles, " +
+            "1 tv/{id}/episode_groups, 1 tv/{id}/season/{id}",
+    )
+
     // The general search doesn't return the 1974 Dracula (TMDB has many), so the movie is searched again with its year.
     // Each search looks up the alternative titles of its first three results whose titles don't resemble "dracula": the
     // general search has more such results, the rest left out (MAX_ALT_TITLES_LOOKUPS); the year search has three.
