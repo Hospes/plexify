@@ -28,15 +28,16 @@ class RequestBudgetTest {
     )
 
     // Four release folders of one show, three episodes each (four in Yuukaku-hen): each folder's title is its own
-    // search, since shows are cached by the title searched, so the same show is searched four times. Its title
+    // search, since searches are cached by their exact query, so the same show is searched four times. Its title
     // ("Demon Slayer: Kimetsu no Yaiba") doesn't resemble any of the four queries, and no result is named like them,
-    // so each search looks up its alternative titles again, which also name the arc's season ("Kimetsu no Yaiba:
-    // Yuukaku-hen", "Season 3 Romaji"); the plain-title search (the first folder) also looks up those of the two films
-    // it returns. One fetch per season (1, 2, 3, 5), cached for the folder's other episodes.
+    // so each search needs its alternative titles, which also name the arc's season ("Kimetsu no Yaiba: Yuukaku-hen",
+    // "Season 3 Romaji"). They are fetched for the first search and come from the cache for the other three; the
+    // plain-title search (the first folder) also looks up those of the two films it returns. One fetch per season
+    // (1, 2, 3, 5), cached for the folder's other episodes.
     @Test
     fun `an arc show`() = budget(
         animeNames.filter { it.startsWith("Kimetsu") },
-        "2 movie/{id}/alternative_titles, 4 search/multi, 4 tv/{id}/alternative_titles, 4 tv/{id}/season/{id}",
+        "2 movie/{id}/alternative_titles, 4 search/multi, 1 tv/{id}/alternative_titles, 4 tv/{id}/season/{id}",
     )
 
     // TMDB keeps Gate's second cour in Season 1, so Season 2 is a 404 (fetched once, cached as empty) and the episodes
@@ -61,29 +62,37 @@ class RequestBudgetTest {
         "1 movie/{id}/alternative_titles, 1 search/movie, 1 search/multi, 2 tv/{id}/alternative_titles",
     )
 
-    // The second version searches again: movie searches aren't cached (P3-2 will change this). A result is "Inception"
-    // (2010), which no alias could beat, so neither search looks up alternative titles.
+    // The run above with a second version of the film: its general search, its alias lookups and its search with the
+    // year come from the cache.
+    @Test
+    fun `a movie with a year retry in two versions`() = budget(
+        listOf("Dracula.1974.720p.BluRay.mkv", "Dracula.1974.1080p.BluRay.x264-AMIABLE.mkv"),
+        "1 movie/{id}/alternative_titles, 1 search/movie, 1 search/multi, 2 tv/{id}/alternative_titles",
+    )
+
+    // Both versions search "inception" (2010): the second one's search comes from the cache. A result is "Inception"
+    // (2010), which no alias could beat, so no alternative titles are looked up.
     @Test
     fun `a movie in two versions`() = budget(
         listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
-        "2 search/multi",
+        "1 search/multi",
     )
 
     // The two runs above with the Plex template, which names the IMDb ID: the searches and season are the same, plus
     // one external_ids lookup per show and per movie. Those are cached by media, so the show's other episodes and the
-    // film's second version don't ask again (though the second version's search does, as above).
+    // film's second version don't ask again.
     @Test
     fun `a plex run`() = budget(
         sceneNames.filter { it.startsWith("Breaking Bad S01/") } +
             listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
-        "1 movie/{id}/external_ids, 3 search/multi, 1 tv/{id}/external_ids, 1 tv/{id}/season/{id}",
+        "1 movie/{id}/external_ids, 2 search/multi, 1 tv/{id}/external_ids, 1 tv/{id}/season/{id}",
         NamingStrategy.Plex,
     )
 
     // What the Plex run writes, run again: no search. An IMDb tag is resolved by find/{imdb}, then the record is
     // fetched with its alternative titles and IMDb ID in the same request (append_to_response), so there is no
-    // external_ids lookup. Shows found by ID are cached, so the episodes share one find, one record and one season
-    // fetch; movies found by ID aren't, so the second version asks again (P3-2 will change this).
+    // external_ids lookup. Records are cached by the ID that names them, so the episodes share one find, one record
+    // and one season fetch, and the film's two versions one find and one record.
     @Test
     fun `a plex library run again`() = budget(
         listOf(
@@ -93,7 +102,7 @@ class RequestBudgetTest {
             "Inception (2010) {imdb-tt1375666}/Inception (2010) - [1080p] [BluRay] [YTS].mkv",
             "Inception (2010) {imdb-tt1375666}/Inception (2010) - [1080p] [BluRay] [SPARKS].mkv",
         ),
-        "3 find/{id}, 2 movie/{id}, 1 tv/{id}, 1 tv/{id}/season/{id}",
+        "2 find/{id}, 1 movie/{id}, 1 tv/{id}, 1 tv/{id}/season/{id}",
         NamingStrategy.Plex,
     )
 

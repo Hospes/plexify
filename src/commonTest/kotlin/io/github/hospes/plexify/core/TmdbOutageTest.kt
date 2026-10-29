@@ -84,10 +84,36 @@ class TmdbOutageTest {
 
         val run = runProcessor(provider, *(1..4).map { "Kimetsu.no.Yaiba.S01E0$it.1080p.WEB.mkv" }.toTypedArray())
 
-        // The failed search isn't cached as a miss, so every file searches again: the search answers (so the
-        // breaker stays closed) and one alias lookup waits out the short limit.
+        // The failed search isn't cached as a miss, so every file looks the show up again. The search answered, so it
+        // comes from the cache, and the alias lookup, which wasn't kept, waits out the short limit again. Optional
+        // lookups that get no answer don't count toward TMDB being unreachable, so each file fails on its own timeout.
         assertEquals(4, run.stats.failed)
         assertEquals(0, run.stats.skipped)
-        assertEquals(8, requests)
+        assertEquals(5, requests)
+        assertEquals(
+            (1..4).map { "✗ Kimetsu.no.Yaiba.S01E0$it.1080p.WEB.mkv — TMDB request timed out fetching alternative titles of 'Demon Slayer'" },
+            run.output.filter { it.trimStart().startsWith("✗") }.map { it.trim() },
+        )
+    }
+
+    @Test
+    fun `alias lookups that get no answer do not stop the searches that answer`() = capped(limitMillis) {
+        val provider = mockProvider(timeouts) { request ->
+            when {
+                request.url.encodedPath.endsWith("search/multi") && request.url.parameters["query"] == "the matrix" -> respondJson(
+                    """{"results": [{"media_type": "movie", "id": 603, "title": "The Matrix", "original_title": "The Matrix", "release_date": "1999-03-30"}]}""",
+                )
+
+                request.url.encodedPath.endsWith("search/multi") -> respondJson(showJson(85937, "Demon Slayer", "鬼滅の刃"))
+                else -> awaitCancellation()
+            }
+        }
+
+        // Three alias lookups in a row get no answer (a TMDB slower than their short timeout, not down): the film
+        // after them is still searched and organized.
+        val run = runProcessor(provider, *(1..3).map { "Kimetsu.no.Yaiba.S01E0$it.1080p.WEB.mkv" }.toTypedArray(), "The.Matrix.1999.1080p.BluRay.x264-YTS.mkv")
+
+        assertEquals(3, run.stats.failed)
+        assertEquals(1, run.stats.organized)
     }
 }

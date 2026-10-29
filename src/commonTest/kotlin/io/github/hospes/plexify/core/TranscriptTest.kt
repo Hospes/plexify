@@ -452,7 +452,7 @@ class TranscriptTest {
             |        -> Found 0 results from tmdb
             |    -> No season number in filenames; 'devil may cry 2' is Season 2 of Devil May Cry (2025) [tmdbid-235930]
             |      -> Cache MISS for show: 'devil may cry'. Searching providers...
-            |        -> Found 1 results from tmdb
+            |        -> Cache HIT for search: 'devil may cry'
             |        -> Consolidating 1 results for title: 'devil may cry' year: 'null'
             |        -> 1 unique media candidates found.
             |        -> Candidate: 'Devil May Cry (2025)' | Score: 15.00
@@ -631,7 +631,7 @@ class TranscriptTest {
             |  -> Processing: <source>/Ghosts.S04E02.1080p.WEB.mkv
             |    -> Parsed as TV Show: Show='ghosts', Season: 4, Episode: 2
             |      -> Cache MISS for show: 'ghosts'. Searching providers...
-            |        -> Found 1 results from tmdb
+            |        -> Cache HIT for search: 'ghosts'
             |        -> Consolidating 1 results for title: 'ghosts' year: 'null'
             |        -> 1 unique media candidates found.
             |        -> Candidate: 'Ghosts (2021)' | Score: 14.50

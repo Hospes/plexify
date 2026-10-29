@@ -70,7 +70,9 @@ internal class TmdbHttp(
 
     // Requests in a row that got no answer (timed out or could not connect). Files are processed one
     // after another, so in an outage each would wait out the timeouts again: from `unreachableAfter`
-    // on, every request fails at once for the rest of the run.
+    // on, every request fails at once for the rest of the run. An optional lookup that gets no answer
+    // isn't counted: it has a shorter timeout, so a slow TMDB that still answers searches would
+    // otherwise end the run (an answer to one still counts as an answer).
     private var unanswered = 0
     private val unreachable get() = unanswered >= timeouts.unreachableAfter
 
@@ -109,6 +111,7 @@ internal class TmdbHttp(
             }
         } catch (e: Throwable) {
             val failure = e.asNoAnswer(action)
+            if (optional) throw failure
             unanswered++
             if (unreachable) {
                 throw MetadataUnreachableException(
@@ -170,7 +173,10 @@ data class TmdbTimeouts(
     val retries: Int = 1,
     /** Request timeout of an optional lookup (alternative titles), which gets no retry after a timeout. */
     val optionalRequestMillis: Long = 10_000,
-    /** Requests in a row with no answer (timed out or could not connect) after which TMDB counts as unreachable for the run. */
+    /**
+     * Requests in a row with no answer (timed out or could not connect) after which TMDB counts as unreachable for the
+     * run. Optional lookups that get no answer aren't counted.
+     */
     val unreachableAfter: Int = 3,
     /**
      * Waits out the back-off before a retry: Ktor's exponential delay (1 s, 2 s, 4 s, each plus up to 1 s

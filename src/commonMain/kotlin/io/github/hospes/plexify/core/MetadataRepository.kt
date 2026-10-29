@@ -6,31 +6,65 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.logging.LoggingContext
 import io.github.hospes.plexify.logging.debug
+import io.github.hospes.plexify.logging.indent
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * The run's only way to the metadata providers: it asks [service] and keeps what the run reuses in its own
  * [MetadataCache]. A failed lookup (timeout, HTTP or network error) is never cached, so the next file tries again;
- * what the providers answered is, including "no such season" (an empty season) and "no IMDb ID" (null).
+ * what the providers answered is, including "no such season" (an empty season), "no IMDb ID" (null), "no results" and
+ * "no such record".
  */
 class MetadataRepository(private val service: MetadataService) {
     private val cache = MetadataCache()
 
+    /**
+     * The results of a search for [title] and [year], searched once per run: the numbered-season check and the show
+     * lookup ask for the same title, and every version of a movie for its own. Only the exact same query and year are
+     * answered from the cache. A search that found results while another provider failed is kept as it is (App has
+     * TMDB only).
+     */
     context(_: LoggingContext)
-    suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> = service.search(title, year)
+    suspend fun search(title: String, year: String?): Result<List<MediaSearchResult>> =
+        cache.getOrPutSearch(SearchKey(title, year), onHit = { searchHit(title, year) }) { service.search(title, year) }
+
+    /** The movies a search for [title] with a release in [year] found, searched once per run as [search] is. */
+    context(_: LoggingContext)
+    suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> =
+        cache.getOrPutMovieSearch(SearchKey(title, year), onHit = { searchHit(title, year) }) { service.searchMovies(title, year) }
 
     context(_: LoggingContext)
-    suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = service.searchMovies(title, year)
+    private fun searchHit(title: String, year: String?) =
+        indent { debug("Cache HIT for search: '$title'${year?.let { " ($it)" } ?: ""}") }
 
-    /** [results] with their aliases, as [MetadataService.withAlternativeTitles] looks them up; not cached. */
+    /**
+     * [results] with their aliases, as [MetadataService.withAlternativeTitles] looks them up. Each record's aliases are
+     * fetched once per run and kept as TMDB answered them (a 404 as none), for the next search whose lookups pick the
+     * record; which results get aliases is still decided per search, so a cached set reaches only results a fetch
+     * would have. A failed lookup is not kept.
+     */
     context(_: LoggingContext)
     suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> =
-        service.withAlternativeTitles(results, title)
+        service.withAlternativeTitles(results, title) { result, fetch ->
+            val record = result.record
+            if (record == null) fetch()
+            else cache.getOrPutAliases(record, onHit = { indent { debug("Cache HIT for alternative titles of '${result.title}'") } }) {
+                runCatching { fetch() }.onFailure { if (it is CancellationException) throw it }
+            }.getOrThrow()
+        }
+
+    /** The movie [id] names, or null when no provider has it; looked up once per ID and run, as every version asks. */
+    context(_: LoggingContext)
+    suspend fun findMovie(id: MediaId): Result<MediaSearchResult.Movie?> =
+        cache.getOrPutMovieRecord(id, onHit = { recordHit(id) }) { service.findMovie(id) }
+
+    /** The show [id] names, or null when no provider has it; looked up once per ID and run. */
+    context(_: LoggingContext)
+    suspend fun findShow(id: MediaId): Result<MediaSearchResult.TvShow?> =
+        cache.getOrPutShowRecord(id, onHit = { recordHit(id) }) { service.findShow(id) }
 
     context(_: LoggingContext)
-    suspend fun findMovie(id: MediaId): Result<MediaSearchResult.Movie?> = service.findMovie(id)
-
-    context(_: LoggingContext)
-    suspend fun findShow(id: MediaId): Result<MediaSearchResult.TvShow?> = service.findShow(id)
+    private fun recordHit(id: MediaId) = indent { debug("Cache HIT for $id") }
 
     /**
      * The shows a lookup for [key] matched, best first; empty when it matched none (see [markShowUnmatched]); null when
