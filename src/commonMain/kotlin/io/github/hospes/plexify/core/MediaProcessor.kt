@@ -45,7 +45,7 @@ class MediaProcessor(
     // What the run decided about each show key: the season its title names, its release seasons' shows, notices.
     private val showStates = ShowStates()
 
-    private val episodes = EpisodeResolver(metadata, showStates)
+    private val episodeResolver = EpisodeResolver(metadata, showStates)
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -252,7 +252,7 @@ class MediaProcessor(
         // Step 2: Find the season and the episode. A show found by its ID is keyed by the ID too, as two
         // shows may share their cleaned titles.
         val showKey = byId?.first ?: searchedKey
-        val resolution = episodes.resolve(source, parsedInfo, candidates, showKey)
+        val resolution = episodeResolver.resolve(source, parsedInfo, candidates, showKey)
             .getOrElse { error -> return@indent lookupFailed(source, error) }
         val episode = when (resolution) {
             is EpisodeResolver.Resolution.Found -> resolution.episode
