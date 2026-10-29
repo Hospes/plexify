@@ -25,9 +25,9 @@ jobs:
   # two required checks of ci.yml must have concluded success on it (their latest run
   # each, so a re-run counts). A tag pushed right after a merge finds CI still running
   # there, so this waits for it (up to 40 minutes, see the script) rather than failing
-  # a release that would pass a few minutes later. Every other job needs this one, so a commit that fails
-  # it spends no build minutes. After a failure, re-run this workflow once CI is green:
-  # a re-run uses this file as it is at the tagged commit.
+  # a release that would pass a few minutes later. Every other job needs this one, so
+  # a commit that fails it spends no build minutes. After a failure, re-run this
+  # workflow once CI is green: a re-run uses this file as it is at the tagged commit.
   ci-passed:
     name: Check CI passed
     runs-on: ubuntu-latest
