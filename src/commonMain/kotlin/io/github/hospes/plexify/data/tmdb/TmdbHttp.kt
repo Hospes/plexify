@@ -138,8 +138,13 @@ internal class TmdbHttp(
             status.isSuccess() -> Unit
             status == HttpStatusCode.Unauthorized -> throw TmdbCredentialsRejectedException(credentials.source)
             status == HttpStatusCode.NotFound -> throw MetadataNotFoundException("HTTP 404 ${action()}")
-            status == HttpStatusCode.TooManyRequests && credentials.source == TmdbCredentials.Source.BUILT_IN ->
-                error("TMDB rate limit reached (HTTP 429) ${action()}. The built-in key is shared by all Plexify users; set your own with TMDB_API_ACCESS_TOKEN (see README).")
+            status == HttpStatusCode.TooManyRequests -> throw TmdbRateLimitedException(
+                if (credentials.source == TmdbCredentials.Source.BUILT_IN) {
+                    "TMDB rate limit reached (HTTP 429) ${action()}. The built-in key is shared by all Plexify users; set your own with TMDB_API_ACCESS_TOKEN (see README)."
+                } else {
+                    "HTTP 429 ${action()}"
+                }
+            )
 
             else -> error("HTTP ${status.value} ${action()}")
         }
@@ -175,8 +180,12 @@ private fun Throwable.failureReason(): String {
 // Marks a request whose failure only costs a detail, so a timeout is not worth a second try.
 internal val OptionalLookup = AttributeKey<Unit>("PlexifyOptionalLookup")
 
-internal fun Throwable.isNoAnswer(): Boolean =
-    this is MetadataTimeoutException || this is MetadataConnectionException || this is MetadataUnreachableException
+/** TMDB still refused the request with HTTP 429 after the retries. */
+class TmdbRateLimitedException(message: String) : Exception(message)
+
+/** A failure after which the next requests would most likely wait as long or be refused too: no answer, or the rate limit. */
+internal fun Throwable.endsLookups(): Boolean =
+    this is TmdbRateLimitedException || this is MetadataTimeoutException || this is MetadataConnectionException || this is MetadataUnreachableException
 
 // Backs getJson up for a body read some other way: Ktor's NoTransformationFoundException is an
 // UnsupportedOperationException, which callers would take for "TMDB can't do this" instead of a failed lookup.

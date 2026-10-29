@@ -67,16 +67,19 @@ class TmdbProvider(
      * carries the localized and original titles. For results that don't resemble the query by
      * either of those, pull the alternative titles so downstream scoring can see the alias.
      *
-     * A lookup that fails with an HTTP error leaves its result as it is. One TMDB didn't answer ends
-     * the lookups (the next ones would wait as long), and fails the search unless a result resembles
-     * the query anyway: the missing alias may be the match, so "no match" would be a guess, and the
-     * file would be skipped and its show cached as a miss instead of failing.
+     * A lookup for a record TMDB doesn't have (HTTP 404) leaves its result as it is. Any other failure
+     * fails the search unless a result resembles the query anyway: the missing alias may be the match,
+     * so "no match" would be a guess, and the file would be skipped and its show cached as a miss
+     * instead of failing. One with no answer, or still rate-limited after its retries, also ends the
+     * lookups, as the next ones would wait as long or be refused too; after another HTTP error the
+     * next lookups go on, as one of them may find the alias.
      */
     private suspend fun List<MediaSearchResult>.withAlternativeTitles(title: String): List<MediaSearchResult> {
         var lookups = 0
-        var noAnswer: Exception? = null
+        var failed: Exception? = null
+        var stopped = false
         val enriched = map { result ->
-            if (noAnswer != null || result.matchConfidence >= MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MatchScoring.MAX_ALT_TITLES_LOOKUPS) {
+            if (stopped || result.matchConfidence >= MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD || lookups >= MatchScoring.MAX_ALT_TITLES_LOOKUPS) {
                 result
             } else {
                 lookups++
@@ -84,13 +87,16 @@ class TmdbProvider(
                     enrichWithAlternativeTitles(result, title)
                 } catch (e: CancellationException) {
                     throw e
+                } catch (_: MetadataNotFoundException) {
+                    result
                 } catch (e: Exception) {
-                    if (e.isNoAnswer()) noAnswer = e
+                    if (failed == null) failed = e
+                    if (e.endsLookups()) stopped = true
                     result
                 }
             }
         }
-        noAnswer?.let { failure ->
+        failed?.let { failure ->
             if (enriched.none { it.matchConfidence >= MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD }) throw failure
         }
         return enriched
