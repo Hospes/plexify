@@ -1,7 +1,6 @@
 package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.domain.matching.MatchRanker
-import io.github.hospes.plexify.domain.matching.MatchScoring
 import io.github.hospes.plexify.domain.matching.RankedMatch
 import io.github.hospes.plexify.domain.matching.awaitingAliases
 import io.github.hospes.plexify.domain.matching.calculateTitleConfidence
@@ -14,7 +13,6 @@ import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.model.withOverrides
-import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
 import io.github.hospes.plexify.domain.service.isNamedById
 import io.github.hospes.plexify.logging.LoggingContext
@@ -44,15 +42,10 @@ class MediaProcessor(
 
     private val ranker = MatchRanker(yearOverride)
 
-    // Directories already warned about missing season numbers, to avoid repeating the
-    // warning for every episode file of the same release.
-    private val seasonWarnedDirs = mutableSetOf<String>()
-
     // What the run decided about each show key: the season its title names, its release seasons' shows, notices.
     private val showStates = ShowStates()
 
-    // Provider shows (by identity) and seasons already reported as mapped (or unmappable) through episode groups.
-    private val episodeGroupNotices = mutableSetOf<Pair<ShowIdentity, Int>>()
+    private val episodes = EpisodeResolver(metadata, showStates)
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -256,47 +249,22 @@ class MediaProcessor(
         }
         debug("Found show: ${candidates.first()}")
 
-        // A release named after one season's own title (an anime arc, numbered from 1 with no
-        // season in the filenames) is that season, not season 1. A show found by its ID is keyed by
-        // the ID too, as two shows may share their cleaned titles.
+        // Step 2: Find the season and the episode. A show found by its ID is keyed by the ID too, as two
+        // shows may share their cleaned titles.
         val showKey = byId?.first ?: searchedKey
-        val state = showStates[showKey]
-        val season = parsedInfo.season ?: state.titleSeason?.let { named ->
-            if (!state.titleSeasonReported) {
-                state.titleSeasonReported = true
-                status("No season number in filenames; '${named.title}' is Season ${named.season} of ${candidates.first().describe()}")
-            }
-            named.season
-        } ?: run {
-            if (state.namesUnplacedArc) {
-                status("✗ ${source.name} — '${parsedInfo.showTitle}' names an arc that matches no season title of ${candidates.first().describe()}; set the season with -s/--season")
+        val resolution = episodes.resolve(source, parsedInfo, candidates, showKey)
+            .getOrElse { error -> return@indent lookupFailed(source, error) }
+        val episode = when (resolution) {
+            is EpisodeResolver.Resolution.Found -> resolution.episode
+            is EpisodeResolver.Resolution.Skipped -> {
+                status("✗ ${source.name} — ${resolution.reason}")
                 stats.skipped++
                 return@indent
             }
-            if (seasonWarnedDirs.add(source.parent?.toString() ?: source.name)) {
-                status("Warning: No season number found in filenames, defaulting to Season 1 (use -s/--season to set it explicitly).")
-            }
-            1
         }
 
-        // Step 2: Find the episode details via season-level fetch (fills whole season cache in one call).
-        val seasonKey = SeasonKey(showKey, season)
-        val firstEpisodeMatch = findEpisode(candidates, seasonKey, parsedInfo.episode)
-            .getOrElse { error -> return@indent lookupFailed(source, error) }
-        if (firstEpisodeMatch == null) {
-            status("✗ ${source.name} — episode S${season}E${parsedInfo.episode} not found")
-            stats.skipped++
-            return@indent
-        }
-        val bestEpisodeMatch = parsedInfo.lastEpisode
-            ?.let { last ->
-                extendToRange(firstEpisodeMatch, candidates, seasonKey, parsedInfo.episode, last, source.name)
-                    .getOrElse { error -> return@indent lookupFailed(source, error) }
-            }
-            ?: firstEpisodeMatch
-
-        debug("Found episode: ${bestEpisodeMatch.describe()}")
-        organizeFile(source, destination, bestEpisodeMatch, parsedInfo, mode, isTestMode)
+        debug("Found episode: ${episode.describe()}")
+        organizeFile(source, destination, episode, parsedInfo, mode, isTestMode)
     }
 
     /**
@@ -330,7 +298,7 @@ class MediaProcessor(
         numbered: ParsedMediaInfo.NumberedSeason,
     ): Result<CanonicalMedia.TvShow?> = indent {
         debug("Trying '${numbered.showTitle}' Season ${numbered.season} for '${parsed.showTitle}'")
-        // With its external IDs now, so the season cached below carries them, as findEpisode expects.
+        // With its external IDs now, so the season cached below carries them, as EpisodeResolver expects.
         val show = bestShow(numbered.showTitle, parsed.year).getOrElse { return@indent Result.failure(it) }
             ?.let { metadata.withImdbId(it) }?.getOrElse { return@indent Result.failure(it) }
             ?: return@indent Result.success(null)
@@ -366,44 +334,6 @@ class MediaProcessor(
     }
 
     /**
-     * Extends the first episode of a multi-episode file ("S01E01-E03") to its whole range. Every other
-     * episode is looked up like the first (same show, cached season, episode groups); the range is kept
-     * only when they land on consecutive episodes of one provider season, else the file is filed as its
-     * first episode. Fails as [findEpisode] does.
-     */
-    context(_: LoggingContext)
-    private suspend fun extendToRange(
-        first: CanonicalMedia.Episode,
-        candidates: List<CanonicalMedia.TvShow>,
-        seasonKey: SeasonKey,
-        firstEpisode: Int,
-        lastEpisode: Int,
-        fileName: String,
-    ): Result<CanonicalMedia.Episode> {
-        val season = seasonKey.season
-        val episodes = mutableListOf(first)
-        for (episode in (firstEpisode + 1)..lastEpisode) {
-            val match = findEpisode(candidates, seasonKey, episode).getOrElse { return Result.failure(it) }
-            val previous = episodes.last()
-            if (match == null || match.season != previous.season || match.episode != previous.episode + 1) {
-                status(
-                    "Warning: ${fileName} — S${season.pad2()}E${episode.pad2()} is not the episode after " +
-                            "S${previous.season.pad2()}E${previous.episode.pad2()} in '${first.show.title}'; " +
-                            "filing it as S${first.season.pad2()}E${first.episode.pad2()} only."
-                )
-                return Result.success(first)
-            }
-            episodes += match
-        }
-        return Result.success(
-            first.copy(
-                lastEpisode = episodes.last().episode,
-                title = episodes.map { it.title }.distinct().joinToString(" & "),
-            )
-        )
-    }
-
-    /**
      * The shows matching a title, best first (empty when none is confident), checking the cache
      * before searching providers. Only the best is reported; the rest, same-titled shows only
      * (see [canStandInFor]), back up the episode lookup. A failed search is not cached, so the
@@ -431,7 +361,7 @@ class MediaProcessor(
         } else {
             val best = ranked.firstOrNull()
             // Only the best match gets its external IDs now; a runner-up gets them if the episode
-            // fallback picks it (see findEpisode). A failed lookup fails before anything is kept.
+            // fallback picks it (see EpisodeResolver). A failed lookup fails before anything is kept.
             val bestShow = best?.let { metadata.withImdbId(it.media as CanonicalMedia.TvShow).getOrElse { error -> return@indent Result.failure(error) } }
             val state = showStates[key]
             state.titleSeason = best?.titleSeason
@@ -579,119 +509,6 @@ class MediaProcessor(
         return Result.success(found + joined to ranking)
     }
 
-    /**
-     * Finds the episode in the best-matching show. When that show has no such season at all, it is
-     * not the release's show (e.g. a same-titled spin-off with one season), so the same-titled
-     * runner-up shows are tried and the first that has the exact episode is used. The show that places a season is
-     * kept for the rest of that season's files, so one season never splits across shows. Fails when a
-     * season could not be loaded: that says nothing about the episode, so the file is a failure, not a miss.
-     */
-    context(_: LoggingContext)
-    private suspend fun findEpisode(
-        candidates: List<CanonicalMedia.TvShow>,
-        seasonKey: SeasonKey,
-        episode: Int,
-    ): Result<CanonicalMedia.Episode?> {
-        val season = seasonKey.season
-        // A runner-up's season was fetched before its external IDs were, so its cached episodes
-        // carry the show without them: hand out the season's show as decided.
-        showStates.seasonShow(seasonKey)?.let { show -> return findOrFetchEpisode(show, season, episode).map { it?.copy(show = show) } }
-
-        val primary = candidates.first()
-        val primaryMatch = findOrFetchEpisode(primary, season, episode).getOrElse { return Result.failure(it) }
-        if (primaryMatch != null) {
-            showStates.placeSeason(seasonKey, primary)
-            return Result.success(primaryMatch)
-        }
-
-        // The show has the season, just not this episode: a numbering quirk, not evidence of a wrong show.
-        if (!metadata.isSeasonMissing(primary, season)) return Result.success(null)
-
-        for (candidate in candidates.drop(1).take(MatchScoring.MAX_FALLBACK_SHOWS)) {
-            // A runner-up whose season fails to load fails the file: whether it has the season is
-            // unknown, and taking the next one could file the season under the wrong show.
-            val candidateSeason = indent { metadata.season(candidate, season) }.getOrElse { return Result.failure(it) }
-            val match = candidateSeason.episodes.firstOrNull { it.episode == episode } ?: continue
-            val alternative = metadata.withImdbId(candidate).getOrElse { return Result.failure(it) }
-            showStates.placeSeason(seasonKey, alternative)
-            status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
-            return Result.success(match.copy(show = alternative))
-        }
-        return Result.success(null)
-    }
-
-    /**
-     * Fetches the whole season (one API call) and returns the requested episode.
-     * Subsequent episodes from the same season are served from cache.
-     */
-    context(_: LoggingContext)
-    private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode?> = indent {
-        val cachedSeason = metadata.season(show, season).getOrElse { return@indent Result.failure(it) }
-
-        val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
-        if (match != null) return@indent Result.success(match)
-
-        debug("Episode E${episode} not found in S${season} data. Trying episode groups...")
-        findViaEpisodeGroups(show, season, episode, providerHasSeason = cachedSeason.episodes.isNotEmpty())
-    }
-
-    /**
-     * Whether this runner-up may take a season the best match lacks: only a show named as the
-     * release is, as closely as the best match (a same-titled show, like Being Human UK and US),
-     * and not contradicted by the filename year. A merely similar title clears the confidence
-     * minimum too, but it is a different show.
-     */
-    private fun RankedMatch.canStandInFor(best: RankedMatch): Boolean =
-        titleSimilarity >= best.titleSimilarity && (yearScore == null || yearScore > 0)
-
-    /**
-     * Fallback for releases numbered differently from the provider, typically anime split into
-     * cours: the release's S2E01 is TMDB's S1E13. Episode groups (fetched once per show) record
-     * that split; the episode found is the provider's own, so the file gets TMDB's numbering. Fails
-     * when the groups could not be loaded; a failed lookup is not cached, so the next file tries again.
-     * [providerHasSeason] is false when the providers reported the season as nonexistent.
-     */
-    context(_: LoggingContext)
-    private suspend fun findViaEpisodeGroups(
-        show: CanonicalMedia.TvShow,
-        season: Int,
-        episode: Int,
-        providerHasSeason: Boolean,
-    ): Result<CanonicalMedia.Episode?> = indent {
-        val groups = metadata.episodeGroups(show).getOrElse { return@indent Result.failure(it) }
-
-        val match = when (val resolution = EpisodeGroupMapper.resolve(groups, season, episode, providerHasSeason)) {
-            is EpisodeGroupMapper.Resolution.Found -> {
-                val mapped = resolution.episode
-                if (episodeGroupNotices.add(show.identity to season)) {
-                    status(
-                        "Season $season of '${show.title}' mapped through episode group '${resolution.group.name}' " +
-                                "(S${season.pad2()}E${episode.pad2()} → S${mapped.season.pad2()}E${mapped.episode.pad2()})"
-                    )
-                }
-                debug("Mapped S${season}E${episode} → S${mapped.season}E${mapped.episode} via '${resolution.group.name}' part '${resolution.part.name}'")
-                mapped
-            }
-
-            is EpisodeGroupMapper.Resolution.Ambiguous -> {
-                if (episodeGroupNotices.add(show.identity to season)) {
-                    val names = resolution.groups.joinToString(", ") { "'${it.name}'" }
-                    status(
-                        "Season $season of '${show.title}' is numbered differently by episode groups $names; " +
-                                "use -s/--season and --episode-offset to place it."
-                    )
-                }
-                null
-            }
-
-            EpisodeGroupMapper.Resolution.NotFound -> {
-                debug("No episode group places S${season}E${episode} (${groups.size} group(s) checked).")
-                null
-            }
-        }
-        Result.success(match)
-    }
-
     context(ctx: LoggingContext)
     private fun organizeFile(
         source: Path,
@@ -780,7 +597,7 @@ class MediaProcessor(
 }
 
 // Short human-readable labels for the concise log lines.
-private fun CanonicalMedia.describe(): String = when (this) {
+internal fun CanonicalMedia.describe(): String = when (this) {
     is CanonicalMedia.Movie -> "$title${year.inParens()}"
     is CanonicalMedia.Episode -> "S${season.pad2()}E${episode.pad2()}${lastEpisode?.let { "-E${it.pad2()}" } ?: ""} - $title"
     is CanonicalMedia.TvShow -> buildString {
@@ -792,7 +609,7 @@ private fun CanonicalMedia.describe(): String = when (this) {
 
 private fun Int?.inParens(): String = this?.let { " ($it)" } ?: ""
 
-private fun Int.pad2(): String = toString().padStart(2, '0')
+internal fun Int.pad2(): String = toString().padStart(2, '0')
 
 /**
  * This path relative to [root], for showing a library path without the destination prefix. Falls back to the
