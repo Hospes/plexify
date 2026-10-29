@@ -1,6 +1,7 @@
 package io.github.hospes.plexify.data.tmdb
 
 import io.github.hospes.plexify.domain.model.MediaSearchResult
+import io.ktor.http.*
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -9,7 +10,8 @@ import kotlin.test.assertIs
 /**
  * `search/multi` and the alternative-titles lookups it makes for results that don't resemble the query. Bodies are
  * hand-written in the shape of TMDB's (October 2026). The failure rule for a lookup with no answer is in
- * TmdbUnreachableTest.
+ * TmdbUnreachableTest. A lookup that fails with an HTTP error other than 404 fails the search by the same rule, but
+ * only no answer and HTTP 429 (after its retries) end the lookups.
  */
 class TmdbSearchTest {
 
@@ -135,6 +137,73 @@ class TmdbSearchTest {
         assertEquals(emptyList(), first.alternativeTitles)
         assertEquals(listOf("Dark Angel"), second.alternativeTitles)
         assertEquals(listOf("/3/tv/1/alternative_titles", "/3/tv/2/alternative_titles"), tmdb.aliasLookups())
+    }
+
+    /** [tmdb], except that the alias lookup of [path] fails with [status] and TMDB's [body] for it. */
+    private fun failingLookup(tmdb: TmdbResponder, path: String, status: HttpStatusCode, body: String, credentials: TmdbCredentials = tokenCredentials) =
+        mockProvider(TmdbTimeouts(retryDelay = {}), credentials) { request ->
+            if (request.url.encodedPath == path) {
+                tmdb.handler(this, request) // recorded with the others
+                respondJson(body, status)
+            } else {
+                tmdb.handler(this, request)
+            }
+        }
+
+    private val serverError = """{"success":false,"status_code":11,"status_message":"Internal error: Something went wrong, contact TMDB."}"""
+    private val rateLimited = """{"success":false,"status_code":25,"status_message":"Your request count (41) is over the allowed limit of (40)."}"""
+
+    @Test
+    fun `an alias lookup that fails with an HTTP error fails a search with no result that resembles the query`() = runBlocking {
+        // The issue #136 probe: one weak result, whose lookup gets HTTP 500. The alias may be the match.
+        val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings"))) + noTvAliases(2))
+        val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.InternalServerError, serverError)
+
+        val error = provider.search("Dark Angel", null).exceptionOrNull()
+
+        assertEquals("HTTP 500 fetching alternative titles of 'Black Seraph'", error?.message)
+        // The next lookup goes on, as it may find the alias; it doesn't.
+        assertEquals(listOf("/3/tv/1/alternative_titles", "/3/tv/2/alternative_titles"), tmdb.aliasLookups())
+    }
+
+    @Test
+    fun `an alias found by a lookup after one that fails with an HTTP error keeps the search`() = runBlocking {
+        val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings")), tvAliases(2, "Dark Angel" to "")))
+        val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.InternalServerError, serverError)
+
+        val (first, second) = provider.search("Dark Angel", null).getOrThrow().map { assertIs<MediaSearchResult.TvShow>(it) }
+
+        assertEquals(emptyList(), first.alternativeTitles)
+        assertEquals(listOf("Dark Angel"), second.alternativeTitles)
+        assertEquals(100.0, second.matchConfidence)
+    }
+
+    @Test
+    fun `an alias lookup the built-in key's rate limit still refuses after the retries fails the search and ends the lookups`() = runBlocking {
+        val builtIn = TmdbCredentials(apiKey = null, accessToken = "built-in-token", source = TmdbCredentials.Source.BUILT_IN)
+        val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Shadow Wings"))) + noTvAliases(2))
+        val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.TooManyRequests, rateLimited, builtIn)
+
+        val error = provider.search("Dark Angel", null).exceptionOrNull()
+
+        assertEquals(
+            "TMDB rate limit reached (HTTP 429) fetching alternative titles of 'Black Seraph'. The built-in key is shared by all " +
+                "Plexify users; set your own with TMDB_API_ACCESS_TOKEN (see README).",
+            error?.message,
+        )
+        // The first try and its three retries; the next lookup would be refused too, so it isn't sent.
+        assertEquals(List(4) { "/3/tv/1/alternative_titles" }, tmdb.aliasLookups())
+    }
+
+    @Test
+    fun `an alias lookup that fails with an HTTP error leaves a search with a result that resembles the query as it is`() = runBlocking {
+        val tmdb = TmdbResponder(mapOf("/3/search/multi" to results(tv(1, "Black Seraph"), tv(2, "Dark Angel"))))
+        val provider = failingLookup(tmdb, "/3/tv/1/alternative_titles", HttpStatusCode.InternalServerError, serverError)
+
+        val found = provider.search("Dark Angel", null).getOrThrow()
+
+        assertEquals(listOf("1", "2"), found.map { it.tmdbId })
+        assertEquals(emptyList(), assertIs<MediaSearchResult.TvShow>(found.first()).alternativeTitles)
     }
 
     @Test
