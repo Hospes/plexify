@@ -28,11 +28,11 @@ class MetadataRepository(private val service: MetadataService) {
     suspend fun findShow(id: MediaId): Result<MediaSearchResult.TvShow?> = service.findShow(id)
 
     /**
-     * The shows a lookup for [key] matched, best first; empty when it matched none (see [markShowFailed]); null when
+     * The shows a lookup for [key] matched, best first; empty when it matched none (see [markShowUnmatched]); null when
      * [key] hasn't been looked up yet, or its lookup failed.
      */
     internal suspend fun cachedShows(key: ShowKey): List<CanonicalMedia.TvShow>? =
-        cache.getShows(key) ?: emptyList<CanonicalMedia.TvShow>().takeIf { cache.isShowFailed(key) }
+        cache.getShows(key) ?: emptyList<CanonicalMedia.TvShow>().takeIf { cache.isShowUnmatched(key) }
 
     /** Keeps the shows a lookup for [key] matched, best first; the runner-ups back the episode lookup up. */
     internal suspend fun putShows(key: ShowKey, shows: List<CanonicalMedia.TvShow>) = cache.putShows(key, shows)
@@ -41,7 +41,7 @@ class MetadataRepository(private val service: MetadataService) {
      * Negative cache: the lookup for [key] succeeded but matched no show, so later files of the show don't repeat it
      * (and its output). Only for a lookup that succeeded: a failed one is not cached, so the next file tries again.
      */
-    internal suspend fun markShowFailed(key: ShowKey) = cache.markShowFailed(key)
+    internal suspend fun markShowUnmatched(key: ShowKey) = cache.markShowUnmatched(key)
 
     /**
      * The whole season (one API call), fetched once per show and season, so the season's other episodes come from the
@@ -74,27 +74,24 @@ class MetadataRepository(private val service: MetadataService) {
     }
 
     /**
-     * [media] with the IMDb ID that search results don't carry, for a movie or show that lacks it. Looked up once per
-     * TMDB record and run (the service skips it when the template doesn't use `{imdbid}`), so a season of episodes or
-     * several versions of a movie cost one call; "no IMDb ID" is kept too. A failed lookup fails the file, as a failed
-     * season fetch does, and is tried again for the next one: named without the ID, the file would land outside the
-     * folder the next run files the title in.
+     * The movie with the IMDb ID that search results don't carry. Looked up once per TMDB record and run (the service
+     * skips it when the template doesn't use `{imdbid}`), so several versions of a movie cost one call; "no IMDb ID" is
+     * kept too. A failed lookup fails the file, as a failed season fetch does, and is tried again for the next one:
+     * named without the ID, the file would land outside the folder the next run files the title in.
      */
     context(_: LoggingContext)
-    suspend fun <M : CanonicalMedia> withImdbId(media: M): Result<M> {
-        val record = when (media) {
-            is CanonicalMedia.Movie -> media.tmdbId?.takeIf { media.imdbId == null }?.let { TmdbRecord(TmdbRecord.Type.MOVIE, it) }
-            is CanonicalMedia.TvShow -> media.tmdbId?.takeIf { media.imdbId == null }?.let { TmdbRecord(TmdbRecord.Type.TV, it) }
-            else -> null
-        } ?: return Result.success(media)
-        return cache.getOrPutExternalIds(record) { service.getExternalIds(media) }.map { ids ->
-            val imdbId = ids?.imdbId ?: return@map media
-            @Suppress("UNCHECKED_CAST")
-            when (media) {
-                is CanonicalMedia.Movie -> media.copy(imdbId = imdbId) as M
-                is CanonicalMedia.TvShow -> media.copy(imdbId = imdbId) as M
-                else -> media
-            }
-        }
+    suspend fun withImdbId(movie: CanonicalMedia.Movie): Result<CanonicalMedia.Movie> =
+        imdbId(movie, movie.imdbId, movie.tmdbId, TmdbRecord.Type.MOVIE).map { id -> id?.let { movie.copy(imdbId = it) } ?: movie }
+
+    /** The show with its IMDb ID, looked up as a movie's is; a season of episodes costs one call. */
+    context(_: LoggingContext)
+    suspend fun withImdbId(show: CanonicalMedia.TvShow): Result<CanonicalMedia.TvShow> =
+        imdbId(show, show.imdbId, show.tmdbId, TmdbRecord.Type.TV).map { id -> id?.let { show.copy(imdbId = it) } ?: show }
+
+    /** The IMDb ID [media] lacks, from the cache or the providers; null when it has one already, or none is known. */
+    context(_: LoggingContext)
+    private suspend fun imdbId(media: CanonicalMedia, imdbId: String?, tmdbId: String?, type: TmdbRecord.Type): Result<String?> {
+        if (imdbId != null || tmdbId == null) return Result.success(null)
+        return cache.getOrPutExternalIds(TmdbRecord(type, tmdbId)) { service.getExternalIds(media) }.map { it?.imdbId }
     }
 }
