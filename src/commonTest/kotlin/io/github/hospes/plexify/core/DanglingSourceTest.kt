@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
@@ -31,7 +30,7 @@ class DanglingSourceTest {
         if (!createSymbolicLink(source, "missing.mkv")) return@runTest
         val provider = FakeTmdb(results = emptyList())
         val organizer = RecordingOrganizer()
-        val processor = MediaProcessor(MetadataService(listOf(provider), NamingStrategy.Jellyfin), organizer, MetadataCache())
+        val processor = MediaProcessor(MetadataRepository(MetadataService(listOf(provider), NamingStrategy.Jellyfin)), organizer)
 
         with(LoggingContext()) {
             processor.process(source, Path(root, "library"), OperationMode.HARDLINK, isTestMode = true)

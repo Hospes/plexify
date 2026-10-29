@@ -16,7 +16,7 @@ import com.github.ajalt.clikt.parameters.types.enum
 import com.github.ajalt.clikt.parameters.types.int
 import io.github.hospes.plexify.core.DefaultFileOrganizer
 import io.github.hospes.plexify.core.MediaProcessor
-import io.github.hospes.plexify.data.MetadataCache
+import io.github.hospes.plexify.core.MetadataRepository
 import io.github.hospes.plexify.data.MetadataConnectionException
 import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.data.tmdb.TmdbCredentials
@@ -135,10 +135,9 @@ object App : CliktCommand(name = "plexify") {
         val providers = listOf(verifiedTmdbProvider())
         val pathFormatter = PathFormatter()
         val fileOrganizer = DefaultFileOrganizer(pathFormatter, template, overwrite)
-        val cache = MetadataCache()
 
-        val metadataService = MetadataService(providers, template)
-        val processor = MediaProcessor(metadataService, fileOrganizer, cache, titleOverride, seasonOverride, yearOverride?.toString(), episodeOffset)
+        val metadata = MetadataRepository(MetadataService(providers, template))
+        val processor = MediaProcessor(metadata, fileOrganizer, titleOverride, seasonOverride, yearOverride?.toString(), episodeOffset)
 
         echo("Plexify ${BuildConfig.VERSION} | mode: $mode${if (overwrite) " (overwrite)" else ""} | template: ${template.name} | destination: $destination")
         val overrides = listOfNotNull(

@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.domain.matching.MatchRanker
 import io.github.hospes.plexify.domain.matching.MatchScoring
 import io.github.hospes.plexify.domain.matching.RankedMatch
@@ -9,7 +8,6 @@ import io.github.hospes.plexify.domain.matching.consolidate
 import io.github.hospes.plexify.domain.matching.format
 import io.github.hospes.plexify.domain.matching.yearScore
 import io.github.hospes.plexify.domain.model.CanonicalMedia
-import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaId
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
@@ -17,7 +15,6 @@ import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.model.withOverrides
 import io.github.hospes.plexify.domain.service.EpisodeGroupMapper
 import io.github.hospes.plexify.domain.service.MediaFilenameParser
-import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.isNamedById
 import io.github.hospes.plexify.logging.LoggingContext
 import io.github.hospes.plexify.logging.debug
@@ -27,9 +24,8 @@ import io.github.hospes.plexify.logging.status
 import kotlinx.io.files.Path
 
 class MediaProcessor(
-    private val metadataService: MetadataService,
+    private val metadata: MetadataRepository,
     private val fileOrganizer: FileOrganizer,
-    private val cache: MetadataCache,
     private val titleOverride: String? = null,
     private val seasonOverride: Int? = null,
     private val yearOverride: String? = null,
@@ -55,7 +51,7 @@ class MediaProcessor(
     private val showStates = ShowStates()
 
     // Provider shows (by identity) and seasons already reported as mapped (or unmappable) through episode groups.
-    private val episodeGroupNotices = mutableSetOf<Pair<String, Int>>()
+    private val episodeGroupNotices = mutableSetOf<Pair<ShowIdentity, Int>>()
 
     context(_: LoggingContext)
     suspend fun process(source: Path, destination: Path, mode: OperationMode, isTestMode: Boolean) {
@@ -155,7 +151,7 @@ class MediaProcessor(
             return@indent
         }
 
-        val canonicalMovie = (ranking.firstOrNull()?.media as? CanonicalMedia.Movie)?.withExternalIds()
+        val canonicalMovie = (ranking.firstOrNull()?.media as? CanonicalMedia.Movie)?.let { metadata.withImdbId(it) }
             ?.getOrElse { error -> return@indent lookupFailed(source, error) }
 
         if (canonicalMovie == null) {
@@ -182,7 +178,7 @@ class MediaProcessor(
         title: String,
         year: String?,
     ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
-        val first = metadataService.search(title, year)
+        val first = metadata.search(title, year)
             .getOrElse { return Result.failure(it) }
             .filterIsInstance<MediaSearchResult.Movie>()
         val firstRanking = rankMatches(first, title, year, reportMiss = year == null)
@@ -201,7 +197,7 @@ class MediaProcessor(
             )
 
         debug("No match from $year among the first results; searching again with the year")
-        val byYear = moviesUnlessFailed(firstRanking) { metadataService.searchMovies(title, year) }
+        val byYear = moviesUnlessFailed(firstRanking) { metadata.searchMovies(title, year) }
             .getOrElse { return Result.failure(it) }
         val merged = (first + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
         val ranking = rankMatches(merged, title, year, reportMiss = false)
@@ -209,7 +205,7 @@ class MediaProcessor(
         if (ranking.bestYear() != year && titleOverride == null && yearOverride == null) {
             val joinedTitle = "$title $year"
             debug("Still no match from $year; trying '$joinedTitle' as the whole title")
-            val joined = moviesUnlessFailed(ranking) { metadataService.search(joinedTitle, null) }
+            val joined = moviesUnlessFailed(ranking) { metadata.search(joinedTitle, null) }
                 .getOrElse { return Result.failure(it) }
             // Only a film whose title has the year: the reading has no year to rule out the namesakes
             // the first one rejected ("Dracula" for "Dracula 1974").
@@ -332,9 +328,9 @@ class MediaProcessor(
         debug("Trying '${numbered.showTitle}' Season ${numbered.season} for '${parsed.showTitle}'")
         // With its external IDs now, so the season cached below carries them, as findEpisode expects.
         val show = bestShow(numbered.showTitle, parsed.year).getOrElse { return@indent Result.failure(it) }
-            ?.withExternalIds()?.getOrElse { return@indent Result.failure(it) }
+            ?.let { metadata.withImdbId(it) }?.getOrElse { return@indent Result.failure(it) }
             ?: return@indent Result.success(null)
-        val season = findOrFetchSeason(show, numbered.season).getOrElse { return@indent Result.failure(it) }
+        val season = metadata.season(show, numbered.season).getOrElse { return@indent Result.failure(it) }
         if (season.episodes.isEmpty()) {
             debug("${show.describe()} has no Season ${numbered.season}; the number is part of the title")
             return@indent Result.success(null)
@@ -350,13 +346,10 @@ class MediaProcessor(
     /** The best show match for [title]; a reading being tried reports no miss of its own. */
     context(_: LoggingContext)
     private suspend fun bestShow(title: String, year: String?): Result<CanonicalMedia.TvShow?> =
-        metadataService.search(title, year).map { results ->
+        metadata.search(title, year).map { results ->
             rankMatches(results.filterIsInstance<MediaSearchResult.TvShow>(), title, year, reportMiss = false)
                 .firstOrNull()?.media as? CanonicalMedia.TvShow
         }
-
-    /** The provider show this is, as its seasons and episode groups are cached: its TMDB ID, else IMDb ID, else title. */
-    private val CanonicalMedia.TvShow.identity: String get() = tmdbId ?: imdbId ?: title
 
     /**
      * The lookup itself failed (a search, a season fetch or an IMDb lookup timed out, or hit an HTTP or network error),
@@ -418,15 +411,10 @@ class MediaProcessor(
         bareYear: Boolean,
     ): Result<List<CanonicalMedia.TvShow>> = indent {
         val (title, year) = key
-        val cacheKey = key.cacheKey
-        val cachedShows = cache.getShows(cacheKey)
+        val cachedShows = metadata.cachedShows(key)
         if (cachedShows != null) {
-            debug("Cache HIT for show: '$title'")
+            debug(if (cachedShows.isEmpty()) "Cache HIT (negative) for show: '$title'" else "Cache HIT for show: '$title'")
             return@indent Result.success(cachedShows)
-        }
-        if (cache.isShowFailed(cacheKey)) {
-            debug("Cache HIT (negative) for show: '$title'")
-            return@indent Result.success(emptyList())
         }
         debug("Cache MISS for show: '$title'. Searching providers...")
 
@@ -440,7 +428,7 @@ class MediaProcessor(
             val best = ranked.firstOrNull()
             // Only the best match gets its external IDs now; a runner-up gets them if the episode
             // fallback picks it (see findEpisode). A failed lookup fails before anything is kept.
-            val bestShow = best?.let { (it.media as CanonicalMedia.TvShow).withExternalIds().getOrElse { error -> return@indent Result.failure(error) } }
+            val bestShow = best?.let { metadata.withImdbId(it.media as CanonicalMedia.TvShow).getOrElse { error -> return@indent Result.failure(error) } }
             val state = showStates[key]
             state.titleSeason = best?.titleSeason
             if (best?.namesUnplacedArc == true) state.namesUnplacedArc = true
@@ -453,11 +441,11 @@ class MediaProcessor(
         }
 
         if (shows.isNotEmpty()) {
-            cache.putShows(cacheKey, shows)
+            metadata.putShows(key, shows)
             status("Matched show: ${shows.first().describe()}")
         } else {
             // Negative cache: don't repeat the search (and its log output) for every episode file.
-            cache.markShowFailed(cacheKey)
+            metadata.markShowFailed(key)
         }
 
         return@indent Result.success(shows)
@@ -471,9 +459,9 @@ class MediaProcessor(
     private suspend fun findMovieById(parsed: ParsedMediaInfo.Movie): Result<CanonicalMedia.Movie?> = indent {
         val id = parsed.mediaId ?: return@indent Result.success(null)
         debug("Looking up the movie $id in the path")
-        val record = metadataService.findMovie(id).getOrElse { return@indent Result.failure(it) }
-        val movie = (rankById(id, record, "movie", parsed.title, parsed.year)?.media as? CanonicalMedia.Movie)?.withExternalIds()
-            ?.getOrElse { return@indent Result.failure(it) }
+        val record = metadata.findMovie(id).getOrElse { return@indent Result.failure(it) }
+        val movie = (rankById(id, record, "movie", parsed.title, parsed.year)?.media as? CanonicalMedia.Movie)
+            ?.let { metadata.withImdbId(it) }?.getOrElse { return@indent Result.failure(it) }
         if (movie != null) status("Matched movie by the ID in its path: ${movie.describe()}")
         Result.success(movie)
     }
@@ -488,21 +476,19 @@ class MediaProcessor(
     private suspend fun findShowById(parsed: ParsedMediaInfo.Episode): Result<Pair<ShowKey.ById, CanonicalMedia.TvShow>?> = indent {
         val id = parsed.mediaId ?: return@indent Result.success(null)
         val key = ShowKey.ById(id, parsed.showTitle, parsed.year)
-        val cacheKey = key.cacheKey
-        cache.getShows(cacheKey)?.let { return@indent Result.success(key to it.first()) }
-        if (cache.isShowFailed(cacheKey)) return@indent Result.success(null)
+        metadata.cachedShows(key)?.let { return@indent Result.success(it.firstOrNull()?.let { show -> key to show }) }
 
         debug("Looking up the show $id in the path")
-        val record = metadataService.findShow(id).getOrElse { return@indent Result.failure(it) }
+        val record = metadata.findShow(id).getOrElse { return@indent Result.failure(it) }
         val match = rankById(id, record, "show", parsed.showTitle, parsed.year)
-        val show = (match?.media as? CanonicalMedia.TvShow)?.withExternalIds()?.getOrElse { return@indent Result.failure(it) }
+        val show = (match?.media as? CanonicalMedia.TvShow)?.let { metadata.withImdbId(it) }?.getOrElse { return@indent Result.failure(it) }
         if (match == null || show == null) {
-            cache.markShowFailed(cacheKey)
+            metadata.markShowFailed(key)
         } else {
             val state = showStates[key]
             state.titleSeason = match.titleSeason
             if (match.namesUnplacedArc) state.namesUnplacedArc = true
-            cache.putShows(cacheKey, listOf(show))
+            metadata.putShows(key, listOf(show))
             status("Matched show by the ID in its path: ${show.describe()}")
         }
         Result.success(show?.let { key to it })
@@ -558,7 +544,7 @@ class MediaProcessor(
         year: String?,
         bareYear: Boolean,
     ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
-        val found = metadataService.search(title, year)
+        val found = metadata.search(title, year)
             .getOrElse { return Result.failure(it) }
             .filterIsInstance<MediaSearchResult.TvShow>()
         val titleYear = year?.takeIf { bareYear && titleOverride == null && yearOverride == null }
@@ -569,7 +555,7 @@ class MediaProcessor(
 
         val joinedTitle = "$title $titleYear"
         debug("No show from $titleYear matched; trying '$joinedTitle' as the whole title")
-        val joined = metadataService.search(joinedTitle, null).fold(
+        val joined = metadata.search(joinedTitle, null).fold(
             onSuccess = { it.filterIsInstance<MediaSearchResult.TvShow>() },
             onFailure = { error ->
                 // With no candidate yet, the failed search decides the file.
@@ -616,14 +602,14 @@ class MediaProcessor(
         }
 
         // The show has the season, just not this episode: a numbering quirk, not evidence of a wrong show.
-        if (!isSeasonMissing(primary, season)) return Result.success(null)
+        if (!metadata.isSeasonMissing(primary, season)) return Result.success(null)
 
         for (candidate in candidates.drop(1).take(MatchScoring.MAX_FALLBACK_SHOWS)) {
             // A runner-up whose season fails to load fails the file: whether it has the season is
             // unknown, and taking the next one could file the season under the wrong show.
-            val candidateSeason = indent { findOrFetchSeason(candidate, season) }.getOrElse { return Result.failure(it) }
+            val candidateSeason = indent { metadata.season(candidate, season) }.getOrElse { return Result.failure(it) }
             val match = candidateSeason.episodes.firstOrNull { it.episode == episode } ?: continue
-            val alternative = candidate.withExternalIds().getOrElse { return Result.failure(it) }
+            val alternative = metadata.withImdbId(candidate).getOrElse { return Result.failure(it) }
             showStates.placeSeason(seasonKey, alternative)
             status("Season $season is not in ${primary.describe()}; matched show: ${alternative.describe()}")
             return Result.success(match.copy(show = alternative))
@@ -637,7 +623,7 @@ class MediaProcessor(
      */
     context(_: LoggingContext)
     private suspend fun findOrFetchEpisode(show: CanonicalMedia.TvShow, season: Int, episode: Int): Result<CanonicalMedia.Episode?> = indent {
-        val cachedSeason = findOrFetchSeason(show, season).getOrElse { return@indent Result.failure(it) }
+        val cachedSeason = metadata.season(show, season).getOrElse { return@indent Result.failure(it) }
 
         val match = cachedSeason.episodes.firstOrNull { it.episode == episode }
         if (match != null) return@indent Result.success(match)
@@ -647,29 +633,6 @@ class MediaProcessor(
     }
 
     /**
-     * The whole season, fetched once per show and season; empty when the providers report it as
-     * nonexistent. A failed fetch is not cached, so the next file of the season tries again.
-     */
-    context(_: LoggingContext)
-    private suspend fun findOrFetchSeason(show: CanonicalMedia.TvShow, season: Int): Result<CanonicalMedia.Season> {
-        val cacheKey = show.seasonCacheKey(season)
-
-        cache.getSeason(cacheKey)?.let { cachedSeason ->
-            if (cachedSeason.episodes.isNotEmpty()) {
-                debug("Cache HIT for S${season} (${cachedSeason.episodes.size} episodes loaded)")
-            }
-            return Result.success(cachedSeason)
-        }
-
-        debug("Cache MISS for season: S${season}. Fetching from providers...")
-        return metadataService.getSeason(show, season).onSuccess { cache.putSeason(cacheKey, it) }
-    }
-
-    /** True when the providers reported the season as nonexistent (a failed fetch is not cached). */
-    private suspend fun isSeasonMissing(show: CanonicalMedia.TvShow, season: Int): Boolean =
-        cache.getSeason(show.seasonCacheKey(season))?.episodes?.isEmpty() == true
-
-    /**
      * Whether this runner-up may take a season the best match lacks: only a show named as the
      * release is, as closely as the best match (a same-titled show, like Being Human UK and US),
      * and not contradicted by the filename year. A merely similar title clears the confidence
@@ -677,8 +640,6 @@ class MediaProcessor(
      */
     private fun RankedMatch.canStandInFor(best: RankedMatch): Boolean =
         titleSimilarity >= best.titleSimilarity && (yearScore == null || yearScore > 0)
-
-    private fun CanonicalMedia.TvShow.seasonCacheKey(season: Int): String = "$identity:$season"
 
     /**
      * Fallback for releases numbered differently from the provider, typically anime split into
@@ -694,10 +655,7 @@ class MediaProcessor(
         episode: Int,
         providerHasSeason: Boolean,
     ): Result<CanonicalMedia.Episode?> = indent {
-        val groups = cache.getEpisodeGroups(show.identity)
-            ?: metadataService.getEpisodeGroups(show)
-                .onSuccess { cache.putEpisodeGroups(show.identity, it) }
-                .getOrElse { return@indent Result.failure(it) }
+        val groups = metadata.episodeGroups(show).getOrElse { return@indent Result.failure(it) }
 
         val match = when (val resolution = EpisodeGroupMapper.resolve(groups, season, episode, providerHasSeason)) {
             is EpisodeGroupMapper.Resolution.Found -> {
@@ -729,33 +687,6 @@ class MediaProcessor(
             }
         }
         Result.success(match)
-    }
-
-    /** Fills the winning movie's IMDb ID, which search results don't carry. See [findExternalIds]. */
-    context(_: LoggingContext)
-    private suspend fun CanonicalMedia.Movie.withExternalIds(): Result<CanonicalMedia.Movie> {
-        if (imdbId != null) return Result.success(this)
-        return findExternalIds(this, tmdbId).map { ids -> ids?.let { copy(imdbId = it.imdbId) } ?: this }
-    }
-
-    /** Fills the winning show's IMDb ID, which search results don't carry. See [findExternalIds]. */
-    context(_: LoggingContext)
-    private suspend fun CanonicalMedia.TvShow.withExternalIds(): Result<CanonicalMedia.TvShow> {
-        if (imdbId != null) return Result.success(this)
-        return findExternalIds(this, tmdbId).map { ids -> ids?.let { copy(imdbId = it.imdbId) } ?: this }
-    }
-
-    /**
-     * Looked up once per TMDB record and run (the service skips it when the template doesn't use
-     * `{imdbid}`), so a season of episodes or several versions of a movie cost one call. A failed
-     * lookup fails the file, as a failed season fetch does, and is tried again for the next one:
-     * named without the ID, the file would land outside the folder the next run files the title in.
-     */
-    context(_: LoggingContext)
-    private suspend fun findExternalIds(media: CanonicalMedia, tmdbId: String?): Result<ExternalIds?> {
-        if (tmdbId == null) return Result.success(null)
-        val kind = if (media is CanonicalMedia.Movie) "movie" else "tv"
-        return cache.getOrPutExternalIds("$kind:$tmdbId") { metadataService.getExternalIds(media) }
     }
 
     context(ctx: LoggingContext)

@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.domain.model.CanonicalMedia
@@ -49,9 +48,8 @@ class SearchFailureTest {
     /** Processes empty files with these names, from a fresh temporary directory, with a fresh processor. */
     private suspend fun run(provider: FakeTmdb, vararg fileNames: String): MediaProcessor.Stats {
         val processor = MediaProcessor(
-            metadataService = MetadataService(listOf(provider), NamingStrategy.Jellyfin),
+            metadata = MetadataRepository(MetadataService(listOf(provider), NamingStrategy.Jellyfin)),
             fileOrganizer = NoOpOrganizer,
-            cache = MetadataCache(),
         )
         val dir = Path(SystemTemporaryDirectory, "plexify-timeout-test-${Random.nextLong().toULong()}")
         SystemFileSystem.createDirectories(dir)

@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
@@ -175,9 +174,8 @@ internal suspend fun <P : MetadataProvider> runProcessor(
     organizer: RecordingOrganizer = RecordingOrganizer(),
 ): ProcessorRun<P> {
     val processor = MediaProcessor(
-        metadataService = MetadataService(listOf(provider), namingStrategy),
+        metadata = MetadataRepository(MetadataService(listOf(provider), namingStrategy)),
         fileOrganizer = organizer,
-        cache = MetadataCache(),
         titleOverride = titleOverride,
         seasonOverride = seasonOverride,
         yearOverride = yearOverride,
@@ -219,9 +217,8 @@ internal suspend fun <P : MetadataProvider> runProcessor(
 /** Processes these source paths as given, with a fresh processor and a provider that finds nothing. */
 internal suspend fun processSource(vararg sources: Path, isTestMode: Boolean = true): MediaProcessor.Stats {
     val processor = MediaProcessor(
-        metadataService = MetadataService(listOf(FakeTmdb(emptyList())), NamingStrategy.Jellyfin),
+        metadata = MetadataRepository(MetadataService(listOf(FakeTmdb(emptyList())), NamingStrategy.Jellyfin)),
         fileOrganizer = RecordingOrganizer(),
-        cache = MetadataCache(),
     )
     with(LoggingContext()) {
         for (source in sources) processor.process(source, Path(SystemTemporaryDirectory, "plexify-library"), OperationMode.HARDLINK, isTestMode)
