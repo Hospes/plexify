@@ -24,8 +24,9 @@ class NumberedSeasonTest {
 
         assertEquals(Triple("235930", 2, 1), run.placeOf("Devil_May_Cry_2_[01]_[HEVC].mkv"))
         assertEquals(Triple("235930", 2, 8), run.placeOf("Devil_May_Cry_2_[08]_[HEVC].mkv"))
-        // Decided once for the show: the second file searches nothing new.
-        assertEquals(listOf("devil may cry", "devil may cry 2", "devil may cry"), provider.searchedTitles)
+        // Decided once for the show: the second file searches nothing new. The show lookup's search for "devil may cry"
+        // is the check's own, so it comes from the cache.
+        assertEquals(listOf("devil may cry", "devil may cry 2"), provider.searchedTitles)
     }
 
     @Test

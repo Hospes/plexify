@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.AliasCache
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.createHttpClientEngine
@@ -15,6 +16,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbTvDetailsDto
 import io.github.hospes.plexify.domain.matching.MatchScoring
 import io.github.hospes.plexify.domain.matching.calculateTitleConfidence
+import io.github.hospes.plexify.domain.model.AlternativeTitles
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaId
@@ -67,6 +69,9 @@ class TmdbProvider(
      * either of those, pull the alternative titles so downstream scoring can see the alias: the
      * first [MatchScoring.MAX_ALT_TITLES_LOOKUPS] such results, in TMDB's order ([awaitingAliases]).
      *
+     * Each record's aliases come through [cache], so a record that several searches find is fetched once; the lookup
+     * still counts toward the limit, so a cached alias set reaches the results a fetch would have, and no others.
+     *
      * A lookup for a record TMDB doesn't have (HTTP 404) leaves its result as it is. Any other failure
      * fails the search unless a result resembles the query anyway: the missing alias may be the match,
      * so "no match" would be a guess, and the file would be skipped and its show cached as a miss
@@ -74,10 +79,13 @@ class TmdbProvider(
      * lookups, as the next ones would wait as long or be refused too; after another HTTP error the
      * next lookups go on, as one of them may find the alias.
      */
-    override suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> =
-        http.catching { results.lookUpAlternativeTitles(title) }
+    override suspend fun withAlternativeTitles(
+        results: List<MediaSearchResult>,
+        title: String,
+        cache: AliasCache,
+    ): Result<List<MediaSearchResult>> = http.catching { results.lookUpAlternativeTitles(title, cache) }
 
-    private suspend fun List<MediaSearchResult>.lookUpAlternativeTitles(title: String): List<MediaSearchResult> {
+    private suspend fun List<MediaSearchResult>.lookUpAlternativeTitles(title: String, cache: AliasCache): List<MediaSearchResult> {
         var lookups = 0
         var failed: Exception? = null
         var stopped = false
@@ -87,11 +95,9 @@ class TmdbProvider(
             } else {
                 lookups++
                 try {
-                    enrichWithAlternativeTitles(result, title)
+                    result.withAliases(cache.getOrFetch(result) { alternativeTitles(result) }, title)
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: MetadataNotFoundException) {
-                    result
                 } catch (e: Exception) {
                     if (failed == null) failed = e
                     if (e.endsLookups()) stopped = true
@@ -105,21 +111,29 @@ class TmdbProvider(
         return enriched
     }
 
-    private suspend fun enrichWithAlternativeTitles(result: MediaSearchResult, queryTitle: String): MediaSearchResult {
+    // A 404 is an answer: TMDB has no such record, so it has no aliases either.
+    private suspend fun alternativeTitles(result: MediaSearchResult): AlternativeTitles {
         val endpoint = when (result) {
             is MediaSearchResult.Movie -> "movie/${result.tmdbId}/alternative_titles"
             is MediaSearchResult.TvShow -> "tv/${result.tmdbId}/alternative_titles"
         }
-        val dto = http.getJson<TmdbAlternativeTitlesDto>(endpoint, optional = true) { "fetching alternative titles of '${result.title}'" }
-        val altTitles = dto.all.map { it.title }
-        if (altTitles.isEmpty()) return result
+        val dto = try {
+            http.getJson<TmdbAlternativeTitlesDto>(endpoint, optional = true) { "fetching alternative titles of '${result.title}'" }
+        } catch (_: MetadataNotFoundException) {
+            return AlternativeTitles.NONE
+        }
+        return AlternativeTitles(dto.all.map { it.title }, dto.seasonTitles())
+    }
 
-        return when (result) {
-            is MediaSearchResult.Movie -> result.copy(alternativeTitles = altTitles)
-            is MediaSearchResult.TvShow -> result.copy(
-                alternativeTitles = altTitles,
+    private fun MediaSearchResult.withAliases(aliases: AlternativeTitles, queryTitle: String): MediaSearchResult {
+        if (aliases.titles.isEmpty()) return this
+
+        return when (this) {
+            is MediaSearchResult.Movie -> copy(alternativeTitles = aliases.titles)
+            is MediaSearchResult.TvShow -> copy(
+                alternativeTitles = aliases.titles,
                 // The show's own titles name it as a whole, whatever season a tag gives them.
-                seasonTitles = dto.seasonTitles() - setOfNotNull(result.title, result.originalTitle),
+                seasonTitles = aliases.seasonTitles - setOfNotNull(title, originalTitle),
             )
         }.let { enriched ->
             val confidence = enriched.allTitles.maxOf { calculateTitleConfidence(queryTitle, it) }

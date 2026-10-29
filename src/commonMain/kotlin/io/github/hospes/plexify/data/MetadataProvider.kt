@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.data
 
+import io.github.hospes.plexify.domain.model.AlternativeTitles
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaId
@@ -21,11 +22,14 @@ interface MetadataProvider {
     /**
      * [results], this provider's answer to a [search] or [searchMovies] for [title], with the aliases its search results
      * don't carry (translations, romanizations), for the results that need them. The caller asks only when the aliases
-     * could change the match (MatchRanker.aliasesCanChangeWinner). Fails when a lookup failed and the missing alias may
-     * be the match.
+     * could change the match (MatchRanker.aliasesCanChangeWinner). Each record's aliases come through [cache], which
+     * fetches them only when it doesn't have them. Fails when a lookup failed and the missing alias may be the match.
      */
-    suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> =
-        Result.success(results)
+    suspend fun withAlternativeTitles(
+        results: List<MediaSearchResult>,
+        title: String,
+        cache: AliasCache = AliasCache.NONE,
+    ): Result<List<MediaSearchResult>> = Result.success(results)
 
     /**
      * The movie [id] names, with every title it is known by and its IMDb ID when the provider has them; its
@@ -47,6 +51,20 @@ interface MetadataProvider {
     /** Other databases' IDs for a matched movie or show; a field is null when the provider knows of none. */
     suspend fun externalIds(media: CanonicalMedia): Result<ExternalIds> =
         Result.failure(UnsupportedOperationException("externalIds() not supported by provider '$id'"))
+}
+
+/**
+ * Where [MetadataProvider.withAlternativeTitles] gets a record's aliases: the run's cache, so a record that several
+ * searches find has its aliases fetched once. Which results get them, and what a failed fetch means, stays the provider's.
+ */
+fun interface AliasCache {
+    /** The aliases of [result]'s record: the ones kept, else [fetch]'s, kept when it returns. A failed fetch throws and isn't kept. */
+    suspend fun getOrFetch(result: MediaSearchResult, fetch: suspend () -> AlternativeTitles): AlternativeTitles
+
+    companion object {
+        /** Keeps nothing: every lookup fetches. */
+        val NONE = AliasCache { _, fetch -> fetch() }
+    }
 }
 
 /** The provider has no such record (HTTP 404), e.g. a season it numbers differently. Expected, not an error. */

@@ -188,9 +188,9 @@ class CorpusTest {
         |  Jellyfin: The Lord of the Rings The War of the Rohirrim (2024) [tmdbid-839033]/The Lord of the Rings The War of the Rohirrim (2024) [tmdbid-839033] - [1080p] [WEBRip] [AniLibria].mkv
         |  Plex:     The Lord of the Rings The War of the Rohirrim (2024) {imdb-tt14824600}/The Lord of the Rings The War of the Rohirrim (2024) - [1080p] [WEBRip] [AniLibria].mkv
         |Jellyfin: 52 organized, 1 skipped, 0 failed
-        |Jellyfin requests: 3 movie/{id}/alternative_titles, 20 search/multi, 3 tv/episode_group/{id}, 13 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 16 tv/{id}/season/{id}
+        |Jellyfin requests: 3 movie/{id}/alternative_titles, 18 search/multi, 3 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 16 tv/{id}/season/{id}
         |Plex: 52 organized, 1 skipped, 0 failed
-        |Plex requests: 3 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 20 search/multi, 3 tv/episode_group/{id}, 13 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 11 tv/{id}/external_ids, 16 tv/{id}/season/{id}
+        |Plex requests: 3 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 18 search/multi, 3 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 2 tv/{id}/episode_groups, 11 tv/{id}/external_ids, 16 tv/{id}/season/{id}
     """)
 
     @Test
@@ -319,9 +319,9 @@ class CorpusTest {
         |  Jellyfin: What If... (2021) [tmdbid-91363]/Season 01/What If... (2021) - S01E01-E09 - What If... Episode 1 Went Another Way Entirely & What If... Episode 2 Went Another Way Entirely & What If... Episode 3 Went Another Way Entirely & What If... Episode 4 Went Another Way Entirely… - [1080p] [WEB-DL].mkv
         |  Plex:     What If... (2021) {imdb-tt10168312}/Season 01/What If... (2021) - S01E01-E09 - What If... Episode 1 Went Another Way Entirely & What If... Episode 2 Went Another Way Entirely & What If... Episode 3 Went Another Way Entirely & What If... Episode 4 Went Another Way Entirely… - [1080p] [WEB-DL].mkv
         |Jellyfin: 41 organized, 0 skipped, 0 failed
-        |Jellyfin requests: 2 movie/{id}/alternative_titles, 1 search/movie, 33 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/season/{id}
+        |Jellyfin requests: 2 movie/{id}/alternative_titles, 1 search/movie, 32 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/season/{id}
         |Plex: 41 organized, 0 skipped, 0 failed
-        |Plex requests: 2 movie/{id}/alternative_titles, 23 movie/{id}/external_ids, 1 search/movie, 33 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/external_ids, 8 tv/{id}/season/{id}
+        |Plex requests: 2 movie/{id}/alternative_titles, 23 movie/{id}/external_ids, 1 search/movie, 32 search/multi, 8 tv/episode_group/{id}, 8 tv/{id}/alternative_titles, 1 tv/{id}/episode_groups, 8 tv/{id}/external_ids, 8 tv/{id}/season/{id}
     """)
 
     @Test
@@ -360,9 +360,9 @@ class CorpusTest {
         |  Jellyfin: One Piece (1999) [tmdbid-37854]/Season 21/One Piece (1999) - S21E1072 - Episode 1072 - [1080p].mkv
         |  Plex:     One Piece (1999) {imdb-tt0388629}/Season 21/One Piece (1999) - S21E1072 - Episode 1072 - [1080p].mkv
         |Jellyfin: 11 organized, 0 skipped, 0 failed
-        |Jellyfin requests: 2 find/{id}, 6 movie/{id}, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 4 tv/{id}/season/{id}
+        |Jellyfin requests: 2 find/{id}, 5 movie/{id}, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 4 tv/{id}/season/{id}
         |Plex: 11 organized, 0 skipped, 0 failed
-        |Plex requests: 2 find/{id}, 6 movie/{id}, 1 movie/{id}/external_ids, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 3 tv/{id}/external_ids, 4 tv/{id}/season/{id}
+        |Plex requests: 2 find/{id}, 5 movie/{id}, 1 movie/{id}/external_ids, 3 search/multi, 12 tv/episode_group/{id}, 3 tv/{id}, 2 tv/{id}/episode_groups, 3 tv/{id}/external_ids, 4 tv/{id}/season/{id}
     """)
 
 
@@ -380,9 +380,9 @@ class CorpusTest {
         }
         assertBlock(actual, """
             |Jellyfin: 104 organized, 0 skipped, 0 failed
-            |Jellyfin requests: 31 movie/{id}, 19 tv/{id}, 25 tv/{id}/season/{id}
+            |Jellyfin requests: 25 movie/{id}, 19 tv/{id}, 25 tv/{id}/season/{id}
             |Plex: 104 organized, 0 skipped, 0 failed
-            |Plex requests: 49 find/{id}, 31 movie/{id}, 1 movie/{id}/external_ids, 19 tv/{id}, 25 tv/{id}/season/{id}
+            |Plex requests: 43 find/{id}, 25 movie/{id}, 1 movie/{id}/external_ids, 19 tv/{id}, 25 tv/{id}/season/{id}
         """)
     }
 

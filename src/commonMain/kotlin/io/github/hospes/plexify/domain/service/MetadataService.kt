@@ -1,5 +1,6 @@
 package io.github.hospes.plexify.domain.service
 
+import io.github.hospes.plexify.data.AliasCache
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.domain.model.CanonicalMedia
@@ -37,16 +38,21 @@ class MetadataService(
 
     /**
      * [results] of a search for [title], each provider's with the aliases it looks up for them (see
-     * [MetadataProvider.withAlternativeTitles]). Fails when a provider's lookups failed: its missing alias may be the match.
+     * [MetadataProvider.withAlternativeTitles]), through [cache]. Fails when a provider's lookups failed: its missing
+     * alias may be the match.
      */
     context(_: LoggingContext)
-    suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> {
+    suspend fun withAlternativeTitles(
+        results: List<MediaSearchResult>,
+        title: String,
+        cache: AliasCache = AliasCache.NONE,
+    ): Result<List<MediaSearchResult>> {
         // A result names its provider as the provider styles itself ("TMDb" for "tmdb"), so a provider whose results
         // name it otherwise than its id, case aside, gets no lookups. A search lists each provider's results together,
         // so grouping keeps their order.
         val providers = resolveActiveProviders().associateBy { it.id.lowercase() }
         val withAliases = results.groupBy { it.provider.lowercase() }.flatMap { (providerId, found) ->
-            providers[providerId]?.withAlternativeTitles(found, title)?.getOrElse { return Result.failure(it) } ?: found
+            providers[providerId]?.withAlternativeTitles(found, title, cache)?.getOrElse { return Result.failure(it) } ?: found
         }
         return Result.success(withAliases)
     }

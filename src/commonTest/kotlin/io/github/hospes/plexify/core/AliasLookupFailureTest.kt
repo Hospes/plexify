@@ -15,8 +15,9 @@ import kotlin.test.assertEquals
 class AliasLookupFailureTest {
 
     @Test
-    fun `episodes whose show search fails on an alias lookup count as failed and search again`() = capped {
+    fun `episodes whose show search fails on an alias lookup count as failed and look it up again`() = capped {
         val searches = mutableListOf<String>()
+        var aliasLookups = 0
         val provider = mockProvider(TmdbTimeouts(retryDelay = {})) { request ->
             when (request.url.encodedPath) {
                 "/3/search/multi" -> {
@@ -24,7 +25,7 @@ class AliasLookupFailureTest {
                     respondJson("""{"results": [{"media_type": "tv", "id": 1, "name": "Black Seraph", "original_name": "Black Seraph", "first_air_date": "2000-10-03"}]}""")
                 }
 
-                "/3/tv/1/alternative_titles" -> respondJson("""{"success":false,"status_code":11}""", HttpStatusCode.InternalServerError)
+                "/3/tv/1/alternative_titles" -> aliasLookups++.let { respondJson("""{"success":false,"status_code":11}""", HttpStatusCode.InternalServerError) }
                 else -> error("Unexpected request ${request.url.encodedPath}")
             }
         }
@@ -33,8 +34,10 @@ class AliasLookupFailureTest {
 
         assertEquals(2, run.stats.failed)
         assertEquals(0, run.stats.skipped)
-        // A failed search says nothing about the show, so it is not cached as a miss.
-        assertEquals(2, searches.size)
+        // A failed search says nothing about the show, so it is not cached as a miss, and neither is the failed alias
+        // lookup: the second episode looks it up again. The search itself answered, so it comes from the cache.
+        assertEquals(1, searches.size)
+        assertEquals(2, aliasLookups)
         assertEquals(
             listOf(
                 "✗ Dark.Angel.S01E01.1080p.WEB.mkv — HTTP 500 fetching alternative titles of 'Black Seraph'",

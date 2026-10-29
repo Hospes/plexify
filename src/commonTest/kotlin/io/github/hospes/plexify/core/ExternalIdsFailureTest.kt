@@ -74,8 +74,9 @@ class ExternalIdsFailureTest {
         val run = runProcessor(provider, "$folder/$episode1", "$folder/$episode2", namingStrategy = NamingStrategy.Plex)
 
         assertEquals(2, run.stats.failed)
-        // Neither the record nor its IMDb ID is cached: the next file looks both up again.
-        assertEquals(listOf("tmdb-1", "tmdb-1"), run.provider.idLookups)
+        // The record answered, so the next file takes it from the cache; the failed IMDb lookup is not cached, so it
+        // looks that up again.
+        assertEquals(listOf("tmdb-1"), run.provider.idLookups)
         assertEquals(listOf("1", "1"), run.provider.externalIdLookups)
         assertTrue(run.provider.searchedTitles.isEmpty())
     }
