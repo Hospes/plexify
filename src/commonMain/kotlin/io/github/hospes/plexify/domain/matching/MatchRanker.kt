@@ -151,7 +151,7 @@ internal class MatchRanker(private val yearOverride: String? = null) {
      * winner that awaits aliases itself never does: under the alias threshold, its own best is above its score. So the
      * winner, its score and the season its title names are what the lookups would give.
      * Runner-ups may differ: a result that only an alias names as closely as the winner is no fallback show (see
-     * `MediaProcessor.canStandInFor`) without the lookup.
+     * [io.github.hospes.plexify.core.canStandInFor]) without the lookup.
      */
     fun aliasesCanChangeWinner(
         results: List<MediaSearchResult>,
