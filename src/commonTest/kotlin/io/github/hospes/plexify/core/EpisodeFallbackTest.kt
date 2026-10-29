@@ -142,6 +142,24 @@ class EpisodeFallbackTest {
     }
 
     @Test
+    fun `tries at most three runner-up shows`() = runTest {
+        // Five same-titled shows and no year in the filenames: they rank by provider confidence, show 1 first.
+        // Only the third runner-up has season 4, and only the fourth has season 5.
+        val results = (1..5).map { n ->
+            MediaSearchResult.TvShow(title = "Ghosts", year = "${2014 + n}", tmdbId = "$n", provider = "TMDb", matchConfidence = 105.0 - 5 * n)
+        }
+        val provider = FakeTmdb(results, seasons = mapOf("1" to mapOf(1 to 1..6), "4" to mapOf(4 to 1..8), "5" to mapOf(5 to 1..8)))
+
+        val run = runProcessor(provider, "Ghosts.S04E01.1080p.WEB.mkv", "Ghosts.S05E01.1080p.WEB.mkv")
+
+        assertEquals("4", run.showOf("Ghosts.S04E01.1080p.WEB.mkv"))
+        assertEquals(null, run.showOf("Ghosts.S05E01.1080p.WEB.mkv"))
+        assertEquals(1, run.stats.skipped)
+        // MatchScoring.MAX_FALLBACK_SHOWS: show 5, the fourth runner-up, is never asked for season 5.
+        assertEquals(listOf("1:4", "2:4", "3:4", "4:4", "1:5", "2:5", "3:5", "4:5"), run.provider.seasonFetches)
+    }
+
+    @Test
     fun `a multi-episode file gets the whole range and both titles`() = runTest {
         val provider = FakeTmdb(searchResults, seasons = mapOf("1" to mapOf(1 to 1..6)))
 
