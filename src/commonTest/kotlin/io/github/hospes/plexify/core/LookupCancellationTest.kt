@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.core
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.tmdb.TmdbTimeouts
 import io.github.hospes.plexify.data.tmdb.capped
 import io.github.hospes.plexify.data.tmdb.mockProvider
@@ -51,9 +50,8 @@ class LookupCancellationTest {
             awaitCancellation()
         }
         val processor = MediaProcessor(
-            metadataService = MetadataService(listOf(provider), namingStrategy),
+            metadata = MetadataRepository(MetadataService(listOf(provider), namingStrategy)),
             fileOrganizer = RecordingOrganizer(),
-            cache = MetadataCache(),
         )
         val root = Path(SystemTemporaryDirectory, "plexify-cancellation-test-${Random.nextLong().toULong()}")
         val file = Path(root, "Ghosts.S04E01.1080p.WEB.mkv")

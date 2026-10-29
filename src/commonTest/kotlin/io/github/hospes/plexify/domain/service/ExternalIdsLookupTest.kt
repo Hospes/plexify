@@ -1,6 +1,5 @@
 package io.github.hospes.plexify.domain.service
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.data.MetadataNotFoundException
 import io.github.hospes.plexify.data.MetadataProvider
 import io.github.hospes.plexify.data.MetadataTimeoutException
@@ -13,7 +12,6 @@ import io.github.hospes.plexify.logging.LoggingContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class ExternalIdsLookupTest {
@@ -114,31 +112,5 @@ class ExternalIdsLookupTest {
         val service = MetadataService(listOf(unsupported, other), NamingStrategy.Plex)
 
         assertEquals("tt0133093", service.lookUp(matrix).getOrThrow()?.imdbId)
-    }
-
-    @Test
-    fun `cache looks up each key once including misses`() = runTest {
-        val cache = MetadataCache()
-        var lookups = 0
-
-        repeat(3) { assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; Result.success(breakingBadIds) }.getOrThrow()) }
-        repeat(3) { assertNull(cache.getOrPutExternalIds("movie:603") { lookups++; Result.success(null) }.getOrThrow()) }
-
-        assertEquals(2, lookups)
-    }
-
-    @Test
-    fun `cache looks a failed lookup up again`() = runTest {
-        val cache = MetadataCache()
-        var lookups = 0
-
-        repeat(2) {
-            val result = cache.getOrPutExternalIds("tv:1396") { lookups++; Result.failure(IllegalStateException("HTTP 503")) }
-            assertIs<IllegalStateException>(result.exceptionOrNull())
-        }
-        assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; Result.success(breakingBadIds) }.getOrThrow())
-        assertEquals(breakingBadIds, cache.getOrPutExternalIds("tv:1396") { lookups++; Result.success(null) }.getOrThrow())
-
-        assertEquals(3, lookups)
     }
 }

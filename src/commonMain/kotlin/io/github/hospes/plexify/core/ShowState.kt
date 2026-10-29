@@ -20,13 +20,6 @@ internal sealed interface ShowKey {
     data class ById private constructor(val id: String, val title: String, val year: String?) : ShowKey {
         constructor(id: MediaId, title: String, year: String?) : this(id.toString(), title, year)
     }
-
-    /** The key [io.github.hospes.plexify.data.MetadataCache] keeps the show's matches under. */
-    val cacheKey: String
-        get() = when (this) {
-            is Searched -> "$title:$year"
-            is ById -> "id:$id:$title:$year"
-        }
 }
 
 /** A release season of the show [show] names: the season its files are filed in, as named or defaulted. */
