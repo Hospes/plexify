@@ -4,8 +4,10 @@ import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MatchRankerTest {
 
@@ -312,5 +314,95 @@ class MatchRankerTest {
 
         assertEquals("none of 1 provider result(s) resembled the title", ranking.miss)
         assertEquals("Candidate: 'The Kingdoms of Ruin (2023)' | Discarded (title similarity too low)", ranking.trace.last())
+    }
+
+    private fun movie(title: String, year: String?, confidence: Double = 100.0) =
+        MediaSearchResult.Movie(title, year, tmdbId = "$title $year", provider = "TMDb", matchConfidence = confidence)
+
+    private fun show(title: String, year: String?, id: String, confidence: Double = 100.0) =
+        MediaSearchResult.TvShow(title, year, tmdbId = id, provider = "TMDb", matchConfidence = confidence)
+
+    private fun MatchRanker.aliasesCanChangeWinner(results: List<MediaSearchResult>, parsedTitle: String, parsedYear: String?) =
+        aliasesCanChangeWinner(results, results.awaitingAliases(), parsedTitle, parsedYear)
+
+    @Test
+    fun `aliases can make a later remake beat an exact title from an earlier year`() {
+        // Live TMDB data (October 2026): the 2024 series is "Spice and Wolf (2024)" only by an alias. The 2008 one
+        // scores 10 + 3.5 (a show that started 16 years before the file's year) + 5 = 18.5, and the 2024 one could
+        // reach 10 + 10 + 5 with its alias, so its alias is looked up and it wins.
+        val results = listOf(
+            show("Spice and Wolf", "2008", "26707"),
+            show("Spice and Wolf: MERCHANT MEETS THE WISE WOLF", "2024", "229676", calculateTitleConfidence("spice and wolf", "Spice and Wolf: MERCHANT MEETS THE WISE WOLF")),
+        )
+        assertTrue(ranker.aliasesCanChangeWinner(results, "spice and wolf", "2024"))
+
+        val withAlias = results.mapIndexed { index, result ->
+            if (index == 0) result else (result as MediaSearchResult.TvShow).copy(alternativeTitles = listOf("Spice and Wolf (2024)"), matchConfidence = 75.0)
+        }
+        assertEquals("229676", (ranker.rank(withAlias, "spice and wolf", "2024").matches.first().media as CanonicalMedia.TvShow).tmdbId)
+    }
+
+    @Test
+    fun `no alias can beat an exact title from the file's year`() {
+        // "Inception" (2010) scores 25; the documentary from 2010 could reach 25 too, but comes later, and the earlier wins a tie.
+        val results = listOf(movie("Inception", "2010"), movie("The Inception of Inception", "2010", confidence = 40.0))
+
+        assertFalse(ranker.aliasesCanChangeWinner(results, "inception", "2010"))
+        assertTrue(ranker.aliasesCanChangeWinner(results.reversed(), "inception", "2010"))
+    }
+
+    @Test
+    fun `without a year an exact title keeps its place only ahead of the results that await aliases`() {
+        val exact = movie("Dark Angel", null)
+        val awaiting = movie("Black Seraph", null, confidence = 30.0)
+
+        assertFalse(ranker.aliasesCanChangeWinner(listOf(exact, awaiting), "dark angel", null))
+        assertTrue(ranker.aliasesCanChangeWinner(listOf(awaiting, exact), "dark angel", null))
+    }
+
+    @Test
+    fun `a result whose year rules it out can't change the winner`() {
+        // The 1931 Dracula awaits aliases, but its year contradicts the file's, or the user's.
+        val results = listOf(movie("Dracula", "1974", confidence = 90.0), movie("Drácula", "1931", confidence = 40.0))
+
+        assertFalse(ranker.aliasesCanChangeWinner(results, "dracula", "1974"))
+        assertFalse(MatchRanker(yearOverride = "1974").aliasesCanChangeWinner(results, "dracula", null))
+    }
+
+    @Test
+    fun `aliases are looked up for a winner that awaits them itself`() {
+        // Below the alias threshold the winner gets a lookup itself, which may name its seasons.
+        val results = listOf(movie("S.W.A.T.", "2003", confidence = MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD - 10))
+
+        assertTrue(ranker.aliasesCanChangeWinner(results, "SWAT", "2003"))
+    }
+
+    @Test
+    fun `without a winner aliases are looked up when a result awaits them`() {
+        // A romaji title: only the alias matches.
+        assertTrue(ranker.aliasesCanChangeWinner(listOf(kingdomsOfRuin()), "hametsu no oukoku", null))
+        // Nothing awaits aliases, so a lookup can't change the miss.
+        assertFalse(ranker.aliasesCanChangeWinner(listOf(movie("Hametsu", "2001", confidence = 60.0)), "hametsu no oukoku", null))
+    }
+
+    @Test
+    fun `only the results that would get a lookup count`() {
+        // The fourth weak result gets no lookup (MAX_ALT_TITLES_LOOKUPS), so it can't take the winner's place, though it
+        // could tie with it and comes first.
+        val weak = (1..3).map { movie("Unrelated $it", "1990", confidence = 10.0) }
+        val results = weak + movie("Black Seraph", "2000", confidence = 10.0) + movie("Dark Angel", "2000")
+
+        assertFalse(ranker.aliasesCanChangeWinner(results, "dark angel", "2000"))
+    }
+
+    @Test
+    fun `only the matches the caller accepts count`() {
+        // A caller that takes only a film whose title has the year: "Dracula" is not one, so the exact title doesn't
+        // keep "Count Dracula 1974" from winning by an alias.
+        val results = listOf(movie("Dracula", null), movie("Count Dracula 1974", null, confidence = 40.0))
+        val namesYear = { media: CanonicalMedia -> "1974" in (media as CanonicalMedia.Movie).title }
+
+        assertFalse(ranker.aliasesCanChangeWinner(results, results.awaitingAliases(), "dracula", null))
+        assertTrue(ranker.aliasesCanChangeWinner(results, results.awaitingAliases(), "dracula", null, namesYear))
     }
 }

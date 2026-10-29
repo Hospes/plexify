@@ -20,6 +20,8 @@ internal class RankedMatch(
     val namesUnplacedArc: Boolean = false,
     /** Its match score; at least the confidence minimum. */
     val score: Double = 0.0,
+    /** The search results it consolidates. */
+    val results: List<MediaSearchResult> = emptyList(),
 )
 
 /** A season named by its own title, e.g. an anime arc: "Kimetsu no Yaiba: Hashira Geiko-hen" is season 5. */
@@ -132,8 +134,62 @@ internal class MatchRanker(private val yearOverride: String? = null) {
         val matches = scoredGroups
             .filter { it.score >= MatchScoring.MINIMUM_CONFIDENCE_SCORE }
             .sortedByDescending { it.score }
-            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason, it.namesUnplacedArc, it.score) }
+            .map { RankedMatch(consolidate(it.group, parsedYear), it.similarity, it.yearScore, it.titleSeason, it.namesUnplacedArc, it.score, it.group) }
         return Ranking(matches, miss = null, trace = trace)
+    }
+
+    /**
+     * Whether looking up the aliases of the [awaiting] results (see [awaitingAliases]) could change which of [results]
+     * wins for [parsedTitle] and [parsedYear], among the matches [accepts] keeps. A lookup costs a request per result,
+     * so it is made only when it could.
+     *
+     * Without a winner it could, when one of [results] awaits aliases: an alias may be the only title that matches (an
+     * anime searched by its romaji title: "Hametsu no Oukoku" is *The Kingdoms of Ruin*), and it changes why nothing
+     * matched. With one, aliases change only the scores of the results that await them, to at most an exact title and
+     * full provider confidence at their own year (see [bestScore]). The winner then keeps its place when every awaiting
+     * result's best is below its score, or equal to it and later in [results], since the earlier one wins a tie. A
+     * winner that awaits aliases itself never does: under the alias threshold, its own best is above its score. So the
+     * winner, its score and the season its title names are what the lookups would give.
+     * Runner-ups may differ: a result that only an alias names as closely as the winner is no fallback show (see
+     * `MediaProcessor.canStandInFor`) without the lookup.
+     */
+    fun aliasesCanChangeWinner(
+        results: List<MediaSearchResult>,
+        awaiting: List<MediaSearchResult>,
+        parsedTitle: String,
+        parsedYear: String?,
+        accepts: (CanonicalMedia) -> Boolean = { true },
+    ): Boolean {
+        val groups = results.groupBy { it.candidateKey }
+        val awaitingGroups = groups.values.filter { group -> group.any { it in awaiting } && accepts(consolidate(group, parsedYear)) }
+        if (awaitingGroups.isEmpty()) return false
+
+        val winner = rank(results, parsedTitle, parsedYear).matches.firstOrNull { accepts(it.media) } ?: return true
+        val order = groups.keys.toList()
+        val winnerIndex = order.indexOf(winner.results.first().candidateKey)
+        return awaitingGroups.any { group ->
+            val best = bestScore(group, parsedYear) ?: return@any false
+            best > winner.score || (best == winner.score && order.indexOf(group.first().candidateKey) < winnerIndex)
+        }
+    }
+
+    /**
+     * The most [group] can score once its aliases are known: title similarity 1.0 and provider confidence 100, with
+     * its own year, as [rank] adds them up. Null when its year rules it out (the user's year, or a contradiction).
+     */
+    private fun bestScore(group: List<MediaSearchResult>, parsedYear: String?): Double? {
+        val representative = group.first()
+        val candidateYear = representative.year?.toIntOrNull()
+        val overrideYear = yearOverride?.toIntOrNull()
+        if (overrideYear != null && candidateYear != null && candidateYear != overrideYear) return null
+        val parsedY = parsedYear?.toIntOrNull()
+        val yearScore = if (parsedY != null && candidateYear != null) {
+            yearScore(parsedY, candidateYear, isShow = representative is MediaSearchResult.TvShow)
+        } else null
+        if (yearScore != null && yearScore < 0) return null
+        return MatchScoring.TITLE_WEIGHT * 1.0 + (yearScore ?: 0.0) +
+                (group.distinctBy { it.provider }.size - 1) * MatchScoring.PROVIDER_AGREEMENT_BONUS +
+                100.0 / MatchScoring.PROVIDER_CONFIDENCE_DIVISOR
     }
 
     private class ScoredGroup(
@@ -193,6 +249,14 @@ internal class MatchRanker(private val yearOverride: String? = null) {
                 ?: "$type:$provider:$title:$year"
         }
 }
+
+/**
+ * The results whose aliases a provider looks up after a search: the first [MatchScoring.MAX_ALT_TITLES_LOOKUPS] that
+ * don't resemble the query by their own titles ([MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD]), in its order, of
+ * every kind of media.
+ */
+internal fun List<MediaSearchResult>.awaitingAliases(): List<MediaSearchResult> =
+    filter { it.matchConfidence < MatchScoring.ALT_TITLES_CONFIDENCE_THRESHOLD }.take(MatchScoring.MAX_ALT_TITLES_LOOKUPS)
 
 /** Merges one candidate's results across providers into a golden record with all their IDs. */
 internal fun consolidate(groupItems: List<MediaSearchResult>, parsedYear: String?): CanonicalMedia {

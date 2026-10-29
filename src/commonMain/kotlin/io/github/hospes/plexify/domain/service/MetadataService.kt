@@ -35,6 +35,22 @@ class MetadataService(
     suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> =
         searchAll { searchMovies(title, year) }
 
+    /**
+     * [results] of a search for [title], each provider's with the aliases it looks up for them (see
+     * [MetadataProvider.withAlternativeTitles]). Fails when a provider's lookups failed: its missing alias may be the match.
+     */
+    context(_: LoggingContext)
+    suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> {
+        // A result names its provider as the provider styles itself ("TMDb" for "tmdb"), so a provider whose results
+        // name it otherwise than its id, case aside, gets no lookups. A search lists each provider's results together,
+        // so grouping keeps their order.
+        val providers = resolveActiveProviders().associateBy { it.id.lowercase() }
+        val withAliases = results.groupBy { it.provider.lowercase() }.flatMap { (providerId, found) ->
+            providers[providerId]?.withAlternativeTitles(found, title)?.getOrElse { return Result.failure(it) } ?: found
+        }
+        return Result.success(withAliases)
+    }
+
     context(_: LoggingContext)
     private suspend fun searchAll(
         query: suspend MetadataProvider.() -> Result<List<MediaSearchResult>>,

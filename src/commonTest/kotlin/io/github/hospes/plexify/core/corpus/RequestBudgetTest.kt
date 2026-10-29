@@ -17,22 +17,22 @@ import kotlin.test.assertEquals
  */
 class RequestBudgetTest {
 
-    // One search for the show, then the episodes find it in the show cache (by title and year). The search looks up
-    // the alternative titles of the three results whose titles don't resemble "breaking bad" (El Camino, Breaking Bad
-    // Fortune Teller, ISMO – Breaking Bad English). The season is fetched whole for the first episode and cached for
+    // One search for the show, then the episodes find it in the show cache (by title and year). A result is named
+    // "Breaking Bad", and no alias could make another one score as high and come first, so no alternative titles are
+    // looked up (MatchRanker.aliasesCanChangeWinner). The season is fetched whole for the first episode and cached for
     // the other two.
     @Test
     fun `one season of a show`() = budget(
         sceneNames.filter { it.startsWith("Breaking Bad S01/") },
-        "2 movie/{id}/alternative_titles, 1 search/multi, 1 tv/{id}/alternative_titles, 1 tv/{id}/season/{id}",
+        "1 search/multi, 1 tv/{id}/season/{id}",
     )
 
     // Four release folders of one show, three episodes each (four in Yuukaku-hen): each folder's title is its own
     // search, since shows are cached by the title searched, so the same show is searched four times. Its title
-    // ("Demon Slayer: Kimetsu no Yaiba") doesn't resemble any of the four queries, so each search looks up its
-    // alternative titles again, which also name the arc's season ("Kimetsu no Yaiba: Yuukaku-hen", "Season 3
-    // Romaji"); the plain-title search (the first folder) also looks up those of the two films it returns. One fetch
-    // per season (1, 2, 3, 5), cached for the folder's other episodes.
+    // ("Demon Slayer: Kimetsu no Yaiba") doesn't resemble any of the four queries, and no result is named like them,
+    // so each search looks up its alternative titles again, which also name the arc's season ("Kimetsu no Yaiba:
+    // Yuukaku-hen", "Season 3 Romaji"); the plain-title search (the first folder) also looks up those of the two films
+    // it returns. One fetch per season (1, 2, 3, 5), cached for the folder's other episodes.
     @Test
     fun `an arc show`() = budget(
         animeNames.filter { it.startsWith("Kimetsu") },
@@ -51,21 +51,22 @@ class RequestBudgetTest {
     )
 
     // The general search doesn't return the 1974 Dracula (TMDB has many), so the movie is searched again with its year.
-    // Each search looks up the alternative titles of its first three results whose titles don't resemble "dracula": the
-    // general search has more such results, the rest left out (MAX_ALT_TITLES_LOOKUPS); the year search has three.
+    // The general search's Draculas are from other years, so it looks up the alternative titles of its first three
+    // results whose titles don't resemble "dracula" (MAX_ALT_TITLES_LOOKUPS), in case one is the 1974 film by an alias.
+    // The year search finds "Dracula" (1974) itself, and no alias could make another result beat it, so it looks up
+    // none.
     @Test
     fun `a movie with a year retry`() = budget(
         listOf("Dracula.1974.720p.BluRay.mkv"),
-        "4 movie/{id}/alternative_titles, 1 search/movie, 1 search/multi, 2 tv/{id}/alternative_titles",
+        "1 movie/{id}/alternative_titles, 1 search/movie, 1 search/multi, 2 tv/{id}/alternative_titles",
     )
 
-    // The second version searches again, alternative-titles lookups and all: movie searches aren't cached (P3-2 will
-    // change this). Each search looks up the alternative titles of the first three of the five results that don't
-    // resemble "inception" (MAX_ALT_TITLES_LOOKUPS).
+    // The second version searches again: movie searches aren't cached (P3-2 will change this). A result is "Inception"
+    // (2010), which no alias could beat, so neither search looks up alternative titles.
     @Test
     fun `a movie in two versions`() = budget(
         listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
-        "6 movie/{id}/alternative_titles, 2 search/multi",
+        "2 search/multi",
     )
 
     // The two runs above with the Plex template, which names the IMDb ID: the searches and season are the same, plus
@@ -75,8 +76,7 @@ class RequestBudgetTest {
     fun `a plex run`() = budget(
         sceneNames.filter { it.startsWith("Breaking Bad S01/") } +
             listOf("Inception.2010.1080p.BluRay.x264-YTS.mkv", "Inception.2010.1080p.BluRay.x264-SPARKS.mkv"),
-        "8 movie/{id}/alternative_titles, 1 movie/{id}/external_ids, 3 search/multi, 1 tv/{id}/alternative_titles, " +
-            "1 tv/{id}/external_ids, 1 tv/{id}/season/{id}",
+        "1 movie/{id}/external_ids, 3 search/multi, 1 tv/{id}/external_ids, 1 tv/{id}/season/{id}",
         NamingStrategy.Plex,
     )
 

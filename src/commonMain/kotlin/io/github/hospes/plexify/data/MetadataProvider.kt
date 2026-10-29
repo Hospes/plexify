@@ -19,6 +19,15 @@ interface MetadataProvider {
     suspend fun searchMovies(title: String, year: String): Result<List<MediaSearchResult>> = Result.success(emptyList())
 
     /**
+     * [results], this provider's answer to a [search] or [searchMovies] for [title], with the aliases its search results
+     * don't carry (translations, romanizations), for the results that need them. The caller asks only when the aliases
+     * could change the match (MatchRanker.aliasesCanChangeWinner). Fails when a lookup failed and the missing alias may
+     * be the match.
+     */
+    suspend fun withAlternativeTitles(results: List<MediaSearchResult>, title: String): Result<List<MediaSearchResult>> =
+        Result.success(results)
+
+    /**
      * The movie [id] names, with every title it is known by and its IMDb ID when the provider has them; its
      * [MediaSearchResult.matchConfidence] is 0. Fails with [MetadataNotFoundException] when there is no such movie.
      */

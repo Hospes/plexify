@@ -31,6 +31,10 @@ internal fun mockProvider(
     handler: MockRequestHandler,
 ) = TmdbProvider(credentials, timeouts) { MockEngine(handler) }
 
+/** A `search/multi` for [title] with the alternative-titles lookups the processor asks for when they could change the match. */
+internal suspend fun TmdbProvider.searchWithAliases(title: String) =
+    search(title, null).fold(onSuccess = { withAlternativeTitles(it, title) }, onFailure = { Result.failure(it) })
+
 /**
  * Runs [block] within [millis] of real time. Ktor's timeouts and retry delays run outside a test scheduler, and a
  * regression should fail the test, not hang the build.
