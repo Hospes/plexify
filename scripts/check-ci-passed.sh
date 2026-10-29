@@ -2,13 +2,15 @@
 # ==============================================================================
 # Release gate: CI passed on the tagged commit
 #
-# The release workflow runs this first, so a tag on a commit whose CI failed, was
-# never run, or never finished ships nothing. It passes once the latest GitHub
-# Actions check run of each required check concluded `success` on the commit.
+# The release workflow runs this first, so a tag on a commit that is not on main, or
+# whose CI failed, was never run, or never finished, ships nothing. It passes once the
+# commit is on main and the latest GitHub Actions check run of each required check
+# concluded `success` on it.
 #
 # A tag pushed right after a merge finds CI still running on that commit, so the
 # gate waits for it, up to WAIT_SECONDS. A check that never appears (a commit CI did
-# not run on) fails after APPEAR_SECONDS, and a failed check fails at once.
+# not run on) fails after APPEAR_SECONDS, unless a CI run for the commit is still
+# pending; a failed check fails at once.
 #
 # Every failure is an ::error:: annotation and a line in the job summary that says
 # what to do next.
@@ -17,7 +19,7 @@
 #   GH_REPO=owner/repo scripts/check-ci-passed.sh <commit-sha>
 # Tunable (for testing): CI_WAIT_SECONDS, CI_APPEAR_SECONDS, CI_POLL_SECONDS.
 # ==============================================================================
-set -uo pipefail
+set -euo pipefail
 
 # The job names in .github/workflows/ci.yml, which are the required status checks of
 # the "main – safety" ruleset. Renaming a job there means renaming it here too.
@@ -56,8 +58,30 @@ latest_runs() {
     END { for (name in last) print last[name] }'
 }
 
+# Whether a CI run for a push of the commit exists and hasn't finished. Its check
+# runs can be missing until it starts: ci.yml's concurrency group holds the run of a
+# second, quick push to main as pending until the first one finishes. An API error
+# counts as no, which leaves the APPEAR_SECONDS limit in charge.
+ci_run_pending() {
+  local count
+  count="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$sha&event=push&per_page=100"     --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status != "completed")]
+          | length')" || return 1
+  [ "$count" -gt 0 ]
+}
+
 # Joins its arguments with "; ".
 join() { local out; out="$(printf '%s; ' "$@")"; printf '%s' "${out%; }"; }
+
+# The tree CI tested must be the tree released. A pull request's checks test its
+# merge with the main of that time, not its head, and a fork's pull request runs its
+# own ci.yml; so only a commit on main counts: its tip or an ancestor.
+if ! on_main="$(gh api "repos/$GH_REPO/compare/main...$sha" --jq .status)"; then
+  fail "Could not read CI results" "$sha could not be compared with main through the GitHub API. Re-run this workflow."
+fi
+case "$on_main" in
+  identical | behind) ;;
+  *) fail "Tag is not on main" "$sha is not on main (compared with main it is '$on_main'), so its CI results, if any, did not test this tree. Nothing was built or published. Tag a commit on main." ;;
+esac
 
 start=$SECONDS
 api_failures=0
@@ -96,8 +120,8 @@ while true; do
   fi
 
   elapsed=$((SECONDS - start))
-  if [ ${#missing[@]} -gt 0 ] && [ "$elapsed" -ge "$APPEAR_SECONDS" ]; then
-    fail "No CI run for this commit" "$sha has no '${missing[0]}' check from GitHub Actions. CI runs on each push to main and tests only the commit pushed, so a commit from the middle of a merged pull request has none. Tag the tip of main once its CI is green."
+  if [ ${#missing[@]} -gt 0 ] && [ "$elapsed" -ge "$APPEAR_SECONDS" ] && ! ci_run_pending; then
+    fail "No CI run for this commit" "$sha has no '${missing[0]}' check from GitHub Actions, and no CI run for it is pending. CI runs on each push to main and tests only the commit pushed, so a commit from the middle of a merged pull request has none. Tag the tip of main once its CI is green."
   fi
   if [ "$elapsed" -ge "$WAIT_SECONDS" ]; then
     fail "CI still running" "CI on $sha did not finish within $((WAIT_SECONDS / 60)) minutes (waiting for: $(join "${waiting[@]}")). Once it is green, re-run this workflow."

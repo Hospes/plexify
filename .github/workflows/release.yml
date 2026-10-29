@@ -1,9 +1,9 @@
 name: Release
 
-# Pushing a semver tag (e.g. 0.2.1) is the whole release. A gate first checks that CI
-# passed on the tagged commit; then binaries are built and the notes are written in
-# parallel; the GitHub release is created last, with both, so a release never appears
-# with missing downloads.
+# Pushing a semver tag (e.g. 0.2.1) is the whole release. A gate first checks that the
+# tagged commit is on main and that CI passed on it; then binaries are built and the
+# notes are written in parallel; the GitHub release is created last, with both, so a
+# release never appears with missing downloads.
 on:
   push:
     tags:
@@ -21,11 +21,11 @@ env:
   GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=2g -Xmx6g"
 
 jobs:
-  # Releases only a commit that CI tested: the two required checks of ci.yml must have
-  # concluded success on the tagged commit (their latest run each, so a re-run counts).
-  # A tag pushed right after a merge finds CI still running there, so this waits for
-  # it (up to 40 minutes, see the script) rather than failing a release that would
-  # pass a few minutes later. Every other job needs this one, so a commit that fails
+  # Releases only a commit that CI tested: the tagged commit must be on main, and the
+  # two required checks of ci.yml must have concluded success on it (their latest run
+  # each, so a re-run counts). A tag pushed right after a merge finds CI still running
+  # there, so this waits for it (up to 40 minutes, see the script) rather than failing
+  # a release that would pass a few minutes later. Every other job needs this one, so a commit that fails
   # it spends no build minutes. After a failure, re-run this workflow once CI is green:
   # a re-run uses this file as it is at the tagged commit.
   ci-passed:
@@ -33,8 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      checks: read
-      contents: read
+      actions: read   # whether a CI run for the commit is still pending
+      checks: read    # the check runs of the commit
+      contents: read  # the checkout, and comparing the commit with main
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
