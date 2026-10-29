@@ -1,10 +1,7 @@
 package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.domain.matching.MatchRanker
-import io.github.hospes.plexify.domain.matching.RankedMatch
-import io.github.hospes.plexify.domain.matching.format
 import io.github.hospes.plexify.domain.model.CanonicalMedia
-import io.github.hospes.plexify.domain.model.MediaSearchResult
 import io.github.hospes.plexify.domain.model.OperationMode
 import io.github.hospes.plexify.domain.model.ParsedMediaInfo
 import io.github.hospes.plexify.domain.model.withOverrides
@@ -40,6 +37,8 @@ class MediaProcessor(
     private val showStates = ShowStates()
 
     private val showMatcher = ShowMatcher(metadata, search, showStates, titleOverride, yearOverride)
+
+    private val movieMatcher = MovieMatcher(metadata, search, titleOverride, yearOverride)
 
     private val episodeResolver = EpisodeResolver(metadata, showStates)
 
@@ -124,101 +123,24 @@ class MediaProcessor(
     ) = indent {
         debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
-        val movieById = findMovieById(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }
-        if (movieById != null) {
-            debug("Found match: $movieById")
-            organizeFile(source, destination, movieById, parsedInfo, mode, isTestMode)
-            return@indent
-        }
-
-        val title = parsedInfo.title
-        val (results, ranking) = lookUpMovie(title, parsedInfo.year)
-            .getOrElse { error -> return@indent lookupFailed(source, error) }
-
-        if (results.isEmpty()) {
-            status("✗ ${source.name} — no metadata found for '$title'")
-            stats.skipped++
-            return@indent
-        }
-
-        val canonicalMovie = (ranking.firstOrNull()?.media as? CanonicalMedia.Movie)?.let { metadata.withImdbId(it) }
-            ?.getOrElse { error -> return@indent lookupFailed(source, error) }
-
-        if (canonicalMovie == null) {
-            status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
-            stats.skipped++
-            return@indent
-        }
-
-        debug("Found match: $canonicalMovie")
-        organizeFile(source, destination, canonicalMovie, parsedInfo, mode, isTestMode)
-    }
-
-    /**
-     * Every movie result found for [title] and [year], with the ranked candidates. Fails when a search
-     * failed and nothing else found a candidate.
-     *
-     * The general search returns one page and ignores the year, so when its best match is not from
-     * the filename year, two more searches follow. The same title searched with the year finds a
-     * remade film missing from that page. Then, unless the user set the title or the year, the year
-     * is read as part of the title ("Wonder.Woman.1984.1080p"), and that match wins if it scores higher.
-     */
-    context(_: LoggingContext)
-    private suspend fun lookUpMovie(
-        title: String,
-        year: String?,
-    ): Result<Pair<List<MediaSearchResult>, List<RankedMatch>>> {
-        val first = search.searchFor<MediaSearchResult.Movie>(title, year) { metadata.search(title, year) }
-            .getOrElse { return Result.failure(it) }
-        val firstRanking = search.rank(first, title, year, reportMiss = year == null).matches
-        if (year == null || firstRanking.bestYear() == year) return Result.success(first to firstRanking)
-
-        // A search that fails after an earlier one found a candidate is left out; with no candidate
-        // yet, it decides the file.
-        suspend fun moviesUnlessFailed(found: List<RankedMatch>, searchMovies: suspend () -> Result<List<MediaSearchResult.Movie>>) =
-            searchMovies().fold(
-                onSuccess = { Result.success(it) },
-                onFailure = { error ->
-                    if (found.isEmpty()) return@fold Result.failure(error)
-                    debug("Search failed: ${error.message}")
-                    Result.success(emptyList())
-                },
-            )
-
-        debug("No match from $year among the first results; searching again with the year")
-        val byYear = moviesUnlessFailed(firstRanking) {
-            search.searchFor<MediaSearchResult.Movie>(title, year) { metadata.searchMovies(title, year) }
-        }
-            .getOrElse { return Result.failure(it) }
-        val merged = (first + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
-        val fullRanking = search.rank(merged, title, year, reportMiss = false)
-        val ranking = fullRanking.matches
-
-        if (ranking.bestYear() != year && titleOverride == null && yearOverride == null) {
-            val joinedTitle = "$title $year"
-            // Only a film whose title has the year: the reading has no year to rule out the namesakes
-            // the first one rejected ("Dracula" for "Dracula 1974").
-            val namesYear = { media: CanonicalMedia -> year in (media as CanonicalMedia.Movie).title }
-            debug("Still no match from $year; trying '$joinedTitle' as the whole title")
-            val joined = moviesUnlessFailed(ranking) {
-                search.searchFor<MediaSearchResult.Movie>(joinedTitle, null, namesYear) { metadata.search(joinedTitle, null) }
+        val movie = when (val match = movieMatcher.match(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }) {
+            is MovieMatcher.Match.Found -> match.movie
+            MovieMatcher.Match.NoResults -> {
+                status("✗ ${source.name} — no metadata found for '${parsedInfo.title}'")
+                stats.skipped++
+                return@indent
             }
-                .getOrElse { return Result.failure(it) }
-            val joinedRanking = search.rank(joined, joinedTitle, null, reportMiss = false).matches.filter { namesYear(it.media) }
-            val joinedScore = joinedRanking.firstOrNull()?.score
-            if (joinedScore != null && joinedScore > (ranking.firstOrNull()?.score ?: 0.0)) {
-                debug("'$joinedTitle' matches better (${joinedScore.format(2)})")
-                return Result.success(merged + joined to joinedRanking)
+
+            MovieMatcher.Match.NoConfidentMatch -> {
+                status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
+                stats.skipped++
+                return@indent
             }
-            if (ranking.isEmpty()) search.reportMiss(fullRanking, title)
-            return Result.success(merged + joined to ranking)
         }
 
-        if (ranking.isEmpty()) search.reportMiss(fullRanking, title)
-        return Result.success(merged to ranking)
+        debug("Found match: $movie")
+        organizeFile(source, destination, movie, parsedInfo, mode, isTestMode)
     }
-
-    private fun List<RankedMatch>.bestYear(): String? = (firstOrNull()?.media as? CanonicalMedia.Movie)?.year?.toString()
 
     context(_: LoggingContext)
     private suspend fun processEpisode(
@@ -264,21 +186,6 @@ class MediaProcessor(
     private fun lookupFailed(source: Path, error: Throwable) {
         status("✗ ${source.name} — ${error.message}")
         stats.failed++
-    }
-
-    /**
-     * The movie the ID in the path names ([ParsedMediaInfo.mediaId]), with its external IDs; null when the path names
-     * none or it isn't this file's movie (see [MatchSearch.rankById]), so the title is searched. Fails when the lookup failed.
-     */
-    context(_: LoggingContext)
-    private suspend fun findMovieById(parsed: ParsedMediaInfo.Movie): Result<CanonicalMedia.Movie?> = indent {
-        val id = parsed.mediaId ?: return@indent Result.success(null)
-        debug("Looking up the movie $id in the path")
-        val record = metadata.findMovie(id).getOrElse { return@indent Result.failure(it) }
-        val movie = (search.rankById(id, record, "movie", parsed.title, parsed.year)?.media as? CanonicalMedia.Movie)
-            ?.let { metadata.withImdbId(it) }?.getOrElse { return@indent Result.failure(it) }
-        if (movie != null) status("Matched movie by the ID in its path: ${movie.describe()}")
-        Result.success(movie)
     }
 
     context(ctx: LoggingContext)
