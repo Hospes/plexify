@@ -21,7 +21,10 @@ data class TmdbFindResponseDto(
     @SerialName("tv_results") val shows: List<TmdbMediaItemDto.TvShow> = emptyList(),
 )
 
-/** `movie/{id}` with `append_to_response=alternative_titles`; the details carry the IMDb ID themselves. */
+/**
+ * `movie/{id}` with `append_to_response=alternative_titles`; the details carry the IMDb ID themselves. TMDB always sends
+ * the `imdb_id` key (null when it has none), so a missing key reads as none, as in [TmdbExternalIdsDto].
+ */
 @Serializable
 data class TmdbMovieDetailsDto(
     @SerialName("id") val id: String,
@@ -32,13 +35,13 @@ data class TmdbMovieDetailsDto(
     @SerialName("alternative_titles") val alternativeTitles: TmdbAlternativeTitlesDto = TmdbAlternativeTitlesDto(),
 )
 
-/** `tv/{id}` with `append_to_response=alternative_titles,external_ids`. */
+/** `tv/{id}` with `append_to_response=alternative_titles,external_ids`; [externalIds] is null when they didn't come. */
 @Serializable
 data class TmdbTvDetailsDto(
     @SerialName("id") val id: String,
     @SerialName("name") val title: String,
     @SerialName("original_name") val originalTitle: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
-    @SerialName("external_ids") val externalIds: TmdbExternalIdsDto = TmdbExternalIdsDto(),
+    @SerialName("external_ids") val externalIds: TmdbExternalIdsDto? = null,
     @SerialName("alternative_titles") val alternativeTitles: TmdbAlternativeTitlesDto = TmdbAlternativeTitlesDto(),
 )

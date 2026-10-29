@@ -96,7 +96,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
     movie(57656, "Dangerous Days: Making Blade Runner", 2007) {
         noDecidingAliases()
     }
-    movie(1311031, "Demon Slayer: Kimetsu no Yaiba Infinity Castle", 2025, original = "劇場版「鬼滅の刃」無限城編 第一章 猗窩座再来") {
+    movie(1311031, "Demon Slayer: Kimetsu no Yaiba Infinity Castle", 2025, original = "劇場版「鬼滅の刃」無限城編 第一章 猗窩座再来", imdb = "tt32820897") {
         alias("Gekijōban Kimetsu no Yaiba Mugenjō-hen", type = "romaji")
         alias("Gekijouban Kimetsu no Yaiba Mugenjou-hen", type = "romaji")
         alias("Kimetsu no Yaiba: Mugenjou-hen", type = "romaji")
@@ -113,7 +113,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
         alias("Gekijo-ban Kimetsu No Yaiba Mugen Jo-hen", type = "romanized")
         alias("Demon Slayer: Kimetsu no Yaiba Infinity Castle I", type = "new title")
     }
-    movie(1141171, "Demon Slayer: Kimetsu no Yaiba ON STAGE", 2023) {
+    movie(1141171, "Demon Slayer: Kimetsu no Yaiba ON STAGE", 2023, imdb = NO_IMDB_ID) {
         noDecidingAliases()
     }
     movie(339102, "Devil May Cry", null)
@@ -135,7 +135,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
     movie(1246049, "Dracula", 2025)
     movie(1655673, "Dracula", 2002)
     movie(10577, "Dracula 2000", 2000)
-    movie(49017, "Dracula Untold", 2014) {
+    movie(49017, "Dracula Untold", 2014, imdb = "tt0829150") {
         noDecidingAliases()
     }
     movie(841, "Dune", 1984)
@@ -346,7 +346,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
         alias("The Matrix 3", type = "working title")
         alias("Matrix 3")
     }
-    movie(622, "The Ninth Gate", 1999) {
+    movie(622, "The Ninth Gate", 1999, imdb = "tt0142688") {
         noDecidingAliases()
     }
     movie(1156529, "The Oppenheimer Case", 1970, original = "Slučaj Openhajmer")
@@ -354,7 +354,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
         alias("Le cas Oppenheimer")
     }
     movie(1230570, "The Real Oppenheimer", 2023)
-    movie(934809, "The Road to El Camino: Behind the Scenes of El Camino: A Breaking Bad Movie", 2019) {
+    movie(934809, "The Road to El Camino: Behind the Scenes of El Camino: A Breaking Bad Movie", 2019, imdb = "tt11151792") {
         noDecidingAliases()
     }
     movie(336592, "The Science of Interstellar", 2014) {
@@ -410,7 +410,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
     }
     movie(127585, "X-Men: Days of Future Past", 2014)
     tv(324407, "...And Justice for All", null)
-    tv(108847, "AEW Dark", 2019) {
+    tv(108847, "AEW Dark", 2019, imdb = "tt11092482") {
         noDecidingAliases()
     }
     tv(234586, "Barbie Mysteries", 2024) {
@@ -436,10 +436,10 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
         alias("DARK")
         season(1, 1..10)
     }
-    tv(196322, "Dark Matter", 2024) {
+    tv(196322, "Dark Matter", 2024, imdb = "tt19231492") {
         noDecidingAliases()
     }
-    tv(2883, "Dark Shadows", 1966) {
+    tv(2883, "Dark Shadows", 1966, imdb = "tt0059978") {
         noDecidingAliases()
     }
     tv(85937, "Demon Slayer: Kimetsu no Yaiba", 2019, original = "鬼滅の刃", imdb = "tt9335498") {
@@ -614,10 +614,10 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
     tv(328571, "Kang vs the Avengers", 2023)
     tv(2332, "L.A. Heat", 1999)
     tv(318918, "LEGO ONE PIECE", 2026)
-    tv(42467, "Little Dracula", 1991) {
+    tv(42467, "Little Dracula", 1991, imdb = "tt0101135") {
         noDecidingAliases()
     }
-    tv(3051, "Lost in Space", 1965) {
+    tv(3051, "Lost in Space", 1965, imdb = "tt0058824") {
         noDecidingAliases()
     }
     tv(333622, "Magic Repo Man: Dumped by My Party, I'll Cash In with a Cute Support Fairy to Become the Strongest!", 2026, original = "貸した魔力は【リボ払い】で強制徴収", imdb = "tt43650419") {
@@ -881,7 +881,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
         noDecidingAliases()
         season(1, 1..24)
     }
-    tv(580, "Star Trek: Deep Space Nine", 1993) {
+    tv(580, "Star Trek: Deep Space Nine", 1993, imdb = "tt0106145") {
         alias("Star Trek: Espacio Profundo Nueve")
         alias("Star Trek: DS9", type = "abbreviation")
     }
@@ -905,12 +905,12 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
         noDecidingAliases()
         season(1, 1..8)
     }
-    tv(42509, "Steins;Gate", 2011) {
+    tv(42509, "Steins;Gate", 2011, imdb = "tt1910272") {
         alias("Steins;Gate")
         alias("Steins_Gate")
         alias("Steins Gate")
     }
-    tv(311882, "Tale Gate", 2026) {
+    tv(311882, "Tale Gate", 2026, imdb = NO_IMDB_ID) {
         noDecidingAliases()
     }
     tv(2473, "The Avengers", 1961)
@@ -997,7 +997,7 @@ internal val corpusTmdb: TmdbFixture.Answers = tmdbFixture {
     tv(668, "X-Men: Evolution", 2000) {
         alias("X-Men: Začátek")
     }
-    tv(3720, "Young Dracula", 2006) {
+    tv(3720, "Young Dracula", 2006, imdb = "tt0876219") {
         noDecidingAliases()
     }
 

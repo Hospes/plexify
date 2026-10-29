@@ -20,6 +20,8 @@ class MetadataService(
     private val providers: List<MetadataProvider>,
     private val namingStrategy: NamingStrategy,
 ) {
+    /** True when the naming template names the IMDb ID, so a match needs it ([getExternalIds]). */
+    val needsImdbId: Boolean get() = namingStrategy.needsImdbId
 
     /**
      * Results from every active provider. Fails with a provider's error (timeout, HTTP error, network
@@ -38,8 +40,9 @@ class MetadataService(
 
     /**
      * [results] of a search for [title], each provider's with the aliases it looks up for them (see
-     * [MetadataProvider.withAlternativeTitles]), through [cache]. Fails when a provider's lookups failed: its missing
-     * alias may be the match.
+     * [MetadataProvider.withAlternativeTitles]), through [cache]. When the template names the IMDb ID, a lookup brings
+     * the record's external IDs too where the same request can, for [cache] to keep, so the match may need no extra call
+     * for them ([getExternalIds]). Fails when a provider's lookups failed: its missing alias may be the match.
      */
     context(_: LoggingContext)
     suspend fun withAlternativeTitles(
@@ -52,7 +55,8 @@ class MetadataService(
         // so grouping keeps their order.
         val providers = resolveActiveProviders().associateBy { it.id.lowercase() }
         val withAliases = results.groupBy { it.provider.lowercase() }.flatMap { (providerId, found) ->
-            providers[providerId]?.withAlternativeTitles(found, title, cache)?.getOrElse { return Result.failure(it) } ?: found
+            providers[providerId]?.withAlternativeTitles(found, title, cache, withExternalIds = namingStrategy.needsImdbId)
+                ?.getOrElse { return Result.failure(it) } ?: found
         }
         return Result.success(withAliases)
     }

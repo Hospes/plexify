@@ -1,5 +1,7 @@
 package io.github.hospes.plexify.data.tmdb
 
+import io.github.hospes.plexify.data.AliasLookup
+import io.github.hospes.plexify.data.tmdb.dto.TmdbAlternativeTitlesDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbEpisodeGroupDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbExternalIdsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbMediaItemDto
@@ -7,6 +9,7 @@ import io.github.hospes.plexify.data.tmdb.dto.TmdbMovieDetailsDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbSeasonDto
 import io.github.hospes.plexify.data.tmdb.dto.TmdbTvDetailsDto
 import io.github.hospes.plexify.domain.matching.calculateTitleConfidence
+import io.github.hospes.plexify.domain.model.AlternativeTitles
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.ExternalIds
 import io.github.hospes.plexify.domain.model.MediaSearchResult
@@ -56,7 +59,7 @@ internal fun TmdbMovieDetailsDto.toDomainModel() = MediaSearchResult.Movie(
 internal fun TmdbTvDetailsDto.toDomainModel() = MediaSearchResult.TvShow(
     title = title,
     year = firstAirDate?.substringBefore("-")?.ifBlank { null },
-    imdbId = externalIds.imdbId?.ifBlank { null },
+    imdbId = externalIds?.imdbId?.ifBlank { null },
     tmdbId = id,
     provider = "TMDb",
     originalTitle = originalTitle,
@@ -105,3 +108,11 @@ internal fun TmdbEpisodeGroupDto.toDomainModel(
 )
 
 internal fun TmdbExternalIdsDto.toDomainModel() = ExternalIds(imdbId = imdbId?.ifBlank { null })
+
+internal fun TmdbAlternativeTitlesDto.toDomainModel() = AlternativeTitles(all.map { it.title }, seasonTitles())
+
+// A movie's details carry its IMDb ID themselves.
+internal fun TmdbMovieDetailsDto.toAliasLookup() =
+    AliasLookup(alternativeTitles.toDomainModel(), ExternalIds(imdbId = imdbId?.ifBlank { null }))
+
+internal fun TmdbTvDetailsDto.toAliasLookup() = AliasLookup(alternativeTitles.toDomainModel(), externalIds?.toDomainModel())
