@@ -829,6 +829,109 @@ class TranscriptTest {
     }
 
     @Test
+    fun `a title no reading of its year matches is reported after the last search`() = transcripts(
+        concise = """
+            |Processing directory: <source> (2 media files)
+            |  No match for 'dracula': 'Dracula (1931)' rejected (year does not match 1974)
+            |  ✗ Dracula.1974.1080p.mkv — no confident match for 'dracula'
+            |  No match for 'space': 'Space (2001)' rejected (year does not match 1999)
+            |  ✗ Space.1999.S01E01.mkv — no confident match for show 'space'
+            |Done: 0 organized, 2 skipped, 0 failed.
+        """,
+        verbose = """
+            |Processing directory: <source> (2 media files)
+            |  -> Processing: <source>/Dracula.1974.1080p.mkv
+            |    -> Parsed as Movie: Title='dracula', Year='1974'
+            |      -> Found 1 results from tmdb
+            |      -> Consolidating 1 results for title: 'dracula' year: '1974'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Discarded (year does not match 1974)
+            |      -> No match yet: 'Dracula (1931)' rejected (year does not match 1974)
+            |    -> No match from 1974 among the first results; searching again with the year
+            |      -> Found 0 results from tmdb
+            |      -> Consolidating 1 results for title: 'dracula' year: '1974'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Discarded (year does not match 1974)
+            |      -> No match yet: 'Dracula (1931)' rejected (year does not match 1974)
+            |    -> Still no match from 1974; trying 'dracula 1974' as the whole title
+            |      -> Found 1 results from tmdb
+            |      -> Consolidating 1 results for title: 'dracula 1974' year: 'null'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Score: 11.36
+            |      -> Best match selected: 'Dracula' with score 11.36
+            |      -> Consolidating 1 results for title: 'dracula' year: '1974'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Discarded (year does not match 1974)
+            |      -> No match for 'dracula': 'Dracula (1931)' rejected (year does not match 1974)
+            |    -> ✗ Dracula.1974.1080p.mkv — no confident match for 'dracula'
+            |---
+            |  -> Processing: <source>/Space.1999.S01E01.mkv
+            |    -> Parsed as TV Show: Show='space', Season: 1, Episode: 1
+            |      -> Cache MISS for show: 'space'. Searching providers...
+            |        -> Found 1 results from tmdb
+            |        -> Consolidating 1 results for title: 'space' year: '1999'
+            |        -> 1 unique media candidates found.
+            |        -> Candidate: 'Space (2001)' | Discarded (year does not match 1999)
+            |        -> No match yet: 'Space (2001)' rejected (year does not match 1999)
+            |      -> No show from 1999 matched; trying 'space 1999' as the whole title
+            |        -> Found 1 results from tmdb
+            |        -> Consolidating 1 results for title: 'space 1999' year: 'null'
+            |        -> 1 unique media candidates found.
+            |        -> Candidate: 'Space (2001)' | Score: 10.56
+            |        -> Best match selected: 'Space' with score 10.56
+            |        -> Consolidating 1 results for title: 'space' year: '1999'
+            |        -> 1 unique media candidates found.
+            |        -> Candidate: 'Space (2001)' | Discarded (year does not match 1999)
+            |        -> No match for 'space': 'Space (2001)' rejected (year does not match 1999)
+            |    -> ✗ Space.1999.S01E01.mkv — no confident match for show 'space'
+            |Done: 0 organized, 2 skipped, 0 failed.
+        """,
+    ) { verbose ->
+        // Neither the search with the year nor the year read as part of the title finds a match.
+        val space2001 = showResult("Space", "2001", "1")
+        val provider = FakeTmdb(
+            listOf(movieResult("Dracula", "1931", "138")),
+            resultsByTitle = mapOf("space" to listOf(space2001), "space 1999" to listOf(space2001)),
+        )
+        runProcessor(provider, "Dracula.1974.1080p.mkv", "Space.1999.S01E01.mkv", verbose = verbose, organizer = organizer())
+    }
+
+    @Test
+    fun `a movie the year set by the user rules out is reported after the search with the year`() = transcripts(
+        concise = """
+            |Processing directory: <source> (1 media files)
+            |  No match for 'dracula': 'Dracula (1931)' rejected (year does not match override 1974)
+            |  ✗ Dracula.1080p.mkv — no confident match for 'dracula'
+            |Done: 0 organized, 1 skipped, 0 failed.
+        """,
+        verbose = """
+            |Processing directory: <source> (1 media files)
+            |  -> Processing: <source>/Dracula.1080p.mkv
+            |    -> Parsed as Movie: Title='dracula', Year='1974'
+            |      -> Found 1 results from tmdb
+            |      -> Consolidating 1 results for title: 'dracula' year: '1974'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Discarded (year does not match override 1974)
+            |      -> No match yet: 'Dracula (1931)' rejected (year does not match override 1974)
+            |    -> No match from 1974 among the first results; searching again with the year
+            |      -> Found 0 results from tmdb
+            |      -> Consolidating 1 results for title: 'dracula' year: '1974'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Discarded (year does not match override 1974)
+            |      -> No match yet: 'Dracula (1931)' rejected (year does not match override 1974)
+            |      -> Consolidating 1 results for title: 'dracula' year: '1974'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Dracula (1931)' | Discarded (year does not match override 1974)
+            |      -> No match for 'dracula': 'Dracula (1931)' rejected (year does not match override 1974)
+            |    -> ✗ Dracula.1080p.mkv — no confident match for 'dracula'
+            |Done: 0 organized, 1 skipped, 0 failed.
+        """,
+    ) { verbose ->
+        val provider = FakeTmdb(listOf(movieResult("Dracula", "1931", "138")))
+        runProcessor(provider, "Dracula.1080p.mkv", yearOverride = "1974", verbose = verbose, organizer = organizer())
+    }
+
+    @Test
     fun `files with no match are skipped`() = transcripts(
         concise = """
             |Processing directory: <source> (5 media files)
