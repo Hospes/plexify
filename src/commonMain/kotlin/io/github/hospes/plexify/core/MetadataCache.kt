@@ -24,11 +24,11 @@ internal data class TmdbRecord(val type: Type, val id: String) {
 /**
  * An in-memory cache for metadata to avoid redundant API calls during a single run.
  * This is particularly useful for processing multiple episodes of the same TV show.
- * Only [MetadataRepository] uses it, which decides what is kept.
+ * Only [MetadataRepository] uses it.
  */
 internal class MetadataCache {
     private val showCache = mutableMapOf<ShowKey, List<CanonicalMedia.TvShow>>()
-    private val failedShowKeys = mutableSetOf<ShowKey>()
+    private val unmatchedShowKeys = mutableSetOf<ShowKey>()
     private val seasonCache = mutableMapOf<Pair<ShowIdentity, Int>, CanonicalMedia.Season>()
     private val episodeGroupCache = mutableMapOf<ShowIdentity, List<CanonicalMedia.EpisodeGroup>>()
     private val externalIdsCache = mutableMapOf<TmdbRecord, ExternalIds?>()
@@ -44,9 +44,9 @@ internal class MetadataCache {
     suspend fun putShows(key: ShowKey, shows: List<CanonicalMedia.TvShow>) = showMutex.withLock { showCache[key] = shows }
 
     /** Negative cache: remembers show lookups that found no confident match, so they aren't retried. */
-    suspend fun isShowFailed(key: ShowKey): Boolean = showMutex.withLock { key in failedShowKeys }
+    suspend fun isShowUnmatched(key: ShowKey): Boolean = showMutex.withLock { key in unmatchedShowKeys }
 
-    suspend fun markShowFailed(key: ShowKey) = showMutex.withLock { failedShowKeys.add(key) }
+    suspend fun markShowUnmatched(key: ShowKey) = showMutex.withLock { unmatchedShowKeys.add(key) }
 
     suspend fun getSeason(show: ShowIdentity, season: Int): CanonicalMedia.Season? =
         seasonMutex.withLock { seasonCache[show to season] }

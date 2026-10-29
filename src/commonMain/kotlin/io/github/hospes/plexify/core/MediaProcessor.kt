@@ -445,7 +445,7 @@ class MediaProcessor(
             status("Matched show: ${shows.first().describe()}")
         } else {
             // Negative cache: don't repeat the search (and its log output) for every episode file.
-            metadata.markShowFailed(key)
+            metadata.markShowUnmatched(key)
         }
 
         return@indent Result.success(shows)
@@ -483,7 +483,7 @@ class MediaProcessor(
         val match = rankById(id, record, "show", parsed.showTitle, parsed.year)
         val show = (match?.media as? CanonicalMedia.TvShow)?.let { metadata.withImdbId(it) }?.getOrElse { return@indent Result.failure(it) }
         if (match == null || show == null) {
-            metadata.markShowFailed(key)
+            metadata.markShowUnmatched(key)
         } else {
             val state = showStates[key]
             state.titleSeason = match.titleSeason
