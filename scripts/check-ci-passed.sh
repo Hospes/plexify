@@ -64,7 +64,8 @@ latest_runs() {
 # counts as no, which leaves the APPEAR_SECONDS limit in charge.
 ci_run_pending() {
   local count
-  count="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$sha&event=push&per_page=100"     --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status != "completed")]
+  count="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$sha&event=push&per_page=100" \
+    --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status != "completed")]
           | length')" || return 1
   [ "$count" -gt 0 ]
 }
