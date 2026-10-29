@@ -3,9 +3,9 @@ package io.github.hospes.plexify.domain.matching
 /**
  * The weights and thresholds that decide which provider record a file matches, in one place.
  * Changing a value changes which files match: measure it against the corpus test
- * (`core/corpus/CorpusTest`, which pins every target path) and `MediaConsolidationTest`.
+ * (`core/corpus/CorpusTest`, which pins every target path) and `MatchRankerTest`.
  *
- * `MediaProcessor.rankMatches` groups the search results by candidate (TMDB ID, else IMDb ID) and
+ * [MatchRanker] groups the search results by candidate (TMDB ID, else IMDb ID) and
  * scores each group:
  *
  * ```

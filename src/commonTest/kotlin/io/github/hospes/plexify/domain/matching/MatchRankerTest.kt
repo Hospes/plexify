@@ -1,27 +1,22 @@
-package io.github.hospes.plexify.core
+package io.github.hospes.plexify.domain.matching
 
-import io.github.hospes.plexify.data.MetadataCache
 import io.github.hospes.plexify.domain.model.CanonicalMedia
 import io.github.hospes.plexify.domain.model.MediaSearchResult
-import io.github.hospes.plexify.domain.service.MetadataService
-import io.github.hospes.plexify.domain.service.PathFormatter
-import io.github.hospes.plexify.domain.strategy.NamingStrategy
-import io.github.hospes.plexify.logging.LoggingContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 
-class MediaConsolidationTest {
+class MatchRankerTest {
 
-    private fun processor(yearOverride: String? = null) = MediaProcessor(
-        metadataService = MetadataService(emptyList(), NamingStrategy.Jellyfin),
-        fileOrganizer = DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin),
-        cache = MetadataCache(),
-        yearOverride = yearOverride,
-    )
+    private val ranker = MatchRanker()
 
-    private val processor = processor()
+    /** The best match, consolidated across providers; null when none qualifies. */
+    private fun MatchRanker.bestMatch(
+        results: List<MediaSearchResult>,
+        parsedTitle: String,
+        parsedYear: String?,
+    ): CanonicalMedia? = rank(results, parsedTitle, parsedYear).matches.firstOrNull()?.media
 
     private fun kingdomsOfRuin(
         originalTitle: String? = null,
@@ -36,7 +31,7 @@ class MediaConsolidationTest {
     )
 
     @Test
-    fun `matches show searched by alternative title`() = with(LoggingContext()) {
+    fun `matches show searched by alternative title`() {
         val results = listOf(
             kingdomsOfRuin(
                 originalTitle = "破滅の王国",
@@ -44,7 +39,7 @@ class MediaConsolidationTest {
             )
         )
 
-        val match = processor.findAndConsolidateBestMatch(results, "hametsu no oukoku", null)
+        val match = ranker.bestMatch(results, "hametsu no oukoku", null)
 
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("The Kingdoms of Ruin", match.title)
@@ -52,34 +47,34 @@ class MediaConsolidationTest {
     }
 
     @Test
-    fun `matches show searched by canonical title`() = with(LoggingContext()) {
-        val match = processor.findAndConsolidateBestMatch(listOf(kingdomsOfRuin()), "the kingdoms of ruin", "2023")
+    fun `matches show searched by canonical title`() {
+        val match = ranker.bestMatch(listOf(kingdomsOfRuin()), "the kingdoms of ruin", "2023")
 
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("The Kingdoms of Ruin", match.title)
     }
 
     @Test
-    fun `rejects show when no known title resembles the query`() = with(LoggingContext()) {
-        val match = processor.findAndConsolidateBestMatch(listOf(kingdomsOfRuin()), "hametsu no oukoku", null)
+    fun `rejects show when no known title resembles the query`() {
+        val match = ranker.bestMatch(listOf(kingdomsOfRuin()), "hametsu no oukoku", null)
 
         assertNull(match)
     }
 
     @Test
-    fun `year override discards candidates with a different year`() = with(LoggingContext()) {
+    fun `year override discards candidates with a different year`() {
         val results = listOf(kingdomsOfRuin(alternativeTitles = listOf("Hametsu no Oukoku")))
 
-        val match = processor(yearOverride = "1995").findAndConsolidateBestMatch(results, "hametsu no oukoku", "1995")
+        val match = MatchRanker(yearOverride = "1995").bestMatch(results, "hametsu no oukoku", "1995")
 
         assertNull(match)
     }
 
     @Test
-    fun `year override keeps candidates with the matching year`() = with(LoggingContext()) {
+    fun `year override keeps candidates with the matching year`() {
         val results = listOf(kingdomsOfRuin(alternativeTitles = listOf("Hametsu no Oukoku")))
 
-        val match = processor(yearOverride = "2023").findAndConsolidateBestMatch(results, "hametsu no oukoku", "2023")
+        val match = MatchRanker(yearOverride = "2023").bestMatch(results, "hametsu no oukoku", "2023")
 
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("The Kingdoms of Ruin", match.title)
@@ -100,7 +95,7 @@ class MediaConsolidationTest {
     )
 
     @Test
-    fun `untranslated titles of the same year stay separate candidates`() = with(LoggingContext()) {
+    fun `untranslated titles of the same year stay separate candidates`() {
         // TMDB has no English title for either, so neither has a Latin letter. The romaji query
         // matches only the second show's alias.
         val results = listOf(
@@ -115,7 +110,7 @@ class MediaConsolidationTest {
             ),
         )
 
-        val match = processor.findAndConsolidateBestMatch(results, "Horobi no Miyako", "2023")
+        val match = ranker.bestMatch(results, "Horobi no Miyako", "2023")
 
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("2", match.tmdbId)
@@ -123,7 +118,7 @@ class MediaConsolidationTest {
     }
 
     @Test
-    fun `titles differing only in punctuation stay separate candidates`() = with(LoggingContext()) {
+    fun `titles differing only in punctuation stay separate candidates`() {
         // TMDB's live results for "Hack": the anime .hack//SIGN is listed first, under ".hack", and
         // premiered the same year as CBS's Hack.
         val results = listOf(
@@ -131,32 +126,32 @@ class MediaConsolidationTest {
             MediaSearchResult.TvShow(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
         )
 
-        val ranked = processor.rankMatches(results, "Hack", "2002")
+        val ranked = ranker.rank(results, "Hack", "2002").matches
 
         assertEquals(listOf("10457", "8864"), ranked.map { (it.media as CanonicalMedia.TvShow).tmdbId })
         assertEquals(listOf("Hack", ".hack"), ranked.map { (it.media as CanonicalMedia.TvShow).title })
     }
 
     @Test
-    fun `a movie and a show of the same title and year stay separate candidates`() = with(LoggingContext()) {
+    fun `a movie and a show of the same title and year stay separate candidates`() {
         val results = listOf(
             MediaSearchResult.TvShow(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
             MediaSearchResult.Movie(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
         )
 
-        val ranked = processor.rankMatches(results, "Hack", "2002")
+        val ranked = ranker.rank(results, "Hack", "2002").matches
 
         assertEquals(listOf("TvShow", "Movie"), ranked.map { it.media::class.simpleName })
     }
 
     @Test
-    fun `results of one title from two providers are one candidate`() = with(LoggingContext()) {
+    fun `results of one title from two providers are one candidate`() {
         val results = listOf(
             MediaSearchResult.TvShow(title = "Hack", year = "2002", tmdbId = "10457", provider = "TMDb", matchConfidence = 100.0),
             MediaSearchResult.TvShow(title = "Hack", year = "2002", imdbId = "tt0320000", tmdbId = "10457", provider = "Other", matchConfidence = 100.0),
         )
 
-        val ranked = processor.rankMatches(results, "Hack", "2002")
+        val ranked = ranker.rank(results, "Hack", "2002").matches
 
         val show = assertIs<CanonicalMedia.TvShow>(ranked.single().media)
         assertEquals("10457", show.tmdbId)
@@ -164,18 +159,18 @@ class MediaConsolidationTest {
     }
 
     @Test
-    fun `episode year after the show premiere still matches the show`() = with(LoggingContext()) {
-        val match = processor.findAndConsolidateBestMatch(theBoysResults, "The Boys", "2022")
+    fun `episode year after the show premiere still matches the show`() {
+        val match = ranker.bestMatch(theBoysResults, "The Boys", "2022")
 
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("76479", match.tmdbId)
     }
 
     @Test
-    fun `ranks every confident candidate best first`() = with(LoggingContext()) {
+    fun `ranks every confident candidate best first`() {
         val unrelated = MediaSearchResult.TvShow(title = "Boyz", year = "2025", tmdbId = "9", provider = "TMDb", matchConfidence = 50.0)
 
-        val ranked = processor.rankMatches(theBoysResults + unrelated, "The Boys", "2022")
+        val ranked = ranker.rank(theBoysResults + unrelated, "The Boys", "2022").matches
 
         // "Boyz (2025)" passes the title floor but premiered after the filename year, which
         // rules it out.
@@ -183,13 +178,13 @@ class MediaConsolidationTest {
     }
 
     @Test
-    fun `show premiering in the filename year beats an older show of the same title`() = with(LoggingContext()) {
+    fun `show premiering in the filename year beats an older show of the same title`() {
         val results = listOf(
             MediaSearchResult.TvShow(title = "Doctor Who", year = "1963", tmdbId = "121", provider = "TMDb", matchConfidence = 100.0),
             MediaSearchResult.TvShow(title = "Doctor Who", year = "2005", tmdbId = "57243", provider = "TMDb", matchConfidence = 100.0),
         )
 
-        val match = processor.findAndConsolidateBestMatch(results, "Doctor Who", "2005")
+        val match = ranker.bestMatch(results, "Doctor Who", "2005")
 
         assertIs<CanonicalMedia.TvShow>(match)
         assertEquals("57243", match.tmdbId)
@@ -217,50 +212,103 @@ class MediaConsolidationTest {
     }
 
     @Test
-    fun `exact-title movie whose year is two or more off is rejected`() = with(LoggingContext()) {
+    fun `exact-title movie whose year is two or more off is rejected`() {
         // "Blade.Runner.2049.1080p.mkv" parses as year 2049; the 1982 film used to pass at exactly the minimum.
         val results = listOf(
             MediaSearchResult.Movie(title = "Blade Runner", year = "1982", tmdbId = "78", provider = "TMDb", matchConfidence = 100.0),
         )
 
-        assertNull(processor.findAndConsolidateBestMatch(results, "blade runner", "2049"))
-        assertNull(processor.findAndConsolidateBestMatch(results, "blade runner", "1980"))
+        assertNull(ranker.bestMatch(results, "blade runner", "2049"))
+        assertNull(ranker.bestMatch(results, "blade runner", "1980"))
     }
 
     @Test
-    fun `exact-title movie one year off still matches`() = with(LoggingContext()) {
+    fun `exact-title movie one year off still matches`() {
         val results = listOf(
             MediaSearchResult.Movie(title = "Blade Runner", year = "1982", tmdbId = "78", provider = "TMDb", matchConfidence = 100.0),
         )
 
-        val match = processor.findAndConsolidateBestMatch(results, "blade runner", "1983")
+        val match = ranker.bestMatch(results, "blade runner", "1983")
 
         assertIs<CanonicalMedia.Movie>(match)
         assertEquals("78", match.tmdbId)
     }
 
     @Test
-    fun `exact-title show premiering years after the filename year is rejected`() = with(LoggingContext()) {
+    fun `exact-title show premiering years after the filename year is rejected`() {
         val results = listOf(
             MediaSearchResult.TvShow(title = "The Boys", year = "2019", tmdbId = "76479", provider = "TMDb", matchConfidence = 100.0),
         )
 
-        assertNull(processor.findAndConsolidateBestMatch(results, "The Boys", "2016"))
+        assertNull(ranker.bestMatch(results, "The Boys", "2016"))
     }
 
     @Test
-    fun `match without a year keeps the year missing instead of zero`() = with(LoggingContext()) {
+    fun `match without a year keeps the year missing instead of zero`() {
         val results = listOf(
             MediaSearchResult.Movie(title = "Untitled Announced Film", year = null, tmdbId = "1", provider = "TMDb"),
             MediaSearchResult.TvShow(title = "Untitled Announced Show", year = null, tmdbId = "2", provider = "TMDb"),
         )
 
-        val movie = processor.findAndConsolidateBestMatch(results.take(1), "untitled announced film", null)
-        val show = processor.findAndConsolidateBestMatch(results.drop(1), "untitled announced show", null)
+        val movie = ranker.bestMatch(results.take(1), "untitled announced film", null)
+        val show = ranker.bestMatch(results.drop(1), "untitled announced show", null)
 
         assertIs<CanonicalMedia.Movie>(movie)
         assertNull(movie.year)
         assertIs<CanonicalMedia.TvShow>(show)
         assertNull(show.year)
+    }
+
+    @Test
+    fun `a match has no miss reason`() {
+        val ranking = ranker.rank(listOf(kingdomsOfRuin()), "the kingdoms of ruin", "2023")
+
+        assertEquals(1, ranking.matches.size)
+        assertNull(ranking.miss)
+    }
+
+    @Test
+    fun `no results is no miss`() {
+        val ranking = ranker.rank(emptyList(), "the kingdoms of ruin", "2023")
+
+        assertEquals(emptyList(), ranking.matches)
+        assertNull(ranking.miss)
+        assertEquals(emptyList(), ranking.trace)
+    }
+
+    @Test
+    fun `miss reason names the candidates the year override rejected`() {
+        val ranking = MatchRanker(yearOverride = "1995").rank(listOf(kingdomsOfRuin()), "the kingdoms of ruin", "1995")
+
+        assertEquals("'The Kingdoms of Ruin (2023)' rejected (year does not match override 1995)", ranking.miss)
+    }
+
+    @Test
+    fun `miss reason names the candidates the filename year rejected`() {
+        val results = (1..5).map { MediaSearchResult.TvShow(title = "The Boys", year = "${2018 + it}", tmdbId = "$it", provider = "TMDb") }
+
+        val ranking = ranker.rank(results, "The Boys", "2016")
+
+        assertEquals(
+            "'The Boys (2019)', 'The Boys (2020)', 'The Boys (2021)' and 2 more rejected (year does not match 2016)",
+            ranking.miss,
+        )
+    }
+
+    @Test
+    fun `miss reason gives the best score under the minimum`() {
+        val results = listOf(MediaSearchResult.Movie("Abxyz", null, tmdbId = "1", provider = "TMDb", matchConfidence = 10.0))
+
+        val ranking = ranker.rank(results, "Abcde", null)
+
+        assertEquals("best candidate 'Abxyz (null)' scored 4.50, below the 5.0 confidence minimum", ranking.miss)
+    }
+
+    @Test
+    fun `miss reason counts the results when no title resembles`() {
+        val ranking = ranker.rank(listOf(kingdomsOfRuin()), "hametsu no oukoku", null)
+
+        assertEquals("none of 1 provider result(s) resembled the title", ranking.miss)
+        assertEquals("Candidate: 'The Kingdoms of Ruin (2023)' | Discarded (title similarity too low)", ranking.trace.last())
     }
 }
