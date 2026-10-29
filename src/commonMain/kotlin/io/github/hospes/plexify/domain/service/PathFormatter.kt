@@ -24,8 +24,9 @@ class PathFormatter {
         parsedInfo: ParsedMediaInfo,
         sourceFile: Path
     ): Path {
-        val folder = format(folderTemplate, media, parsedInfo, sourceFile)
-        val file = format(fileTemplate, media, parsedInfo, sourceFile)
+        val placeholders = buildPlaceholderMap(media, parsedInfo, sourceFile)
+        val folder = format(folderTemplate, placeholders)
+        val file = format(fileTemplate, placeholders)
         return path(listOf(folder), file)
     }
 
@@ -37,9 +38,10 @@ class PathFormatter {
         parsedInfo: ParsedMediaInfo,
         sourceFile: Path
     ): Path {
-        val showFolder = format(showFolderTemplate, media, parsedInfo, sourceFile)
-        val seasonFolder = format(seasonFolderTemplate, media, parsedInfo, sourceFile)
-        val episodeFile = format(episodeFileTemplate, media, parsedInfo, sourceFile)
+        val placeholders = buildPlaceholderMap(media, parsedInfo, sourceFile)
+        val showFolder = format(showFolderTemplate, placeholders)
+        val seasonFolder = format(seasonFolderTemplate, placeholders)
+        val episodeFile = format(episodeFileTemplate, placeholders)
         return path(listOf(showFolder, seasonFolder), episodeFile)
     }
 
@@ -53,16 +55,10 @@ class PathFormatter {
 
 
     /**
-     * The file or folder name [template] renders to: the placeholder values ([buildPlaceholderMap]), the template
+     * The file or folder name [template] renders to with the file's [placeholders] ([buildPlaceholderMap]): the template
      * without the ID tags and parenthesized placeholders that have no value, then the segment ([formatSegment]).
      */
-    private fun format(
-        template: String,
-        media: CanonicalMedia,
-        parsedInfo: ParsedMediaInfo,
-        sourceFile: Path
-    ): String {
-        val placeholders = buildPlaceholderMap(media, parsedInfo, sourceFile)
+    private fun format(template: String, placeholders: Map<String, String?>): String {
         var result = dropEmptyIdTags(template, placeholders)
         result = dropEmptyParentheses(result, placeholders)
         return formatSegment(result, placeholders)
@@ -94,7 +90,8 @@ class PathFormatter {
         for (key in SHORTENED_FIRST.filter { it in uses }) {
             while (segment.utf8Size() > MAX_SEGMENT_BYTES) {
                 val value = values[key]?.takeIf { it.isNotEmpty() && it != ELLIPSIS } ?: break
-                // A placeholder used twice gives up half the excess at each place.
+                // A placeholder used twice gives up half the excess at each place. No built-in template uses one twice
+                // in a segment (uses is 1 there), but formatMoviePath/formatEpisodePath take any template.
                 val excess = (segment.utf8Size() - MAX_SEGMENT_BYTES + uses.getValue(key) - 1) / uses.getValue(key)
                 values = values + (key to shorten(value, value.utf8Size() - excess))
                 segment = finishSegment(replacePlaceholders(template, values))
@@ -109,7 +106,7 @@ class PathFormatter {
     // so leading dots go too (".hack//SIGN" -> "hack-SIGN", "...And Justice for All" -> "And Justice for All").
     // Both are trimmed on every platform, so the library has the same names on Linux and Windows.
     private fun finishSegment(segment: String): String =
-        segment.replace(Regex("""\s{2,}"""), " ").trim().trimEnd('.', ' ').trimStart { it == '.' || it.isWhitespace() }
+        segment.replace(repeatedSpacesRegex, " ").trim().trimEnd('.', ' ').trimStart { it == '.' || it.isWhitespace() }
 
     /**
      * [value] cut to at most [maxBytes] in UTF-8, at a word boundary if one is close, and marked with an ellipsis. With
@@ -251,6 +248,9 @@ private val joiningSlashRegex = Regex("""(?<=\S)[/\\]+(?=\S)""")
 private val separatorCharsRegex = Regex("""[:/\\|\u0000-\u001F]""")
 private val droppedCharsRegex = Regex("""[<>"?*]""")
 
+// Two or more whitespace characters in a row, collapsed to one space in a name
+private val repeatedSpacesRegex = Regex("""\s{2,}""")
+
 // Makes a title usable in a file or folder name without joining its words. Slashes or backslashes
 // between two words become one hyphen ("Fate/Zero" -> "Fate-Zero", "Part 1/2" -> "Part 1-2", ".hack//SIGN" ->
 // ".hack-SIGN"); any other separator (":", "|", a slash with a space beside it, a control character) becomes
@@ -260,7 +260,7 @@ private fun cleanName(value: String): String = value
     .replace(joiningSlashRegex, "-")
     .replace(separatorCharsRegex, " ")
     .replace(droppedCharsRegex, "")
-    .replace(Regex("""\s{2,}"""), " ")
+    .replace(repeatedSpacesRegex, " ")
     .trim()
 
 /**
