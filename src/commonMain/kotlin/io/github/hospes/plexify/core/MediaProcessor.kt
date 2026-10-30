@@ -23,10 +23,22 @@ class MediaProcessor(
 ) {
     private val SUPPORTED_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "flv")
 
-    class Stats {
-        var organized: Int = 0
-        var skipped: Int = 0
-        var failed: Int = 0
+    /** The run's counts so far. Only [count] changes them, once for each [FileOutcome]. */
+    class Stats(organized: Int = 0, skipped: Int = 0, failed: Int = 0) {
+        var organized: Int = organized
+            private set
+        var skipped: Int = skipped
+            private set
+        var failed: Int = failed
+            private set
+
+        internal fun count(outcome: FileOutcome) {
+            when (outcome) {
+                is FileOutcome.Organized -> organized++
+                is FileOutcome.AlreadyInPlace, is FileOutcome.Skipped -> skipped++
+                is FileOutcome.Failed -> failed++
+            }
+        }
     }
 
     val stats: Stats = Stats()
@@ -47,19 +59,11 @@ class MediaProcessor(
         val kind = try {
             PlatformFileSystem.kind(source)
         } catch (e: Exception) {
-            log("Error: ${e.message}")
-            stats.failed++
-            return
+            return sourceFailed("${e.message}")
         }
-        if (kind == null) {
-            log("Error: Source path does not exist: $source")
-            stats.failed++
-            return
-        }
+        if (kind == null) return sourceFailed("Source path does not exist: $source")
         if (kind == FileKind.DANGLING_LINK) {
-            log("Error: Source is a broken symlink, its target doesn't exist or can't be reached: $source")
-            stats.failed++
-            return
+            return sourceFailed("Source is a broken symlink, its target doesn't exist or can't be reached: $source")
         }
 
         if (kind == FileKind.DIRECTORY) {
@@ -69,8 +73,7 @@ class MediaProcessor(
                 // Not counted as skipped: its files are all walked at the other path.
                 onRevisited = { path, original -> log("Warning: Skipping $path: it leads to $original, already walked") },
             ) { path, error ->
-                log("Error: Can't read $path (${error.message})")
-                stats.failed++
+                sourceFailed("Can't read $path (${error.message})")
                 unreadable = true
             }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS }
@@ -93,12 +96,10 @@ class MediaProcessor(
             if (source.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS) {
                 processFile(source, destination, mode, isTestMode)
             } else {
-                log("Warning: File is not a supported media type, skipping: $source")
-                stats.skipped++
+                sourceSkipped("File is not a supported media type, skipping: $source")
             }
         } else {
-            log("Error: Source is not a regular file or directory: $source")
-            stats.failed++
+            sourceFailed("Source is not a regular file or directory: $source")
         }
     }
 
@@ -107,9 +108,12 @@ class MediaProcessor(
         debug("Processing: $source")
         val parentDirName = source.parent?.name
         val parsed = MediaFilenameParser.parse(source.name, parentDirName, source.parent?.parent?.name)
-        when (val parsedInfo = parsed.withOverrides(titleOverride, seasonOverride, yearOverride, episodeOffset)) {
-            is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
-            is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
+        indent {
+            val outcome = when (val parsedInfo = parsed.withOverrides(titleOverride, seasonOverride, yearOverride, episodeOffset)) {
+                is ParsedMediaInfo.Movie -> processMovie(source, destination, mode, parsedInfo, isTestMode)
+                is ParsedMediaInfo.Episode -> processEpisode(source, destination, mode, parsedInfo, isTestMode)
+            }
+            report(source, destination, outcome)
         }
     }
 
@@ -120,26 +124,17 @@ class MediaProcessor(
         mode: OperationMode,
         parsedInfo: ParsedMediaInfo.Movie,
         isTestMode: Boolean,
-    ) = indent {
+    ): FileOutcome {
         debug("Parsed as Movie: Title='${parsedInfo.title}', Year='${parsedInfo.year}'")
 
-        val movie = when (val match = movieMatcher.match(parsedInfo).getOrElse { error -> return@indent lookupFailed(source, error) }) {
+        val movie = when (val match = movieMatcher.match(parsedInfo).getOrElse { error -> return lookupFailed(error) }) {
             is MovieMatcher.Match.Found -> match.movie
-            MovieMatcher.Match.NoResults -> {
-                status("✗ ${source.name} — no metadata found for '${parsedInfo.title}'")
-                stats.skipped++
-                return@indent
-            }
-
-            MovieMatcher.Match.NoConfidentMatch -> {
-                status("✗ ${source.name} — no confident match for '${parsedInfo.title}'")
-                stats.skipped++
-                return@indent
-            }
+            MovieMatcher.Match.NoResults -> return FileOutcome.Skipped("no metadata found for '${parsedInfo.title}'")
+            MovieMatcher.Match.NoConfidentMatch -> return FileOutcome.Skipped("no confident match for '${parsedInfo.title}'")
         }
 
         debug("Found match: $movie")
-        organizeFile(source, destination, movie, parsedInfo, mode, isTestMode)
+        return organizeFile(source, destination, movie, parsedInfo, mode, isTestMode)
     }
 
     context(_: LoggingContext)
@@ -149,46 +144,33 @@ class MediaProcessor(
         mode: OperationMode,
         parsed: ParsedMediaInfo.Episode,
         isTestMode: Boolean,
-    ) = indent {
+    ): FileOutcome {
         debug("Parsed as TV Show: Show='${parsed.showTitle}', Season: ${parsed.season}, Episode: ${parsed.episode}")
 
         // Step 1: Find the candidate shows, best first.
-        val match = showMatcher.match(parsed).getOrElse { error -> return@indent lookupFailed(source, error) }
+        val match = showMatcher.match(parsed).getOrElse { error -> return lookupFailed(error) }
         val parsedInfo = match.parsed
-        if (match.shows.isEmpty()) {
-            status("✗ ${source.name} — no confident match for show '${parsedInfo.showTitle}'")
-            stats.skipped++
-            return@indent
-        }
+        if (match.shows.isEmpty()) return FileOutcome.Skipped("no confident match for show '${parsedInfo.showTitle}'")
         debug("Found show: ${match.shows.first()}")
 
         // Step 2: Find the season and the episode.
         val resolution = episodeResolver.resolve(source, parsedInfo, match.shows, match.key)
-            .getOrElse { error -> return@indent lookupFailed(source, error) }
+            .getOrElse { error -> return lookupFailed(error) }
         val episode = when (resolution) {
             is EpisodeResolver.Resolution.Found -> resolution.episode
-            is EpisodeResolver.Resolution.Skipped -> {
-                status("✗ ${source.name} — ${resolution.reason}")
-                stats.skipped++
-                return@indent
-            }
+            is EpisodeResolver.Resolution.Skipped -> return FileOutcome.Skipped(resolution.reason)
         }
 
         debug("Found episode: ${episode.describe()}")
-        organizeFile(source, destination, episode, parsedInfo, mode, isTestMode)
+        return organizeFile(source, destination, episode, parsedInfo, mode, isTestMode)
     }
 
     /**
      * The lookup itself failed (a search, a season fetch or an IMDb lookup timed out, or hit an HTTP or network error),
      * so the file is a failure, not a miss.
      */
-    context(_: LoggingContext)
-    private fun lookupFailed(source: Path, error: Throwable) {
-        status("✗ ${source.name} — ${error.message}")
-        stats.failed++
-    }
+    private fun lookupFailed(error: Throwable) = FileOutcome.Failed("${error.message}")
 
-    context(ctx: LoggingContext)
     private fun organizeFile(
         source: Path,
         destination: Path,
@@ -196,45 +178,55 @@ class MediaProcessor(
         parsedInfo: ParsedMediaInfo,
         mode: OperationMode,
         isTestMode: Boolean,
-    ) = run {
-        fileOrganizer.organize(source, destination, media, parsedInfo, mode, isTestMode)
-            .onSuccess { outcome ->
-                when (outcome) {
-                    is OrganizeOutcome.Organized -> {
-                        status("✓ ${source.name} → ${outcome.path.relativeTo(destination)}")
-                        debug("Organized at: ${outcome.path}")
-                        stats.organized++
-                    }
-
-                    is OrganizeOutcome.Replaced -> {
-                        status("✓ ${source.name} → ${outcome.path.relativeTo(destination)} (replaced existing file)")
-                        debug("Replaced: ${outcome.path}")
-                        stats.organized++
-                    }
-
-                    is OrganizeOutcome.AlreadyInPlace -> {
-                        status("= ${source.name} — already in the library: ${outcome.path}")
-                        stats.skipped++
-                    }
-
-                    is OrganizeOutcome.TargetExists -> {
-                        status("✗ ${source.name} — target already exists: ${outcome.path}")
-                        stats.skipped++
-                    }
-
-                    is OrganizeOutcome.TakenInThisRun -> {
-                        status("✗ ${source.name} — same target as ${outcome.claimedBy.name} earlier in this run: ${outcome.path}")
-                        stats.skipped++
-                    }
-                }
+    ): FileOutcome = fileOrganizer.organize(source, destination, media, parsedInfo, mode, isTestMode).fold(
+        onSuccess = { outcome ->
+            when (outcome) {
+                is OrganizeOutcome.Organized -> FileOutcome.Organized(outcome.path)
+                is OrganizeOutcome.Replaced -> FileOutcome.Organized(outcome.path, replaced = true)
+                is OrganizeOutcome.AlreadyInPlace -> FileOutcome.AlreadyInPlace(outcome.path)
+                is OrganizeOutcome.TargetExists -> FileOutcome.Skipped("target already exists: ${outcome.path}")
+                is OrganizeOutcome.TakenInThisRun ->
+                    FileOutcome.Skipped("same target as ${outcome.claimedBy.name} earlier in this run: ${outcome.path}")
             }
-            .onFailure { error ->
-                status("✗ ${source.name} — ${error.message}")
-                stats.failed++
-                if (ctx.verbose) error.printStackTrace()
+        },
+        onFailure = { error -> FileOutcome.Failed("${error.message}", error) },
+    )
+
+    /** Prints [outcome] as [source]'s status line and counts it: the one place a file's outcome is reported. */
+    context(ctx: LoggingContext)
+    private fun report(source: Path, destination: Path, outcome: FileOutcome) {
+        when (outcome) {
+            is FileOutcome.Organized -> if (outcome.replaced) {
+                status("✓ ${source.name} → ${outcome.target.relativeTo(destination)} (replaced existing file)")
+                debug("Replaced: ${outcome.target}")
+            } else {
+                status("✓ ${source.name} → ${outcome.target.relativeTo(destination)}")
+                debug("Organized at: ${outcome.target}")
             }
+
+            is FileOutcome.AlreadyInPlace -> status("= ${source.name} — already in the library: ${outcome.target}")
+            is FileOutcome.Skipped -> status("✗ ${source.name} — ${outcome.reason}")
+            is FileOutcome.Failed -> {
+                status("✗ ${source.name} — ${outcome.reason}")
+                if (ctx.verbose) outcome.error?.printStackTrace()
+            }
+        }
+        stats.count(outcome)
     }
 
+    /** A source path, or a path in a source folder, that failed: an `Error:` line naming it, counted as a failed file. */
+    context(_: LoggingContext)
+    private fun sourceFailed(reason: String) {
+        log("Error: $reason")
+        stats.count(FileOutcome.Failed(reason))
+    }
+
+    /** A source path left alone: a `Warning:` line naming it, counted as a skipped file. */
+    context(_: LoggingContext)
+    private fun sourceSkipped(reason: String) {
+        log("Warning: $reason")
+        stats.count(FileOutcome.Skipped(reason))
+    }
 }
 
 // Short human-readable labels for the concise log lines.

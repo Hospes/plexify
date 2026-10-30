@@ -6,11 +6,7 @@ import kotlin.test.assertEquals
 
 class ExitStatusTest {
 
-    private fun stats(organized: Int = 0, skipped: Int = 0, failed: Int = 0) = MediaProcessor.Stats().apply {
-        this.organized = organized
-        this.skipped = skipped
-        this.failed = failed
-    }
+    private fun stats(organized: Int = 0, skipped: Int = 0, failed: Int = 0) = MediaProcessor.Stats(organized, skipped, failed)
 
     @Test
     fun `a run where nothing failed exits 0`() {
