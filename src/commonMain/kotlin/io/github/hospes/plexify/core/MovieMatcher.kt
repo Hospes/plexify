@@ -76,7 +76,7 @@ internal class MovieMatcher(
         val byYear = search.searchFor<MediaSearchResult.Movie>(title, year) { metadata.searchMovies(title, year) }
             .unlessFailedAfter(firstRanking)
             .getOrElse { return Result.failure(it) }
-        val merged = (first + byYear).distinctBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }
+        val merged = first.mergedWith(byYear)
         val ranking = search.rank(merged, title, year, reportMiss = false)
 
         if (ranking.matches.bestYear() != year && titleOverride == null && yearOverride == null) {
@@ -85,6 +85,15 @@ internal class MovieMatcher(
         if (ranking.matches.isEmpty()) search.reportMiss(ranking, title)
         return Result.success(merged to ranking.matches)
     }
+
+    /**
+     * These results and [later] ones, each record once, in the order first found (it breaks ties). A record both
+     * searches found keeps the copy with the most aliases, then the higher confidence, else the first: each search looks up the
+     * aliases of a few results only, and the other copy may lack the alias that names the film ("Kimi no Na wa.").
+     */
+    private fun List<MediaSearchResult>.mergedWith(later: List<MediaSearchResult>): List<MediaSearchResult> =
+        (this + later).groupBy { listOf(it.provider, it.tmdbId ?: "${it.title}:${it.year}") }.values
+            .map { copies -> copies.maxWith(compareBy({ it.alternativeTitles.size }, { it.matchConfidence })) }
 
     private fun List<RankedMatch>.bestYear(): String? = (firstOrNull()?.media as? CanonicalMedia.Movie)?.year?.toString()
 }
