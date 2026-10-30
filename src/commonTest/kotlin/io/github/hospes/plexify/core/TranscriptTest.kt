@@ -2,9 +2,19 @@ package io.github.hospes.plexify.core
 
 import io.github.hospes.plexify.data.MetadataTimeoutException
 import io.github.hospes.plexify.domain.model.CanonicalMedia
+import io.github.hospes.plexify.domain.model.OperationMode
+import io.github.hospes.plexify.domain.model.ParsedMediaInfo
+import io.github.hospes.plexify.domain.service.MetadataService
 import io.github.hospes.plexify.domain.service.PathFormatter
 import io.github.hospes.plexify.domain.strategy.NamingStrategy
+import io.github.hospes.plexify.logging.LoggingContext
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.IOException
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.files.SystemTemporaryDirectory
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.fail
 
@@ -1018,6 +1028,194 @@ class TranscriptTest {
             verbose = verbose,
             organizer = organizer(),
         )
+    }
+
+    @Test
+    fun `with overwrite a file replaces another at its target`() = transcripts(
+        concise = """
+            |Processing directory: <source> (2 media files)
+            |  Matched show: Ghosts (2021) [tmdbid-2]
+            |  ✓ Ghosts.S04E01.mkv → Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv (replaced existing file)
+            |  Matched show by the ID in its path: Ghosts (2021) [tmdbid-2]
+            |  = Ghosts (2021) - S04E01 - Episode 1.mkv — already in the library: <library>/Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv
+            |Done: 1 organized, 1 skipped, 0 failed.
+        """,
+        verbose = """
+            |Processing directory: <source> (2 media files)
+            |  -> Processing: <source>/Ghosts.S04E01.mkv
+            |    -> Parsed as TV Show: Show='ghosts', Season: 4, Episode: 1
+            |      -> Cache MISS for show: 'ghosts'. Searching providers...
+            |        -> Found 1 results from tmdb
+            |        -> Consolidating 1 results for title: 'ghosts' year: 'null'
+            |        -> 1 unique media candidates found.
+            |        -> Candidate: 'Ghosts (2021)' | Score: 14.50
+            |        -> Best match selected: 'Ghosts' with score 14.50
+            |      -> Matched show: Ghosts (2021) [tmdbid-2]
+            |    -> Found show: TvShow(title=Ghosts, year=2021, imdbId=null, tmdbId=2)
+            |      -> Cache MISS for season: S4. Fetching from providers...
+            |        -> Season 4 fetched from tmdb
+            |    -> Found episode: S04E01 - Episode 1
+            |    -> ✓ Ghosts.S04E01.mkv → Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv (replaced existing file)
+            |    -> Replaced: <library>/Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv
+            |---
+            |  -> Processing: <library>/Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv
+            |    -> Parsed as TV Show: Show='ghosts', Season: 4, Episode: 1
+            |      -> Looking up the show tmdb-2 in the path
+            |        -> Consolidating 1 results for title: 'ghosts' year: '2021'
+            |        -> 1 unique media candidates found.
+            |        -> Candidate: 'Ghosts (2021)' | Score: 25.00
+            |        -> Best match selected: 'Ghosts' with score 25.00
+            |      -> Matched show by the ID in its path: Ghosts (2021) [tmdbid-2]
+            |    -> Found show: TvShow(title=Ghosts, year=2021, imdbId=null, tmdbId=2)
+            |      -> Cache HIT for S4 (8 episodes loaded)
+            |    -> Found episode: S04E01 - Episode 1
+            |    -> = Ghosts (2021) - S04E01 - Episode 1.mkv — already in the library: <library>/Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv
+            |Done: 1 organized, 1 skipped, 0 failed.
+        """,
+    ) { verbose ->
+        // As in the run into an existing library above, now with overwrite: the library's own file is still left in place.
+        val provider = FakeTmdb(listOf(ghosts2021), seasons = mapOf("2" to mapOf(4 to 1..8)))
+        runProcessor(
+            provider,
+            "Ghosts.S04E01.mkv",
+            "library/Ghosts (2021) [tmdbid-2]/Season 04/Ghosts (2021) - S04E01 - Episode 1.mkv",
+            verbose = verbose,
+            organizer = RecordingOrganizer(DefaultFileOrganizer(PathFormatter(), NamingStrategy.Jellyfin, overwrite = true)),
+        )
+    }
+
+    @Test
+    fun `a file the organizer fails on fails`() = transcripts(
+        concise = """
+            |Processing directory: <source> (1 media files)
+            |  ✗ Inception.2010.1080p.BluRay.x264-SPARKS.mkv — Access is denied
+            |Done: 0 organized, 0 skipped, 1 failed.
+        """,
+        verbose = """
+            |Processing directory: <source> (1 media files)
+            |  -> Processing: <source>/Inception.2010.1080p.BluRay.x264-SPARKS.mkv
+            |    -> Parsed as Movie: Title='inception', Year='2010'
+            |      -> Found 1 results from tmdb
+            |      -> Consolidating 1 results for title: 'inception' year: '2010'
+            |      -> 1 unique media candidates found.
+            |      -> Candidate: 'Inception (2010)' | Score: 25.00
+            |      -> Best match selected: 'Inception' with score 25.00
+            |    -> Found match: Movie(title=Inception, year=2010, imdbId=null, tmdbId=27205)
+            |    -> ✗ Inception.2010.1080p.BluRay.x264-SPARKS.mkv — Access is denied
+            |Done: 0 organized, 0 skipped, 1 failed.
+        """,
+    ) { verbose ->
+        val provider = FakeTmdb(listOf(movieResult("Inception", "2010", "27205")))
+        val failing = object : FileOrganizer {
+            override fun organize(
+                sourceFile: Path,
+                destinationRoot: Path,
+                media: CanonicalMedia,
+                parsedInfo: ParsedMediaInfo,
+                mode: OperationMode,
+                isTestMode: Boolean,
+            ): Result<OrganizeOutcome> = Result.failure(IOException("Access is denied"))
+        }
+        runProcessor(provider, "Inception.2010.1080p.BluRay.x264-SPARKS.mkv", verbose = verbose, organizer = RecordingOrganizer(failing))
+    }
+
+    @Test
+    fun `source paths that are missing or hold no media`() = transcripts(
+        concise = """
+            |Error: Source path does not exist: <source>/missing/Movie (2020).mkv
+            |Warning: File is not a supported media type, skipping: <source>/notes.txt
+            |No supported media files found in: <source>/empty
+            |  ✗ Xqzv.1080p.mkv — no metadata found for 'xqzv'
+            |Done: 0 organized, 2 skipped, 1 failed.
+        """,
+        verbose = """
+            |Error: Source path does not exist: <source>/missing/Movie (2020).mkv
+            |Warning: File is not a supported media type, skipping: <source>/notes.txt
+            |No supported media files found in: <source>/empty
+            |  -> Processing: <source>/Xqzv.1080p.mkv
+            |    -> Parsed as Movie: Title='xqzv', Year='null'
+            |      -> Found 0 results from tmdb
+            |    -> ✗ Xqzv.1080p.mkv — no metadata found for 'xqzv'
+            |Done: 0 organized, 2 skipped, 1 failed.
+        """,
+    ) { verbose ->
+        processSources(verbose, "missing/Movie (2020).mkv", "notes.txt", "empty", "Xqzv.1080p.mkv") { root ->
+            touch(Path(root, "notes.txt"))
+            touch(Path(root, "Xqzv.1080p.mkv"))
+            PlatformFileSystem.createDirectories(Path(root, "empty"))
+        }
+    }
+
+    @Test
+    fun `a broken symlink fails as a source and in a folder`() {
+        if (!symbolicLinksSupported()) return
+        transcripts(
+            concise = """
+                |Error: Source is a broken symlink, its target doesn't exist or can't be reached: <source>/Broken.mkv
+                |Error: Can't read <source>/folder/Gone.mkv (broken symlink: its target doesn't exist or can't be reached)
+                |Processing directory: <source>/folder (1 media files)
+                |  ✗ Xqzv.1080p.mkv — no metadata found for 'xqzv'
+                |Error: Can't read <source>/only-broken/Gone.mkv (broken symlink: its target doesn't exist or can't be reached)
+                |Done: 0 organized, 1 skipped, 3 failed.
+            """,
+            verbose = """
+                |Error: Source is a broken symlink, its target doesn't exist or can't be reached: <source>/Broken.mkv
+                |Error: Can't read <source>/folder/Gone.mkv (broken symlink: its target doesn't exist or can't be reached)
+                |Processing directory: <source>/folder (1 media files)
+                |  -> Processing: <source>/folder/Xqzv.1080p.mkv
+                |    -> Parsed as Movie: Title='xqzv', Year='null'
+                |      -> Found 0 results from tmdb
+                |    -> ✗ Xqzv.1080p.mkv — no metadata found for 'xqzv'
+                |Error: Can't read <source>/only-broken/Gone.mkv (broken symlink: its target doesn't exist or can't be reached)
+                |Done: 0 organized, 1 skipped, 3 failed.
+            """,
+        ) { verbose ->
+            processSources(verbose, "Broken.mkv", "folder", "only-broken") { root ->
+                createSymbolicLink(Path(root, "Broken.mkv"), "missing.mkv")
+                PlatformFileSystem.createDirectories(Path(root, "folder"))
+                createSymbolicLink(Path(root, "folder", "Gone.mkv"), "missing.mkv")
+                touch(Path(root, "folder", "Xqzv.1080p.mkv"))
+                PlatformFileSystem.createDirectories(Path(root, "only-broken"))
+                createSymbolicLink(Path(root, "only-broken", "Gone.mkv"), "missing.mkv")
+            }
+        }
+    }
+
+    /**
+     * Processes these [sources] (paths under a fresh temporary folder, shown as `<source>`) one by one, as the CLI does
+     * the paths it is given, with a provider that finds nothing. [setUp] makes what they name in that folder.
+     */
+    private suspend fun processSources(verbose: Boolean, vararg sources: String, setUp: (root: Path) -> Unit): ProcessorRun<FakeTmdb> {
+        val provider = FakeTmdb(emptyList())
+        val organizer = organizer()
+        val processor = MediaProcessor(MetadataRepository(MetadataService(listOf(provider), NamingStrategy.Jellyfin)), organizer)
+        val root = Path(SystemTemporaryDirectory, "plexify-sources-test-${Random.nextLong().toULong()}")
+        val library = Path(root, "library")
+        val output = mutableListOf<String>()
+        PlatformFileSystem.createDirectories(root)
+        try {
+            setUp(root)
+            with(LoggingContext(verbose = verbose, output = { output += it })) {
+                for (source in sources) processor.process(Path(root, source), library, OperationMode.HARDLINK, isTestMode = true)
+            }
+        } finally {
+            deleteTree(root)
+        }
+        val normalized = output.map { it.replace(library.toString(), "<library>").replace(root.toString(), "<source>") }
+        return ProcessorRun(provider, organizer, processor.stats, normalized, root)
+    }
+
+    private fun touch(file: Path) = SystemFileSystem.sink(file).buffered().close()
+
+    private fun deleteTree(path: Path) {
+        if (PlatformFileSystem.kind(path) == FileKind.DIRECTORY) PlatformFileSystem.list(path).forEach(::deleteTree)
+        PlatformFileSystem.delete(path)
+    }
+
+    /** False where this system doesn't allow creating symlinks; see [createSymbolicLink]. */
+    private fun symbolicLinksSupported(): Boolean {
+        val probe = Path(SystemTemporaryDirectory, "plexify-link-probe-${Random.nextLong().toULong()}")
+        return createSymbolicLink(probe, "missing").also { if (it) PlatformFileSystem.delete(probe) }
     }
 
     // Demon Slayer as TMDB has it: each arc its own season, the arcs' romaji titles tagged with their season.
