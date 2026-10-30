@@ -88,6 +88,47 @@ class MovieYearSearchTest {
         assertEquals(1, run.stats.failed)
     }
 
+    // "kimi no na wa" as TMDB answered it live (October 2026): the first search looks up the aliases of three results,
+    // not Your Name. (2016), so the year-less "Your Name" wins by its alias. The search with the year looks them up.
+    private val yourNameUndated = movieResult("Your Name", null, "553301", alternativeTitles = listOf("Kimi no Na wa"))
+    private val kimiNoNaWa = listOf(yourNameUndated, movieResult("Your Name.", "2016", "372058", matchConfidence = 20.0))
+    private val kimiNoNaWa2016 = listOf(movieResult("Your Name.", "2016", "372058", alternativeTitles = listOf("Kimi no Na wa.")))
+
+    @Test
+    fun `the aliases the year search looked up are kept for a film both searches found`() = runTest {
+        val run = runProcessor(FakeTmdb(kimiNoNaWa, moviesByYear = mapOf("2016" to kimiNoNaWa2016)), "Kimi.no.Na.wa.2016.1080p.mkv")
+
+        assertEquals("372058", run.movieOf("Kimi.no.Na.wa.2016.1080p.mkv"))
+        assertEquals(listOf("2016"), run.provider.yearSearches)
+    }
+
+    @Test
+    fun `the copy with aliases is kept over one of the same confidence`() = runTest {
+        // The aliases decide, not the confidence: equal here, it would keep the first search's copy.
+        val provider = FakeTmdb(
+            results = listOf(yourNameUndated, movieResult("Your Name.", "2016", "372058", matchConfidence = 20.0)),
+            moviesByYear = mapOf("2016" to listOf(movieResult("Your Name.", "2016", "372058", matchConfidence = 20.0, alternativeTitles = listOf("Kimi no Na wa.")))),
+        )
+
+        val run = runProcessor(provider, "Kimi.no.Na.wa.2016.1080p.mkv")
+
+        assertEquals("372058", run.movieOf("Kimi.no.Na.wa.2016.1080p.mkv"))
+    }
+
+    @Test
+    fun `the aliases the first search looked up are kept when the year search has none`() = runTest {
+        // An undated film from the first search, with its aliases, against the year search's copy without them.
+        val provider = FakeTmdb(
+            results = listOf(movieResult("Your Name.", null, "372058", alternativeTitles = listOf("Kimi no Na wa."))),
+            moviesByYear = mapOf("2016" to listOf(movieResult("Your Name.", null, "372058", matchConfidence = 20.0))),
+        )
+
+        val run = runProcessor(provider, "Kimi.no.Na.wa.2016.1080p.mkv")
+
+        assertEquals("372058", run.movieOf("Kimi.no.Na.wa.2016.1080p.mkv"))
+        assertEquals(listOf("2016"), run.provider.yearSearches)
+    }
+
     // "Wonder.Woman.1984.1080p": the 1984 is the title's, and no Wonder Woman film is from 1984. The
     // year-less "WONDER WOMAN 1944" resembles "wonder woman" enough to pass on its own.
     private val wonderWoman = listOf(
